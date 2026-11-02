@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#141414">
+    <title>WTZI – filmy a seriály</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%23141414'/><text x='50' y='72' font-size='64' font-weight='900' text-anchor='middle' fill='%23e50914' font-family='Arial'>W</text></svg>">
+    <style>
+        :root { --red: #e50914; --bg: #141414; --text: #e5e5e5; --muted: #8c8c8c; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, -apple-system, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding-bottom: 60px;
+        }
+        button { font: inherit; border: none; cursor: pointer; color: inherit; background: none; }
+
+        /* ---------- Top bar ---------- */
+        .nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+            display: flex; align-items: center; gap: 24px;
+            padding: 14px 4%;
+            background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
+            transition: background 0.3s;
+        }
+        .nav.solid { background: var(--bg); box-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+        .logo {
+            font-weight: 900; font-size: 30px; letter-spacing: 3px; color: var(--red);
+            cursor: pointer; text-shadow: 0 2px 8px rgba(0,0,0,0.5); user-select: none;
+        }
+        .nav-links { display: flex; gap: 18px; font-size: 14px; }
+        .nav-links a { color: var(--text); text-decoration: none; cursor: pointer; opacity: 0.85; }
+        .nav-links a:hover { opacity: 1; color: #fff; }
+        .search-box {
+            margin-left: auto; display: flex; align-items: center;
+            border: 1px solid transparent; background: rgba(0,0,0,0.0);
+            padding: 4px 6px; border-radius: 4px; transition: all 0.25s;
+        }
+        .search-box:focus-within, .search-box.has-text { border-color: #fff; background: rgba(0,0,0,0.75); }
+        .search-box button { font-size: 18px; padding: 6px 8px; transition: none; }
+        .search-box button:disabled { opacity: 0.5; cursor: default; }
+
+        /* ---------- Nastavení ---------- */
+        .settings-wrap { position: relative; margin-left: 12px; }
+        .settings-btn { font-size: 20px; padding: 6px 8px; opacity: 0.85; }
+        .settings-btn:hover { opacity: 1; }
+        .settings-panel {
+            display: none; position: absolute; right: 0; top: calc(100% + 10px); width: 290px;
+            background: #1f1f1f; border: 1px solid #333; border-radius: 8px; padding: 14px 16px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.7); font-size: 14px;
+        }
+        .settings-panel.open { display: block; }
+        .settings-panel h4 { font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .set-hint { color: var(--muted); font-size: 12px; margin-top: 6px; line-height: 1.4; }
+        .set-select { background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; font: inherit; max-width: 150px; }
+        /* iTunes dává plakáty na výšku -> v 16:9 dlaždicích je celé zobrazit */
+        .src-itunes .poster .thumb { object-fit: contain; }
+        .src-itunes .hero-img { object-fit: contain; object-position: right center; }
+        .set-sub { display: none; align-items: center; justify-content: space-between; margin-top: 10px; }
+        .set-sub.show { display: flex; }
+        .set-sub input { width: 64px; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; font: inherit; }
+        .set-sub-url { display: none; margin-top: 10px; }
+        .set-sub-url.show { display: block; }
+        .proxy-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+        .proxy-row { display: flex; align-items: center; gap: 6px; }
+        .proxy-row input[type="text"] {
+            flex: 1; min-width: 0; background: #000; color: #fff; border: 1px solid #444;
+            border-radius: 4px; padding: 5px 7px; font: inherit; font-size: 12px;
+        }
+        .proxy-row input[type="checkbox"] { flex: none; width: 15px; height: 15px; accent-color: #e50914; }
+        .proxy-row button {
+            flex: none; background: transparent; border: none; color: var(--muted);
+            cursor: pointer; font-size: 15px; padding: 2px 5px; line-height: 1;
+        }
+        .proxy-row button:hover { color: #fff; }
+        .proxy-add {
+            display: block; width: 100%; background: transparent; border: 1px dashed #444; color: var(--muted);
+            border-radius: 4px; padding: 6px 8px; font-size: 12px; cursor: pointer;
+        }
+        .proxy-add:hover { color: #fff; border-color: #777; }
+        .switch { position: relative; width: 42px; height: 24px; flex: none; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch span { position: absolute; inset: 0; background: #555; border-radius: 24px; cursor: pointer; transition: background 0.2s; }
+        .switch span::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
+        .switch input:checked + span { background: var(--red); }
+        .switch input:checked + span::before { transform: translateX(18px); }
+        .search-box input {
+            width: 0; padding: 0; border: none; outline: none; background: transparent;
+            color: #fff; font-size: 14px; transition: width 0.3s, padding 0.3s;
+        }
+        .search-box:focus-within input, .search-box.has-text input { width: 260px; padding: 6px 8px; }
+        .search-box input::placeholder { color: #888; }
+
+        .container { max-width: none; }
+
+        /* ---------- Hero ---------- */
+        .hero {
+            position: relative; height: 78vh; min-height: 460px; max-height: 760px;
+            display: flex; align-items: flex-end; padding: 0 4% 9%;
+            background: var(--hero-bg); overflow: hidden;
+        }
+        .hero::after {
+            content: ''; position: absolute; inset: 0;
+            background:
+                linear-gradient(77deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 65%),
+                linear-gradient(0deg, var(--bg) 0%, rgba(20,20,20,0) 40%);
+        }
+        .hero-emoji {
+            position: absolute; right: 8%; top: 50%; transform: translateY(-50%);
+            font-size: min(32vw, 340px); opacity: 0.35; filter: blur(1px);
+        }
+        .hero-content { position: relative; z-index: 2; max-width: 560px; }
+        .hero-tag { font-size: 13px; letter-spacing: 3px; font-weight: 700; color: #ddd; margin-bottom: 8px; }
+        .hero-tag .w { color: var(--red); font-weight: 900; font-size: 18px; margin-right: 4px; }
+        .hero h2 { font-size: clamp(2rem, 6vw, 4.2rem); line-height: 1.05; font-weight: 800; text-shadow: 2px 4px 12px rgba(0,0,0,0.6); }
+        .hero .meta { margin: 14px 0 18px; font-size: 16px; color: #ddd; }
+        .hero .match { color: #46d369; font-weight: 700; margin-right: 8px; }
+        .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+        .btn-play, .btn-info {
+            padding: 10px 28px; border-radius: 4px; font-size: 18px; font-weight: 700;
+            transition: background 0.2s;
+        }
+        .btn-play { background: #fff; color: #000; }
+        .btn-play:hover { background: rgba(255,255,255,0.75); }
+        .btn-info { background: rgba(109,109,110,0.7); color: #fff; }
+        .btn-info:hover { background: rgba(109,109,110,0.45); }
+
+        /* ---------- Genre chips ---------- */
+        .chips {
+            display: flex; gap: 10px; overflow-x: auto; padding: 0 4%; margin-top: -4vh;
+            position: relative; z-index: 3; scrollbar-width: none;
+        }
+        .chips::-webkit-scrollbar { display: none; }
+        .chip {
+            flex: none; padding: 7px 18px; border-radius: 999px; font-size: 14px;
+            border: 1px solid rgba(255,255,255,0.35); background: rgba(20,20,20,0.7); color: #fff;
+            transition: background 0.2s;
+        }
+        .chip:hover { background: rgba(255,255,255,0.15); }
+        .chip.active { background: #fff; color: #000; border-color: #fff; font-weight: 700; }
+
+        /* ---------- Rows ---------- */
+        #catalogRows { margin-top: 24px; }
+        .cat-row { margin-bottom: 34px; }
+        .cat-row h3 { font-size: 20px; font-weight: 700; padding: 0 4%; margin-bottom: 10px; color: #e5e5e5; }
+        .row-wrap { position: relative; }
+        .row-scroll {
+            display: flex; gap: 8px; overflow-x: auto; padding: 14px 4% 30px; margin: -14px 0 -30px;
+            scroll-snap-type: x proximity; scrollbar-width: none;
+        }
+        .row-scroll::-webkit-scrollbar { display: none; }
+        .arrow {
+            position: absolute; top: 0; bottom: 30px; width: 4%; z-index: 5; font-size: 42px;
+            background: rgba(20,20,20,0.55); color: #fff; opacity: 0; transition: opacity 0.2s;
+        }
+        .arrow.left { left: 0; } .arrow.right { right: 0; }
+        .row-wrap:hover .arrow { opacity: 1; }
+        .arrow:hover { background: rgba(20,20,20,0.85); }
+        @media (hover: none) { .arrow { display: none; } }
+
+        .poster {
+            flex: none; position: relative; width: clamp(170px, 21vw, 300px); aspect-ratio: 16/9;
+            scroll-snap-align: start; border-radius: 4px; transition: transform 0.25s, z-index 0s 0.25s;
+            text-align: left; color: #fff; display: block;
+        }
+        .poster:hover { transform: scale(1.12); z-index: 10; transition: transform 0.25s; }
+        .poster .art {
+            position: absolute; inset: 0; border-radius: 4px; overflow: hidden;
+            display: flex; flex-direction: column; justify-content: flex-end; padding: 10px;
+        }
+        .poster:hover .art { box-shadow: 0 14px 34px rgba(0,0,0,0.8); }
+        .poster .emoji {
+            position: absolute; top: 14%; left: 0; right: 0; text-align: center;
+            font-size: clamp(40px, 5vw, 64px); filter: drop-shadow(0 6px 10px rgba(0,0,0,0.45));
+        }
+        .poster .shade { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.85) 100%); }
+        .poster .play {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0.7);
+            width: 46px; height: 46px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,0.55);
+            display: flex; align-items: center; justify-content: center; padding-left: 3px;
+            opacity: 0; transition: all 0.2s;
+        }
+        .poster:hover .play { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+        .poster .p-title { position: relative; font-weight: 700; font-size: 14px; line-height: 1.2; }
+        .poster .p-meta { position: relative; font-size: 11px; color: #ccc; margin-top: 3px; }
+        .poster .p-meta b { color: #46d369; }
+
+        /* Top 10 ranked */
+        .poster.ranked { width: clamp(250px, 27vw, 380px); aspect-ratio: 16/9; display: flex; align-items: stretch; }
+        .poster.ranked .rank {
+            flex: none; width: 38%; font-size: clamp(110px, 14vw, 190px); font-weight: 900; line-height: 0.85;
+            color: #141414; -webkit-text-stroke: 3px #595959; letter-spacing: -12px; text-align: right;
+            align-self: flex-end; padding-right: 6px;
+        }
+        .poster.ranked .art { position: relative; flex: none; width: 62%; inset: auto; height: 100%; }
+
+        /* Thumbnails */
+        .poster .thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s; }
+        .poster .art.has-img .thumb { opacity: 1; }
+        .poster .thumb.portrait { object-fit: contain; }   /* plakáty z iTunes jsou na výšku */
+        .poster .art.has-img .emoji { display: none; }
+        .hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.8s; }
+        .hero-img.portrait { object-fit: contain; object-position: right center; }
+        .hero-img.on { opacity: 1; }
+        .hero.has-img .hero-emoji { display: none; }
+
+        /* ---------- Search results ---------- */
+        .results-section, .player-section { display: none; }
+        .results-section { padding: 100px 4% 0; }
+        .results-info { color: var(--muted); font-size: 16px; margin-bottom: 18px; }
+        .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 40px 8px; }
+        .movie-card {
+            display: block; text-decoration: none; color: inherit; border-radius: 4px; cursor: pointer;
+            background: #181818; overflow: hidden; transition: transform 0.25s, box-shadow 0.25s;
+        }
+        .movie-card:hover { transform: scale(1.08); z-index: 5; position: relative; box-shadow: 0 14px 34px rgba(0,0,0,0.8); }
+        .movie-card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #2a2a2a; display: block; }
+        .movie-card .info { padding: 10px 12px 14px; }
+        .movie-card .title { font-weight: 600; font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .movie-card .year { color: #46d369; font-size: 12px; margin-top: 5px; font-weight: 600; }
+
+        /* ---------- Player ---------- */
+        .player-section { padding: 80px 4% 0; max-width: 1400px; margin: 0 auto; }
+        .back-btn {
+            display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px;
+            padding: 8px 18px; border-radius: 4px; background: rgba(109,109,110,0.5); font-size: 15px;
+        }
+        .back-btn:hover { background: rgba(109,109,110,0.8); }
+        .video-container {
+            background: #000; border-radius: 6px; overflow: hidden; aspect-ratio: 16/9;
+            display: flex; align-items: center; justify-content: center; box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+        }
+        video { width: 100%; height: 100%; }
+        .now-playing { margin-top: 18px; font-size: 24px; font-weight: 700; }
+        .dl-btn {
+            display: inline-flex; align-items: center; gap: 8px; margin-top: 14px;
+            padding: 8px 18px; border-radius: 4px; background: rgba(109,109,110,0.5); font-size: 15px;
+        }
+        .dl-btn:hover { background: rgba(109,109,110,0.8); }
+
+        /* ---------- Status ---------- */
+        .status { margin: 90px 4% 0; padding: 14px 18px; border-radius: 4px; display: none; }
+        .status.error { display: block; background: rgba(229,9,20,0.15); border-left: 4px solid var(--red); }
+        .status.success { display: block; background: rgba(70,211,105,0.12); border-left: 4px solid #46d369; }
+        .status.loading { display: block; background: rgba(255,255,255,0.08); border-left: 4px solid #fff; }
+
+        /* ---------- Footer ---------- */
+
+        @media (max-width: 700px) {
+            .nav { gap: 12px; padding: 10px 4%; }
+            .nav-links { display: none; }
+            .logo { font-size: 24px; }
+            .search-box:focus-within input, .search-box.has-text input { width: 150px; }
+            .hero { height: 62vh; min-height: 380px; padding-bottom: 12%; }
+            .btn-play, .btn-info { font-size: 15px; padding: 8px 18px; }
+            .results-grid { grid-template-columns: repeat(2, 1fr); gap: 20px 8px; }
+            .movie-card:hover { transform: none; }
+            .poster:hover { transform: none; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Top bar -->
+    <header class="nav" id="nav">
+        <div class="logo" onclick="goHome()" title="Domů">WTZI</div>
+        <nav class="nav-links">
+            <a onclick="goHome()">Domů</a>
+            <a onclick="goHome(); setChip('České')">České filmy</a>
+            <a onclick="goHome(); setChip('Rodinné')">Rodinné</a>
+            <a onclick="goHome(); setChip('Sci-fi')">Sci-fi</a>
+        </nav>
+        <div class="search-box" id="searchBox">
+            <button id="searchBtn" onclick="searchMovies()" aria-label="Hledat">🔍</button>
+            <input type="text" id="searchInput" placeholder="Filmy, seriály, názvy…" autocomplete="off">
+        </div>
+        <div class="settings-wrap" id="settingsWrap">
+            <button class="settings-btn" id="settingsBtn" aria-label="Nastavení" title="Nastavení">⚙️</button>
+            <div class="settings-panel" id="settingsPanel">
+                <h4>Nastavení</h4>
+                <div class="set-row">
+                    <label for="thumbsOffToggle">Vypnout načítání náhledů</label>
+                    <label class="switch"><input type="checkbox" id="thumbsOffToggle"><span></span></label>
+                </div>
+                <div class="set-hint" style="margin-bottom:14px">Vypnuto (výchozí): náhledy na úvodní stránce se načítají. Zapnuto: žádné dotazy ani obrázky, jen barevné placeholdery.</div>
+                <div class="set-row">
+                    <label for="srcSelect">Zdroj náhledů</label>
+                    <select class="set-select" id="srcSelect">
+                        <option value="prehraj">Prehraj.to</option>
+                        <option value="itunes">iTunes (bez klíče)</option>
+                    </select>
+                </div>
+                <div class="set-hint" style="margin-bottom:14px">iTunes Search API: oficiální plakáty filmů, bez API klíče; když film nenajde, použije se prehraj.to.</div>
+                <div class="set-row">
+                    <label for="catLangSelect">Katalog úvodní stránky</label>
+                    <select class="set-select" id="catLangSelect">
+                        <option value="cz">iTunes CZ (výchozí)</option>
+                        <option value="en">iTunes EN</option>
+                    </select>
+                </div>
+                <div class="set-hint" style="margin-bottom:14px">Odkud se na úvodní stránce berou filmy: výchozí žebříček iTunes CZ, nebo anglický iTunes US. Seznam včetně plakátů stáhne server a cacheuje na 1 den - bez klíče a bez účtu.</div>
+                <div class="set-row">
+                    <label for="limitToggle">Omezit souběžné dotazy na náhledy</label>
+                    <label class="switch"><input type="checkbox" id="limitToggle"><span></span></label>
+                </div>
+                <div class="set-sub" id="limitSub">
+                    <label for="limitValue">Max. najednou</label>
+                    <input type="number" id="limitValue" min="1" max="20" step="1">
+                </div>
+                <div class="set-hint" style="margin-bottom:14px">Vypnuto (výchozí): náhledy se načítají všechny naráz. Zapni, pokud prehraj.to vrací chybu 429.</div>
+                <div class="set-row">
+                    <label for="proxyToggle">Použít PHP proxy (CZ hosting)</label>
+                    <label class="switch"><input type="checkbox" id="proxyToggle"><span></span></label>
+                </div>
+                <div class="set-sub-url" id="proxySub">
+                    <div class="proxy-list" id="proxyList"></div>
+                    <button type="button" class="proxy-add" id="proxyAddBtn">+ přidat server</button>
+                </div>
+                <div class="set-hint">Zapnuto (výchozí): dotaz jde souběžně na všechny zaškrtnuté servery níže, použije se první úspěšná odpověď (chyba/výpadek jednoho serveru appku nezastaví). Vypni úplně, aby appka volala prehraj.to přímo z Azure.</div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div id="status" class="status"></div>
+
+        <!-- Results -->
+        <div id="resultsSection" class="results-section">
+            <div id="resultsInfo" class="results-info"></div>
+            <div id="resultsGrid" class="results-grid"></div>
+        </div>
+
+        <!-- Player -->
+        <div id="playerSection" class="player-section">
+            <button class="back-btn" onclick="goBack()">← Zpět</button>
+            <div class="video-container">
+                <video id="videoPlayer" controls></video>
+            </div>
+            <div id="nowPlaying" class="now-playing"></div>
+            <a id="dlBtn" class="dl-btn" href="#" download>⬇ Stáhnout video</a>
+        </div>
+
+        <!-- Homepage catalog -->
+        <div id="placeholder" class="catalog">
+            <div id="hero"></div>
+            <div id="chips" class="chips"></div>
+            <div id="catalogRows"></div>
+        </div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const status = document.getElementById('status');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsGrid = document.getElementById('resultsGrid');
+        const resultsInfo = document.getElementById('resultsInfo');
+        const playerSection = document.getElementById('playerSection');
+        const videoPlayer = document.getElementById('videoPlayer');
+        const nowPlaying = document.getElementById('nowPlaying');
+        const dlBtn = document.getElementById('dlBtn');
+        const placeholder = document.getElementById('placeholder');
+        
+        let currentResults = [];
+
+        // Záložní katalog - použije se jen když se nepovede stáhnout /api/catalog (iTunes).
+        // Filmy pro homepage jinak chodí ze serveru (iTunes RSS, cache na 1 den) včetně plakátů.
+        let CATALOG = [
+            // q = hledaný výraz, t = zobrazený název
+            { t: 'Matrix', q: 'Matrix', y: 1999, g: ['Sci-fi','Akční'], e: '🕶️' },
+            { t: 'Interstellar', q: 'Interstellar', y: 2014, g: ['Sci-fi','Drama'], e: '🚀' },
+            { t: 'Počátek', q: 'Počátek Inception', y: 2010, g: ['Sci-fi','Thriller'], e: '🌀' },
+            { t: 'Duna', q: 'Duna 2021', y: 2021, g: ['Sci-fi'], e: '🏜️' },
+            { t: 'Blade Runner 2049', q: 'Blade Runner 2049', y: 2017, g: ['Sci-fi'], e: '🌆' },
+            { t: 'Temný rytíř', q: 'Temný rytíř', y: 2008, g: ['Akční','Thriller'], e: '🦇' },
+            { t: 'Gladiátor', q: 'Gladiátor', y: 2000, g: ['Akční','Drama'], e: '⚔️' },
+            { t: 'Top Gun: Maverick', q: 'Top Gun Maverick', y: 2022, g: ['Akční'], e: '✈️' },
+            { t: 'John Wick', q: 'John Wick', y: 2014, g: ['Akční','Thriller'], e: '🔫' },
+            { t: 'Mad Max: Fury Road', q: 'Mad Max Fury Road', y: 2015, g: ['Akční','Sci-fi'], e: '🔥' },
+            { t: 'Vykoupení z věznice Shawshank', q: 'Vykoupení z věznice Shawshank', y: 1994, g: ['Drama'], e: '⛓️' },
+            { t: 'Forrest Gump', q: 'Forrest Gump', y: 1994, g: ['Drama'], e: '🍫' },
+            { t: 'Pulp Fiction', q: 'Pulp Fiction', y: 1994, g: ['Thriller','Drama'], e: '💼' },
+            { t: 'Klub rváčů', q: 'Klub rváčů', y: 1999, g: ['Drama','Thriller'], e: '🧼' },
+            { t: 'Mlčení jehňátek', q: 'Mlčení jehňátek', y: 1991, g: ['Thriller'], e: '🦋' },
+            { t: 'Šestý smysl', q: 'Šestý smysl', y: 1999, g: ['Thriller','Drama'], e: '👻' },
+            { t: 'Parazit', q: 'Parazit', y: 2019, g: ['Thriller','Drama'], e: '🏠' },
+            { t: 'Oppenheimer', q: 'Oppenheimer', y: 2023, g: ['Drama'], e: '💥' },
+            { t: 'Pán prstenů: Společenstvo Prstenu', q: 'Pán prstenů Společenstvo Prstenu', y: 2001, g: ['Fantasy','Akční'], e: '💍' },
+            { t: 'Harry Potter a Kámen mudrců', q: 'Harry Potter a Kámen mudrců', y: 2001, g: ['Fantasy','Rodinné'], e: '⚡' },
+            { t: 'Piráti z Karibiku: Prokletí Černé perly', q: 'Piráti z Karibiku Prokletí Černé perly', y: 2003, g: ['Fantasy','Akční'], e: '🏴‍☠️' },
+            { t: 'Shrek', q: 'Shrek', y: 2001, g: ['Rodinné','Animované'], e: '👹' },
+            { t: 'Toy Story', q: 'Toy Story', y: 1995, g: ['Rodinné','Animované'], e: '🤠' },
+            { t: 'Lví král', q: 'Lví král', y: 1994, g: ['Rodinné','Animované'], e: '🦁' },
+            { t: 'Hledá se Nemo', q: 'Hledá se Nemo', y: 2003, g: ['Rodinné','Animované'], e: '🐠' },
+            { t: 'Ledové království', q: 'Ledové království', y: 2013, g: ['Rodinné','Animované'], e: '❄️' },
+            { t: 'Coco', q: 'Coco', y: 2017, g: ['Rodinné','Animované'], e: '💀' },
+            { t: 'Pelíšky', q: 'Pelíšky', y: 1999, g: ['České','Komedie'], e: '🏡' },
+            { t: 'Kolja', q: 'Kolja', y: 1996, g: ['České','Drama'], e: '🎻' },
+            { t: 'Samotáři', q: 'Samotáři', y: 2000, g: ['České','Komedie'], e: '💑' },
+            { t: 'Vesničko má středisková', q: 'Vesničko má středisková', y: 1985, g: ['České','Komedie'], e: '🌾' },
+            { t: 'Tmavomodrý svět', q: 'Tmavomodrý svět', y: 2001, g: ['České','Drama'], e: '🛩️' },
+            { t: 'Anděl Páně', q: 'Anděl Páně', y: 2005, g: ['České','Komedie'], e: '😇' },
+            { t: 'Prci, prci, prcičky', q: 'American Pie', y: 1999, g: ['Komedie'], e: '🥧' },
+            { t: 'Pařba ve Vegas', q: 'Hangover Pařba ve Vegas', y: 2009, g: ['Komedie'], e: '🎰' },
+        ];
+        const BUILTIN_CATALOG = CATALOG;   // pořád tenhle seznam - a zdroj českých klasik
+
+
+        const ROWS = [
+            { name: 'Sci-fi a akce', genres: ['Sci-fi','Akční'] },
+            { name: 'Drama a thrillery', genres: ['Drama','Thriller'] },
+            { name: 'Horror', genres: ['Horror'] },
+            { name: 'Fantasy', genres: ['Fantasy'] },
+            { name: 'Pro celou rodinu', genres: ['Rodinné','Animované'] },
+            { name: 'České klasiky', genres: ['České'] },
+            { name: 'Komedie', genres: ['Komedie'] },
+        ];
+        const CHIPS = ['Vše','Sci-fi','Akční','Drama','Thriller','Horror','Fantasy','Rodinné','České','Komedie'];
+        let activeChip = 'Vše';
+        let heroOffset = 0;
+
+
+        // ===== Thumbnails: server je hledá přes /api/thumb (regex "q*", cache na serveru) a zapamatujeme =====
+        const THUMB_KEY = 'wtzi-thumbs-v3';
+        // Volitelný limit souběžných dotazů na náhledy (Nastavení ⚙️, výchozí: vypnuto)
+        // Seznam PHP proxy serverů (⚙️ Nastavení). Nemazat/needitovat ručně mezi markery -
+        // udržuje to scripts/change-proxy-servers.sh (spusť ho, ať to nerozjede ve 3 souborech zvlášť).
+        const DEFAULT_PROXY_SERVERS = [
+            // PROXY-SERVERS:BEGIN
+            'http://wtzi.borec.cz/index.php',
+            'http://wtzi.euweb.cz/index.php',
+            'http://wtzi.chytrak.cz/index.php',
+            // PROXY-SERVERS:END
+        ];
+        const SETTINGS_KEY = 'wtzi-settings';
+        let settings = {
+            thumbsOff: false, thumbSrc: 'prehraj', catLang: 'cz', limitOn: false, limit: 3,
+            proxyOn: true, proxyServers: DEFAULT_PROXY_SERVERS.map(url => ({ url, on: true })),
+        };
+        try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) {}
+        // Migrace ze starší verze nastavení (jedna proxyUrl místo seznamu).
+        if (!Array.isArray(settings.proxyServers) || settings.proxyServers.length === 0) {
+            settings.proxyServers = (settings.proxyUrl ? [settings.proxyUrl] : DEFAULT_PROXY_SERVERS)
+                .map(url => ({ url, on: true }));
+        }
+        delete settings.proxyUrl;
+        const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} };
+        const thumbLimit = () => settings.limitOn ? Math.max(1, settings.limit | 0) : Infinity;
+        // Připojí ?proxy=url1&proxy=url2... k dotazu na backend za každý zapnutý server v Nastavení.
+        // Backend je pak hitne souběžně a vezme první, který odpoví bez chyby.
+        const proxyQS = () => {
+            if (!settings.proxyOn) return '';
+            return settings.proxyServers
+                .filter(s => s.on && s.url.trim())
+                .map(s => '&proxy=' + encodeURIComponent(s.url.trim()))
+                .join('');
+        };
+        let thumbCache = {};
+        try { thumbCache = JSON.parse(localStorage.getItem(THUMB_KEY) || '{}'); } catch (e) {}
+        const thumbQueue = [];
+        const thumbPending = new Map();
+        let thumbActive = 0;
+
+        const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+        function fixThumbUrl(u) {
+            if (!u) return '';
+            if (u.startsWith('//')) return 'https:' + u;
+            if (u.startsWith('/')) return 'https://prehraj.to' + u;
+            return u;
+        }
+
+        // ----- párování názvů: všechna významná slova z názvu musí být ve výsledku -----
+        const STOP = new Set(['a','i','z','ze','o','u','v','ve','na','do','se','si','k','s','the','of','and','to','in']);
+        const BAD = new Set(['trailer','teaser','ukazka','upoutavka','recenze','review','soundtrack','ost','making',
+                             'gameplay','hra','parodie','reaction','reakce','rozbor','sestrih','clip']);
+
+        function tokens(str) {
+            return norm(str).replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+        }
+
+        // >= 1 = všechna slova sedí; < 0.6 = nepoužít jako obrázek
+        function matchScore(item, title, url) {
+            const titleTokens = tokens(title);
+            const slug = (url || '').replace(/^https?:\/\/prehraj\.to\//, '');
+            const have = new Set([...titleTokens, ...tokens(slug)]);
+
+            let best = 0, bestLen = 1;
+            for (const alias of [item.t, item.q]) {
+                let a = tokens(alias).filter(t => !STOP.has(t));
+                if (!a.length) a = tokens(alias);
+                if (!a.length) continue;
+                const cov = a.filter(t => have.has(t)).length / a.length;
+                if (cov > best) { best = cov; bestLen = a.length; }
+            }
+            if (best < 1) return best * 0.5;
+
+            let score = 1;
+            if (item.y && have.has(String(item.y))) score += 0.5;
+            if (titleTokens.some(t => BAD.has(t))) score -= 0.7;
+            score -= Math.min(0.3, Math.max(0, titleTokens.length - bestLen) * 0.02);
+            return score;
+        }
+
+        // seřadí výsledky podle shody s názvem filmu (stabilně)
+        function rankMovies(item, movies) {
+            return movies.map((m, i) => ({ m, i, sc: matchScore(item, m.title, m.url) }))
+                         .sort((x, y) => (y.sc - x.sc) || (x.i - y.i))
+                         .map(x => x.m);
+        }
+
+        function saveThumbs() {
+            try { localStorage.setItem(THUMB_KEY, JSON.stringify(thumbCache)); } catch (e) {}
+        }
+
+        function getThumb(q, cb) {
+            if (settings.thumbsOff) { cb(''); return; } // náhledy vypnuté v Nastavení
+            // Plakát z iTunes katalogu: rovnou z obrázku, žádný dotaz na server ani na prehraj.to
+            const fromCatalog = CATALOG.find(m => m.q === q);
+            if (fromCatalog && fromCatalog.img) { cb(fromCatalog.img); return; }
+            const c = thumbCache[q];
+            // nalezené držíme napořád, nenalezené zkusíme znovu po 24 h
+            if (c && (c.u || Date.now() - c.t < 86400000)) { cb(c.u); return; }
+            if (thumbPending.has(q)) { thumbPending.get(q).push(cb); return; }
+            thumbPending.set(q, [cb]);
+            thumbQueue.push(q);
+            pumpThumbs();
+        }
+
+        function pumpThumbs() {
+            while (thumbActive < thumbLimit() && thumbQueue.length) {
+                const q = thumbQueue.shift();
+                thumbActive++;
+                (async () => {
+                    let u = '';
+                    try {
+                        const item = CATALOG.find(m => m.q === q) || { t: q, q };
+                        const p = new URLSearchParams({ q: item.q, t: item.t });
+                        if (item.y) p.set('y', item.y);
+                        if (settings.thumbSrc === 'itunes') p.set('src', 'itunes');
+                        const r = await fetch('/api/thumb?' + p + proxyQS());
+                        const d = await r.json();
+                        if (d.success) {
+                            u = d.thumbnail || '';
+                            thumbCache[q] = { u, t: Date.now() };
+                            saveThumbs();
+                        }
+                    } catch (e) { /* zkusí se příště */ }
+                    (thumbPending.get(q) || []).forEach(cb => cb(u));
+                    thumbPending.delete(q);
+                    thumbActive--;
+                    pumpThumbs();
+                })();
+            }
+        }
+
+        const thumbObserver = new IntersectionObserver(entries => {
+            entries.forEach(en => {
+                if (!en.isIntersecting) return;
+                thumbObserver.unobserve(en.target);
+                const el = en.target;
+                const art = el.querySelector('.art');
+                const img = el.querySelector('.thumb');
+                getThumb(el.dataset.q, u => {
+                    if (!u || !img || !img.isConnected) return;
+                    img.onload = () => art.classList.add('has-img');
+                    img.onerror = () => img.remove();
+                    img.src = u;
+                });
+            });
+        }, { rootMargin: '200px' });
+
+        function observeThumbs() {
+            document.querySelectorAll('#catalogRows .poster').forEach(el => thumbObserver.observe(el));
+        }
+
+        function posterGradient(title) {
+            let h = 0;
+            for (const c of title) h = (h * 31 + c.charCodeAt(0)) % 360;
+            return `linear-gradient(150deg, hsl(${h},60%,38%), hsl(${(h + 45) % 360},65%,16%))`;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function openFromCatalog(q) {
+            searchInput.value = q;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            searchMovies();
+        }
+
+        function posterHtml(m, rank) {
+            return `<button class="poster ${rank ? 'ranked' : ''}" data-q="${escapeHtml(m.q)}" aria-label="${escapeHtml(m.t)}">
+                ${rank ? `<span class="rank">${rank}</span>` : ''}
+                <span class="art" style="background:${posterGradient(m.t)}">
+                    <img class="thumb${m.img ? ' portrait' : ''}" alt="" loading="lazy" referrerpolicy="no-referrer">
+                    <span class="emoji">${m.e || '🎬'}</span>
+                    <span class="shade"></span>
+                    <span class="play">▶</span>
+                    <span class="p-title">${escapeHtml(m.t)}</span>
+                    <span class="p-meta"><b>${m.y}</b> · ${m.g.join(' · ')}</span>
+                </span>
+            </button>`;
+        }
+
+        function rowHtml(title, items, ranked) {
+            return `<section class="cat-row">
+                <h3>${title}</h3>
+                <div class="row-wrap">
+                    <button class="arrow left" data-scroll="-1" aria-label="Doleva">‹</button>
+                    <div class="row-scroll">${items.map((m, i) => posterHtml(m, ranked ? i + 1 : 0)).join('')}</div>
+                    <button class="arrow right" data-scroll="1" aria-label="Doprava">›</button>
+                </div>
+            </section>`;
+        }
+
+        function renderHero() {
+            const day = Math.floor(Date.now() / 86400000);
+            const m = CATALOG[(day + heroOffset) % CATALOG.length];
+            document.getElementById('hero').innerHTML = `
+                <div class="hero" style="--hero-bg:${posterGradient(m.t)}">
+                    <div class="hero-emoji">${m.e || '🎬'}</div>
+                    <div class="hero-content">
+                        <div class="hero-tag"><span class="w">W</span> TIP DNE</div>
+                        <h2>${escapeHtml(m.t)}</h2>
+                        <div class="meta"><span class="match">Doporučeno</span> ${m.y} · ${m.g.join(' · ')}</div>
+                        <div class="hero-actions">
+                            <button class="btn-play" data-q="${escapeHtml(m.q)}">▶ Přehrát</button>
+                            <button class="btn-info" data-next="1">↻ Jiný tip</button>
+                        </div>
+                    </div>
+                </div>`;
+            const heroEl = document.querySelector('#hero .hero');
+            getThumb(m.q, u => {
+                if (!u || !heroEl.isConnected) return;
+                const im = new Image();
+                im.className = 'hero-img' + (m.img ? ' portrait' : '');
+                im.referrerPolicy = 'no-referrer';
+                im.onload = () => {
+                    if (!heroEl.isConnected) return;
+                    heroEl.prepend(im);
+                    heroEl.classList.add('has-img');
+                    requestAnimationFrame(() => im.classList.add('on'));
+                };
+                im.src = u;
+            });
+        }
+
+        function renderCatalog() {
+            document.getElementById('chips').innerHTML = CHIPS.map(c =>
+                `<button class="chip ${c === activeChip ? 'active' : ''}" data-chip="${c}">${c}</button>`).join('');
+
+            let html = '';
+            if (activeChip === 'Vše') {
+                const day = Math.floor(Date.now() / 86400000);
+                const top = Array.from({ length: 10 }, (_, i) => CATALOG[(day * 7 + i * 3) % CATALOG.length]);
+                const uniq = [...new Map(top.map(m => [m.t, m])).values()];
+                html += rowHtml('Top 10 dnes', uniq, true);
+            }
+            html += ROWS.map(r => {
+                const items = CATALOG.filter(m => m.g.some(g => r.genres.includes(g)))
+                                     .filter(m => activeChip === 'Vše' || m.g.includes(activeChip));
+                return items.length ? rowHtml(r.name, items, false) : '';
+            }).join('');
+            document.getElementById('catalogRows').innerHTML = html;
+            observeThumbs();
+        }
+
+        document.getElementById('placeholder').addEventListener('click', (e) => {
+            const arrow = e.target.closest('[data-scroll]');
+            if (arrow) {
+                const sc = arrow.parentElement.querySelector('.row-scroll');
+                sc.scrollBy({ left: Number(arrow.dataset.scroll) * sc.clientWidth * 0.85, behavior: 'smooth' });
+                return;
+            }
+            if (e.target.closest('[data-next]')) { heroOffset++; renderHero(); return; }
+            const chip = e.target.closest('[data-chip]');
+            if (chip) { activeChip = chip.dataset.chip; renderCatalog(); return; }
+            const item = e.target.closest('[data-q]');
+            if (item) openFromCatalog(item.dataset.q);
+        });
+
+        function goHome() {
+            stopVideo();
+            hideStatus();
+            currentResults = [];
+            searchInput.value = '';
+            window.history.pushState({}, '', window.location.pathname);
+            showSection('placeholder');
+        }
+
+        renderHero();
+        renderCatalog();
+        
+        // ===== Katalog z iTunes: stáhne ho server (/api/catalog, cache na 1 den) a překreslí stránku.
+        // Když se ho nepodaří stáhnout, zůstane záložní CATALOG výše (české klasiky se přidávají vždy).
+        async function loadCatalog() {
+            try {
+                const r = await fetch('/api/catalog?lang=' + (settings.catLang === 'en' ? 'en' : 'cz'));
+                const d = await r.json();
+                if (!d.success || !Array.isArray(d.items) || d.items.length === 0) return;
+                CATALOG = d.items.concat(BUILTIN_CATALOG.filter(m => (m.g || []).includes('České')));
+                heroOffset = 0;
+                renderHero();
+                renderCatalog();
+            } catch (e) { /* zůstane záložní katalog */ }
+        }
+        loadCatalog();
+
+        // Check URL params on load - for direct video links
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const videoUrl = params.get('watch');
+            const title = params.get('title') || 'Video';
+            const searchQuery = params.get('q');
+            
+            if (videoUrl) {
+                // Direct video link - load and play
+                playVideoDirectly(videoUrl, title);
+            } else if (searchQuery) {
+                // Search query in URL
+                searchInput.value = searchQuery;
+                searchMovies();
+            }
+        });
+        
+        // Enter key to search
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchMovies();
+        });
+        
+        function showStatus(message, type) {
+            status.className = 'status ' + type;
+            status.textContent = message;
+        }
+        
+        function hideStatus() {
+            status.className = 'status';
+            status.textContent = '';
+        }
+        
+        function showSection(section) {
+            placeholder.style.display = 'none';
+            resultsSection.style.display = 'none';
+            playerSection.style.display = 'none';
+            
+            if (section === 'results') {
+                resultsSection.style.display = 'block';
+            } else if (section === 'player') {
+                playerSection.style.display = 'block';
+            } else {
+                placeholder.style.display = 'block';
+            }
+        }
+        
+        async function searchMovies() {
+            const query = searchInput.value.trim();
+            searchBox.classList.toggle('has-text', query.length > 0);
+            
+            if (!query) {
+                showStatus('❌ Zadej název filmu nebo seriálu', 'error');
+                return;
+            }
+            
+            // Stop any playing video before searching
+            stopVideo();
+            
+            // Update URL with search query
+            const newUrl = `${window.location.pathname}?q=${encodeURIComponent(query)}`;
+            window.history.pushState({}, '', newUrl);
+            
+            searchBtn.disabled = true;
+            searchBtn.textContent = '⏳';
+            showStatus('🔄 Vyhledávám na prehraj.to...', 'loading');
+            
+            try {
+                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}${proxyQS()}`);
+                const data = await response.json();
+                
+                if (data.success && data.movies && data.movies.length > 0) {
+                    const catItem = CATALOG.find(m => m.q === query);
+                    if (catItem) data.movies = rankMovies(catItem, data.movies);
+                    currentResults = data.movies;
+                    hideStatus();
+                    displayResults(data.movies, query);
+                } else if (data.success && (!data.movies || data.movies.length === 0)) {
+                    showStatus(`❌ Nic nenalezeno pro "${query}"`, 'error');
+                    showSection('placeholder');
+                } else {
+                    showStatus(`❌ ${data.error || 'Chyba při vyhledávání'}`, 'error');
+                    showSection('placeholder');
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                showStatus(`❌ Chyba připojení: ${error.message}`, 'error');
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.textContent = '🔍';
+            }
+        }
+        
+        function displayResults(movies, query) {
+            resultsInfo.textContent = `Nalezeno ${movies.length} výsledků pro "${query}" (ověřuji dostupnost...)`;
+            resultsGrid.innerHTML = '';
+            
+            // Store card elements by index for later removal
+            const cardElements = [];
+            
+            movies.forEach((movie, index) => {
+                const card = document.createElement('a');
+                card.className = 'movie-card';
+                card.dataset.url = movie.url;
+                card.href = `?watch=${encodeURIComponent(movie.url)}&title=${encodeURIComponent(movie.title)}`;
+                // Allow middle-click / ctrl+click to open in new tab
+                card.onclick = (e) => {
+                    if (!e.ctrlKey && !e.metaKey && e.button === 0) {
+                        e.preventDefault();
+                        playMovieByUrl(movie.url);
+                    }
+                };
+                
+                card.innerHTML = `
+                    <img src="${movie.thumbnail || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 9%22><rect fill=%22%23333%22 width=%2216%22 height=%229%22/><text x=%228%22 y=%225%22 fill=%22%23666%22 text-anchor=%22middle%22 font-size=%222%22>🎬</text></svg>'}" 
+                         alt="${movie.title}"
+                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 9%22><rect fill=%22%23333%22 width=%2216%22 height=%229%22/><text x=%228%22 y=%225%22 fill=%22%23666%22 text-anchor=%22middle%22 font-size=%222%22>🎬</text></svg>'">
+                    <div class="info">
+                        <div class="title">${movie.title}</div>
+                        ${movie.year ? `<div class="year">${movie.year}</div>` : ''}
+                    </div>
+                `;
+                
+                resultsGrid.appendChild(card);
+                cardElements[index] = card;
+            });
+            
+            showSection('results');
+            
+            // Validate videos in background and remove invalid ones
+            validateMoviesInBackground(movies, query, cardElements);
+        }
+        
+        async function validateMoviesInBackground(movies, query, cardElements) {
+            let validCount = movies.length;
+            let checkedCount = 0;
+            
+            // Validate in parallel, but limit concurrency
+            const concurrency = 5;
+            const chunks = [];
+            for (let i = 0; i < movies.length; i += concurrency) {
+                chunks.push(movies.slice(i, i + concurrency).map((m, idx) => ({ movie: m, index: i + idx })));
+            }
+            
+            for (const chunk of chunks) {
+                await Promise.all(chunk.map(async ({ movie, index }) => {
+                    try {
+                        const response = await fetch(`/api/validate?url=${encodeURIComponent(movie.url)}${proxyQS()}`);
+                        const data = await response.json();
+                        
+                        checkedCount++;
+                        
+                        if (!data.valid) {
+                            // Remove invalid video from display
+                            const card = cardElements[index];
+                            if (card && card.parentNode) {
+                                card.remove();
+                                validCount--;
+                                
+                                // Also remove from currentResults
+                                const resultIndex = currentResults.findIndex(m => m.url === movie.url);
+                                if (resultIndex > -1) {
+                                    currentResults.splice(resultIndex, 1);
+                                }
+                            }
+                        }
+                        
+                        // Update info text
+                        resultsInfo.textContent = `Nalezeno ${validCount} funkčních výsledků pro "${query}" (ověřeno ${checkedCount}/${movies.length})`;
+                        
+                    } catch (err) {
+                        console.error('Validation error:', err);
+                        checkedCount++;
+                    }
+                }));
+            }
+            
+            // Final update
+            resultsInfo.textContent = `Nalezeno ${validCount} funkčních výsledků pro "${query}"`;
+            
+            if (validCount === 0) {
+                showStatus(`❌ Žádné funkční video nenalezeno pro "${query}"`, 'error');
+            }
+        }
+        
+        // ===== Přehrávání =====
+        // Odkaz na video z CDN je podepsaný a po pár minutách přestane fungovat - prohlížeč pak při
+        // dalším dotahování (buffer dojde za ~3-5 min) dostane chybu a video se zasekne. Proto:
+        //  1) při chybě/zaseknutí si vezmeme čerstvý odkaz a navážeme od místa, kde video skončilo,
+        //  2) když ani to nepomůže, přepneme na /api/stream (server video přeposílá a odkaz si
+        //     sám obnovuje),
+        //  3) tlačítko Stáhnout jde vždy přes /api/stream (CDN odkaz napřímo se stáhnout nedá).
+        const player = { page: '', cdn: '', title: '', mode: 'direct', lastTime: 0, resumeAt: 0, fixes: 0, busy: false, stallTimer: null };
+
+        // v = přesný CDN odkaz, který právě hraje: server stáhne/přepošle ten samý soubor
+        // (a při vypršení ho najde na stránce podle cesty), takže se nemůže splést s jiným videem.
+        function streamUrl(page, download, cdn) {
+            return `/api/stream?url=${encodeURIComponent(page)}`
+                + (cdn ? `&v=${encodeURIComponent(cdn)}` : '')
+                + (download ? `&download=1&name=${encodeURIComponent(player.title || 'video')}` : '');
+        }
+
+        // Odkaz tlačítka Stáhnout se skládá z aktuálního stavu přehrávače, ne z toho, co bylo dřív.
+        function refreshDl() {
+            dlBtn.href = player.page ? streamUrl(player.page, true, player.cdn) : '#';
+        }
+        dlBtn.addEventListener('click', (e) => {
+            if (!player.page) { e.preventDefault(); return; }
+            refreshDl();
+        });
+
+        async function fetchVideoUrl(page) {
+            const r = await fetch(`/api/proxy?url=${encodeURIComponent(page)}${proxyQS()}&_=${Date.now()}`);
+            const d = await r.json();
+            if (!d.success || !d.videoUrl) throw new Error(d.error || 'Video se nepodařilo načíst');
+            return d.videoUrl;
+        }
+
+        // Načte čerstvý odkaz a spustí video. beforePlay se zavolá, jakmile je odkaz k dispozici.
+        async function loadAndPlay(page, title, beforePlay) {
+            player.page = page; player.cdn = ''; player.title = title || 'video'; player.mode = 'direct';
+            player.lastTime = 0; player.resumeAt = 0; player.fixes = 0; player.busy = false;
+            clearTimeout(player.stallTimer);
+            refreshDl();
+
+            const url = await fetchVideoUrl(page);
+            if (player.page !== page) return; // mezitím se přepnulo na jiné video
+            player.cdn = url;
+            refreshDl();
+            if (beforePlay) beforePlay();
+            videoPlayer.src = url;
+            try {
+                await videoPlayer.play();
+            } catch (playError) {
+                showStatus('✅ Video připraveno. Klikni na přehrávač pro spuštění.', 'success');
+            }
+        }
+
+        async function recoverPlayback(reason) {
+            if (!player.page || player.busy) return;
+            if (player.fixes >= 6) {
+                showStatus('❌ Video se nepodařilo obnovit. Zkus stránku načíst znovu nebo použij Stáhnout.', 'error');
+                return;
+            }
+            player.busy = true;
+            player.fixes++;
+            const page = player.page;
+            const resumeAt = player.lastTime;
+            player.resumeAt = resumeAt;
+            // po dvou neúspěšných pokusech s čerstvým CDN odkazem jdeme přes server
+            if (player.mode === 'direct' && player.fixes > 2) player.mode = 'relay';
+            console.warn('Obnova přehrávání:', reason, 'mode=' + player.mode, 'od', resumeAt);
+            showStatus('🔄 Obnovuju přehrávání…', 'loading');
+            try {
+                let src;
+                if (player.mode === 'relay') {
+                    src = streamUrl(page, false, player.cdn);
+                } else {
+                    src = await fetchVideoUrl(page);
+                    if (player.page !== page) return; // mezitím se přepnulo na jiné video
+                    player.cdn = src;
+                    refreshDl();
+                }
+                videoPlayer.addEventListener('loadedmetadata', () => {
+                    if (resumeAt > 1) videoPlayer.currentTime = resumeAt;
+                    videoPlayer.play().catch(() => {});
+                    hideStatus();
+                }, { once: true });
+                videoPlayer.src = src;
+            } catch (e) {
+                console.error('Recover error:', e);
+                showStatus(`❌ ${e.message}`, 'error');
+            } finally {
+                player.busy = false;
+            }
+        }
+
+        videoPlayer.addEventListener('timeupdate', () => {
+            clearTimeout(player.stallTimer);
+            if (!videoPlayer.seeking && videoPlayer.currentTime > 0) player.lastTime = videoPlayer.currentTime;
+            // po minutě a půl bez problému počítadlo pokusů vynulujeme (odkaz vyprší klidně víckrát)
+            if (player.fixes > 0 && videoPlayer.currentTime - player.resumeAt > 90) player.fixes = 0;
+        });
+        videoPlayer.addEventListener('error', () => {
+            if (!player.page || !videoPlayer.getAttribute('src')) return;
+            recoverPlayback('error ' + (videoPlayer.error ? videoPlayer.error.code : '?'));
+        });
+        ['waiting', 'stalled'].forEach(ev => videoPlayer.addEventListener(ev, () => {
+            if (!player.page || player.stallTimer) return;
+            player.stallTimer = setTimeout(() => {
+                player.stallTimer = null;
+                if (!videoPlayer.paused && !videoPlayer.ended && videoPlayer.readyState < 3) recoverPlayback('stall');
+            }, 12000);
+        }));
+        ['playing', 'pause', 'seeking'].forEach(ev => videoPlayer.addEventListener(ev, () => {
+            clearTimeout(player.stallTimer); player.stallTimer = null;
+        }));
+        // spojení, co se utrhlo uprostřed, se občas tváří jako "konec" videa
+        videoPlayer.addEventListener('ended', () => {
+            if (player.page && isFinite(videoPlayer.duration) && videoPlayer.duration - videoPlayer.currentTime > 10)
+                recoverPlayback('predcasny konec');
+        });
+
+        async function playVideoDirectly(prehrajtoUrl, title) {
+            showStatus('🔄 Načítám video...', 'loading');
+            showSection('player');
+            nowPlaying.textContent = decodeURIComponent(title);
+
+            try {
+                await loadAndPlay(prehrajtoUrl, nowPlaying.textContent, hideStatus);
+            } catch (error) {
+                console.error('Play error:', error);
+                showStatus(`❌ ${error.message || 'Video se nepodařilo načíst'}`, 'error');
+            }
+        }
+
+        async function playMovieByUrl(url) {
+            const movie = currentResults.find(m => m.url === url);
+
+            if (!movie) {
+                showStatus('❌ Video nenalezeno v aktuálních výsledcích', 'error');
+                return;
+            }
+
+            // Update URL to video page
+            const newUrl = `?watch=${encodeURIComponent(movie.url)}&title=${encodeURIComponent(movie.title)}`;
+            window.history.pushState({}, '', newUrl);
+
+            showStatus('🔄 Načítám video...', 'loading');
+
+            try {
+                await loadAndPlay(movie.url, movie.title, () => {
+                    hideStatus();
+                    nowPlaying.textContent = movie.title;
+                    showSection('player');
+                });
+            } catch (error) {
+                console.error('Play error:', error);
+                showStatus(`❌ ${error.message || 'Video se nepodařilo načíst'}`, 'error');
+            }
+        }
+
+        function goBack() {
+            stopVideo();
+            hideStatus();
+            
+            // Go back to search results if we have them
+            if (currentResults.length > 0) {
+                const query = searchInput.value.trim();
+                const newUrl = query ? `?q=${encodeURIComponent(query)}` : window.location.pathname;
+                window.history.pushState({}, '', newUrl);
+                showSection('results');
+            } else {
+                window.history.pushState({}, '', window.location.pathname);
+                showSection('placeholder');
+            }
+        }
+        
+        // Handle browser back/forward
+        window.addEventListener('popstate', () => {
+            const params = new URLSearchParams(window.location.search);
+            const videoUrl = params.get('watch');
+            const title = params.get('title');
+            const searchQuery = params.get('q');
+            
+            // Always stop video first when navigating
+            stopVideo();
+            
+            if (videoUrl) {
+                playVideoDirectly(videoUrl, title || 'Video');
+            } else if (searchQuery) {
+                searchInput.value = searchQuery;
+                if (currentResults.length > 0) {
+                    showSection('results');
+                } else {
+                    searchMovies();
+                }
+            } else {
+                hideStatus();
+                showSection('placeholder');
+            }
+        });
+        
+        // Stop and cleanup video player
+        function stopVideo() {
+            if (videoPlayer) {
+                player.page = ''; player.cdn = '';
+                refreshDl();
+                clearTimeout(player.stallTimer); player.stallTimer = null;
+                videoPlayer.pause();
+                videoPlayer.removeAttribute('src');
+                videoPlayer.load(); // Force release of media resources
+            }
+        }
+    
+        // ===== Netflix-style nav behaviour =====
+        const navEl = document.getElementById('nav');
+        const searchBox = document.getElementById('searchBox');
+        window.addEventListener('scroll', () => navEl.classList.toggle('solid', window.scrollY > 40));
+        searchInput.addEventListener('input', () => searchBox.classList.toggle('has-text', searchInput.value.length > 0));
+        function setChip(c) { activeChip = c; renderCatalog(); }
+        // fill search box state when opening ?q= links
+        if (searchInput.value) searchBox.classList.add('has-text');
+
+        // ===== Nastavení: panel =====
+        (function () {
+            const btn = document.getElementById('settingsBtn');
+            const panel = document.getElementById('settingsPanel');
+            const tog = document.getElementById('limitToggle');
+            const val = document.getElementById('limitValue');
+            const sub = document.getElementById('limitSub');
+            const srcSel = document.getElementById('srcSelect');
+            srcSel.value = settings.thumbSrc;
+            document.body.classList.toggle('src-itunes', settings.thumbSrc === 'itunes');
+            srcSel.addEventListener('change', () => {
+                settings.thumbSrc = srcSel.value === 'itunes' ? 'itunes' : 'prehraj';
+                saveSettings();
+                document.body.classList.toggle('src-itunes', settings.thumbSrc === 'itunes');
+                thumbCache = {}; saveThumbs(); // jiný zdroj = jiné obrázky
+                renderHero();
+                renderCatalog();
+            });
+            const catSel = document.getElementById('catLangSelect');
+            catSel.value = settings.catLang === 'en' ? 'en' : 'cz';
+            catSel.addEventListener('change', () => {
+                settings.catLang = catSel.value === 'en' ? 'en' : 'cz';
+                saveSettings();
+                loadCatalog(); // jiný žebříček = jiný seznam filmů (server má oba v cache)
+            });
+            const off = document.getElementById('thumbsOffToggle');
+            off.checked = !!settings.thumbsOff;
+            off.addEventListener('change', () => {
+                settings.thumbsOff = off.checked;
+                saveSettings();
+                renderHero();
+                renderCatalog(); // překreslí a znovu načte (nebo zruší) náhledy
+            });
+            tog.checked = !!settings.limitOn;
+            val.value = settings.limit;
+            sub.classList.toggle('show', tog.checked);
+            btn.addEventListener('click', e => { e.stopPropagation(); panel.classList.toggle('open'); });
+            document.addEventListener('click', e => { if (!e.target.closest('#settingsWrap')) panel.classList.remove('open'); });
+            tog.addEventListener('change', () => {
+                settings.limitOn = tog.checked;
+                sub.classList.toggle('show', tog.checked);
+                saveSettings();
+                pumpThumbs();
+            });
+            val.addEventListener('change', () => {
+                settings.limit = Math.min(20, Math.max(1, parseInt(val.value, 10) || 3));
+                val.value = settings.limit;
+                saveSettings();
+            });
+
+            const pTog = document.getElementById('proxyToggle');
+            const pSub = document.getElementById('proxySub');
+            const pList = document.getElementById('proxyList');
+            const pAdd = document.getElementById('proxyAddBtn');
+
+            function renderProxyList(focusLast) {
+                pList.innerHTML = '';
+                settings.proxyServers.forEach((s, i) => {
+                    const row = document.createElement('div');
+                    row.className = 'proxy-row';
+                    row.innerHTML =
+                        '<input type="checkbox"' + (s.on ? ' checked' : '') + '>' +
+                        '<input type="text" placeholder="https://muj-hosting.cz/index.php" autocomplete="off" spellcheck="false">' +
+                        '<button type="button" title="Odebrat">✕</button>';
+                    const [cb, txt, rm] = row.children;
+                    txt.value = s.url;
+                    cb.addEventListener('change', () => { settings.proxyServers[i].on = cb.checked; saveSettings(); });
+                    txt.addEventListener('change', () => { settings.proxyServers[i].url = txt.value.trim(); saveSettings(); });
+                    rm.addEventListener('click', () => {
+                        settings.proxyServers.splice(i, 1);
+                        saveSettings();
+                        renderProxyList(false);
+                    });
+                    pList.appendChild(row);
+                    if (focusLast && i === settings.proxyServers.length - 1) txt.focus();
+                });
+            }
+            renderProxyList(false);
+
+            pTog.checked = !!settings.proxyOn;
+            pSub.classList.toggle('show', pTog.checked);
+            pTog.addEventListener('change', () => {
+                settings.proxyOn = pTog.checked;
+                pSub.classList.toggle('show', pTog.checked);
+                saveSettings();
+            });
+            pAdd.addEventListener('click', () => {
+                settings.proxyServers.push({ url: '', on: true });
+                renderProxyList(true);
+            });
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Seznam PHP proxy serverů (jeden na řádek). Prázdné řádky a řádky začínající
+# "#" se ignorují. Uprav tenhle soubor a spusť scripts/change-proxy-servers.sh -
+# promítne se to do index.html, appsettings.json i router.php najednou.
+http://wtzi.borec.cz/index.php
+http://wtzi.euweb.cz/index.php
+http://wtzi.chytrak.cz/index.php

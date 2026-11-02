@@ -1,0 +1,174 @@
+# WTZI 🎬
+
+[![Uptime Status](https://img.shields.io/uptimerobot/status/m801943371-78c6e4351b1a34cc26858090?label=Azure%20App&style=flat-square)](https://stats.uptimerobot.com/ueMqtXp5wJ)
+[![Uptime Status](https://img.shields.io/uptimerobot/status/m801943405-1df9c48a5d475447d1d9b7af?label=TinyURL&style=flat-square)](https://stats.uptimerobot.com/ueMqtXp5wJ)
+
+Proxy pro přehrávání videí z Prehraj.to z libovolné lokace.
+
+## Architektura
+
+```
+Uživatel (kdekoli) → Azure App Service (HTTPS) → prehraj.to
+```
+
+Od teď backend v `Program.cs` volá **prehraj.to přímo** (logika z `index.php` je přepsaná do C#:
+vyhledávání, získání URL videa a ověření videa). Externí PHP hosting (`tumarsrobot.unas.cz`) se už nepoužívá.
+
+> ⚠️ prehraj.to může blokovat zahraniční IP. Pokud Azure vrací chybu `HTTP error: 403` / `451`,
+> zvol region co nejblíž ČR, nebo zapni PHP proxy níže.
+
+### Volitelná PHP proxy
+Soubor `index.php` v rootu zůstává. Pokud ho nahraješ na vlastní (český) hosting (klidně i víc
+hostingů zároveň), appka se umí dotazovat přes ně místo přímého volání prehraj.to. Dvě nezávislé
+vrstvy, které se dají kombinovat:
+
+**1. Server (appsettings.json / Azure)** - výchozí seznam pro všechny uživatele, i kdyby v
+prohlížeči ⚙️ Nastavení nic nezapínali. V `appsettings.json`:
+```json
+"Prehraj": {
+  "ProxyUrls": [
+    "https://wtzi.borec.cz/index.php",
+    "https://wtzi.euweb.cz/index.php",
+    "https://wtzi.chytrak.cz/index.php"
+  ]
+}
+```
+Další server = další řádek do pole. V Azure (Configuration → Application settings) se totéž pole
+nastaví přes indexované klíče: `Prehraj__ProxyUrls__0`, `Prehraj__ProxyUrls__1`,
+`Prehraj__ProxyUrls__2`, … (`Prehraj__ProxyUrl` bez `s` pořád funguje jako zkratka pro jediný).
+Prázdné pole (výchozí) = volá se prehraj.to přímo, pokud klient sám nepošle svoje proxy.
+
+**2. Prohlížeč (⚙️ Nastavení → „Použít PHP proxy“)** - když je zapnuto (výchozí stav) a uživatel
+má v seznamu zaškrtnutý aspoň jeden server, appka pošle `&proxy=<url>` pro každý z nich a tyhle
+**přebijí** serverový seznam z appsettings pro ten konkrétní request. Přidat server jde přímo v
+Nastavení tlačítkem „+ přidat server“, nebo se dá změnit výchozí nabídka pro nové uživatele v
+`index.html` v poli `DEFAULT_PROXY_SERVERS`.
+
+V obou případech platí totéž chování: víc serverů = **souběžný** dotaz na všechny, vyhrává první
+úspěšná odpověď (2xx + neprázdné tělo); padlý nebo pomalý server se jen přeskočí a request se tím
+nezpomalí, dokud funguje aspoň jeden. Neplatné (ne-http/https) hodnoty backend tiše ignoruje.
+
+### Přidání/úprava serverů jedním příkazem
+```bash
+./scripts/change-proxy-servers.sh
+```
+Otevře `proxy-servers.txt` v `nano` (jiný editor přes `EDITOR=vim ...`), po uložení a zavření
+seznam ověří (musí to být `http://`/`https://` URL) a promítne ho najednou do `index.html`
+(`DEFAULT_PROXY_SERVERS`), `appsettings.json` (`Prehraj.ProxyUrls`) i `router.php`
+(`$SERVER_PROXIES`) - needituj ty tři bloky ručně zvlášť. `./scripts/change-proxy-servers.sh
+--no-edit` jen pushne aktuální obsah `proxy-servers.txt` bez otevření editoru (hodí se ze
+skriptu/CI). Potřebuje `python3` v PATH (jen na čisté přepsání `appsettings.json`).
+
+## Komponenty
+
+### `/azure-app/PrehrajtoProxy/`
+ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
+
+- **Frontend** (`wwwroot/index.html`) - WTZI, UI ve stylu streamovací služby: katalog doporučených filmů, vyhledávání, přehrávač
+- **API Endpoints**:
+  - `GET /api/search?q={query}` - Vyhledávání filmů
+  - `GET /api/proxy?url={prehrajto_url}` - Získání URL videa
+  - `GET /api/validate?url={prehrajto_url}` - Ověření, že video funguje
+  - `GET /api/stream?url={prehrajto_url}[&download=1&name={titul}]` - Server video přeposílá z CDN (podporuje Range/seeking)
+    a sám obnovuje vypršelý odkaz, takže se přehrávání ani stahování nezasekne po pár minutách. S `download=1` se
+    posílá jako příloha (tlačítko ⬇ Stáhnout video). Neumí HLS (`.m3u8`). Pozor na přenesená data: na Azure
+    (zvlášť free tier) se tím video počítá do odchozího provozu, na self-hostu (Termux) je to zadarmo.
+  - `GET /api/thumb?q={query}[&t={titul}][&y={rok}][&re={regex}][&src=itunes]` - Jen thumbnail pro homepage. Výchozí regex je `query*`
+    (každé významné slovo z `q`/`t` jako začátek slova v názvu/slugu, bez diakritiky, pořadí je jedno); `re` ho přepíše.
+    Výsledek se cachuje na serveru (týden, nenalezené hodinu).
+    Volitelný limit souběžných dotazů (výchozí: bez limitu): server `Prehraj:ThumbConcurrency` (Azure `Prehraj__ThumbConcurrency`),
+    aplikace: ⚙️ Nastavení → „Omezit souběžné dotazy na náhledy“ (výchozí vypnuto, uloží se v prohlížeči).
+    `src=itunes` hledá plakát přes keyless iTunes Search API (záloha: prehraj.to); v aplikaci ⚙️ → „Zdroj náhledů“.
+    V Nastavení jde také „Vypnout načítání náhledů“ úplně (výchozí vypnuto = náhledy se načítají).
+
+**Přehrávání** (`index.html`): video se napřed pustí napřímo z CDN. Když se zasekne / vyhodí chybu / skončí
+předčasně (odkaz z CDN vyprší), appka si vezme čerstvý odkaz a naváže od stejného místa; po dvou neúspěšných
+pokusech přepne na `/api/stream`.
+
+### `/index.php`
+Volitelná PHP proxy pro český hosting (viz výše).
+
+## Self-host bez Azure (Termux / Linux)
+
+Celé to jde provozovat jen přes PHP, bez Azure a bez .NET. Navíc požadavky na prehraj.to
+půjdou z tvého zařízení (česká IP), takže odpadá geo-blokace.
+
+```bash
+# Termux: pkg install git php   (start-termux.sh si PHP doinstaluje sám)
+./start-termux.sh                 # http://127.0.0.1:8080 (jen tenhle telefon)
+HOST=0.0.0.0 ./start-termux.sh    # dostupné i z jiných zařízení ve Wi-Fi
+PORT=9000 ./start-termux.sh       # jiný port
+```
+
+Běží to přes `router.php` (vestavěný PHP server): `/` je WTZI, `/api/search`, `/api/proxy`
+a `/api/validate` používají logiku z `index.php`. Server startuje s více workery, aby se
+ověřování videí neprovádělo po jednom.
+
+`router.php` umí stejné souběžné proxy racování jako Azure/.NET verze: zapnuté servery z
+⚙️ Nastavení v prohlížeči (`&proxy=...`) přebijí lokální seznam `$SERVER_PROXIES` na začátku
+souboru (výchozí prázdný = self-host volá prehraj.to přímo z tohohle zařízení). Má to smysl
+hlavně když Termux/self-host neběží na české IP - jinak klidně nech proxy v Nastavení vypnuté,
+přímé volání z CZ zařízení je rychlejší.
+
+> Nevystavuj `HOST=0.0.0.0` do veřejného internetu - je to bez přihlášení.
+
+## Živá verze
+
+- **Aplikace**: https://blaniok.azurewebsites.net
+- **Zkrácená URL**: https://tinyurl.com/prehrajto
+
+## Funkce
+
+- 🔍 Vyhledávání filmů a seriálů
+- 🎥 Přehrávání videí přímo v prohlížeči
+- 📱 Responzivní design (mobil, tablet, desktop)
+- 🔗 Sdílení odkazů na konkrétní videa
+- ⬅️ Navigace zpět/vpřed v prohlížeči
+
+## Technologie
+
+- **Backend**: ASP.NET Core 9.0, PHP 8
+- **Frontend**: HTML5, CSS3, Vanilla JavaScript
+- **Hosting**: Azure App Service, Webzdarma.cz
+- **Video**: HTML5 Video Player
+
+## Lokální vývoj
+
+```bash
+# ASP.NET aplikace
+cd azure-app/PrehrajtoProxy
+dotnet run
+
+# Otevři http://localhost:5000
+```
+
+## Deploy
+
+### Azure App Service
+```bash
+cd azure-app/PrehrajtoProxy
+dotnet publish -c Release -o ./publish
+cd publish && zip -r ../deploy.zip .
+# Upload deploy.zip přes Kudu API
+```
+
+### PHP Proxy
+Upload `index.php` na český hosting přes FTP.
+
+---
+
+## Věnování
+
+❤️
+
+**Mamince a Leničce věnuje Jiřík a jeho virtuální asistent**
+
+*V Olbramovicích dne 6. prosince 2025*
+
+PS: Mám vás moc rád, i když to asi neumím dávat dobře znát.
+
+---
+
+## Licence
+
+MIT
