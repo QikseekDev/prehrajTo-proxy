@@ -315,6 +315,7 @@
         }
         .back-btn:hover { background: rgba(109,109,110,0.8); }
         .video-container {
+            position: relative;
             background: #000; border-radius: 6px; overflow: hidden; aspect-ratio: 16/9;
             display: flex; align-items: center; justify-content: center; box-shadow: 0 20px 60px rgba(0,0,0,0.7);
         }
@@ -325,6 +326,19 @@
             padding: 8px 18px; border-radius: 4px; background: rgba(109,109,110,0.5); font-size: 15px;
         }
         .dl-btn:hover { background: rgba(109,109,110,0.8); }
+        /* Po skončení videa: co dál. Leží přes video, takže neposouvá stránku. */
+        .player-end {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 18px; padding: 20px;
+            text-align: center; background: linear-gradient(180deg, rgba(0,0,0,0.82), rgba(0,0,0,0.94));
+        }
+        .player-end[hidden] { display: none; }
+        .player-end-title {
+            font-size: clamp(15px, 2.2vw, 20px); font-weight: 700; line-height: 1.35;
+            max-width: 90%; text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+        }
+        .player-end-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        .player-end-actions .btn-play, .player-end-actions .btn-info { font-size: 15px; padding: 9px 18px; }
 
         /* ---------- Status ---------- */
         .status { margin: 90px 4% 0; padding: 14px 18px; border-radius: 4px; display: none; }
@@ -436,6 +450,14 @@
             <button class="back-btn" onclick="goBack()">← Zpět</button>
             <div class="video-container">
                 <video id="videoPlayer" controls></video>
+                <div class="player-end" id="playerEnd" hidden>
+                    <h3 class="player-end-title" id="playerEndTitle"></h3>
+                    <div class="player-end-actions">
+                        <button type="button" class="btn-play" id="endReplayBtn">↻ Pustit znovu</button>
+                        <button type="button" class="btn-info" id="endHomeBtn">Domovská stránka</button>
+                        <button type="button" class="btn-info" id="endSearchBtn">Hledat další</button>
+                    </div>
+                </div>
             </div>
             <div id="nowPlaying" class="now-playing"></div>
             <a id="dlBtn" class="dl-btn" href="#" download>⬇ Stáhnout video</a>
@@ -485,6 +507,8 @@
         const pageBody = document.getElementById('pageBody');
         const nowPlaying = document.getElementById('nowPlaying');
         const dlBtn = document.getElementById('dlBtn');
+        const playerEnd = document.getElementById('playerEnd');
+        const playerEndTitle = document.getElementById('playerEndTitle');
         const placeholder = document.getElementById('placeholder');
         
         let currentResults = [];
@@ -1267,11 +1291,13 @@
         }
 
         // Načte čerstvý odkaz a spustí video. beforePlay se zavolá, jakmile je odkaz k dispozici.
-        async function loadAndPlay(page, title, beforePlay) {
+        async function loadAndPlay(page, title, beforePlay, poster) {
             player.page = page; player.cdn = ''; player.title = title || 'video'; player.mode = 'direct';
             player.lastTime = 0; player.resumeAt = 0; player.fixes = 0; player.busy = false;
             clearTimeout(player.stallTimer);
             refreshDl();
+            hidePlayerEnd();
+            setNowPlaying(title, poster || posterFor(title));
 
             const url = await fetchVideoUrl(page);
             if (player.page !== page) return; // mezitím se přepnulo na jiné video
@@ -1347,9 +1373,96 @@
         }));
         // spojení, co se utrhlo uprostřed, se občas tváří jako "konec" videa
         videoPlayer.addEventListener('ended', () => {
-            if (player.page && isFinite(videoPlayer.duration) && videoPlayer.duration - videoPlayer.currentTime > 10)
+            if (player.page && isFinite(videoPlayer.duration) && videoPlayer.duration - videoPlayer.currentTime > 10) {
                 recoverPlayback('predcasny konec');
+                return;
+            }
+            msSetState('paused');
+            if (player.page) showPlayerEnd();
         });
+
+        // ===== Media Session: název a plakát na uzamčené obrazovce a v ovládání sluchátek =====
+        const msSupported = 'mediaSession' in navigator;
+        function msSetState(state) {
+            if (!msSupported) return;
+            try { navigator.mediaSession.playbackState = state; } catch (e) {}
+        }
+        if (msSupported) {
+            const setHandler = (action, fn) => { try { navigator.mediaSession.setActionHandler(action, fn); } catch (e) {} };
+            setHandler('play', () => videoPlayer.play().catch(() => {}));
+            setHandler('pause', () => videoPlayer.pause());
+            setHandler('seekbackward', d => {
+                videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - (d.seekOffset || 10));
+            });
+            setHandler('seekforward', d => {
+                const max = isFinite(videoPlayer.duration) ? videoPlayer.duration : Infinity;
+                videoPlayer.currentTime = Math.min(max, videoPlayer.currentTime + (d.seekOffset || 10));
+            });
+            setHandler('seekto', d => {
+                if (typeof d.seekTime === 'number') videoPlayer.currentTime = d.seekTime;
+            });
+        }
+        videoPlayer.addEventListener('play', () => msSetState('playing'));
+        videoPlayer.addEventListener('playing', hidePlayerEnd);
+        videoPlayer.addEventListener('pause', () => { if (!videoPlayer.ended) msSetState('paused'); });
+
+        // Plakát k titulu: z výsledků, z katalogu, nebo z cache náhledů (klíčem je dotaz).
+        function posterFor(title) {
+            const t = (title || '').trim();
+            if (!t) return '';
+            const cat = CATALOG.find(m => m.t === t || m.q === t);
+            if (cat && cat.img) return cat.img;
+            const cached = thumbCache[t];
+            return cached && cached.u ? cached.u : '';
+        }
+
+        // Jeden zdroj pravdy pro „co právě hraje“: plakát přehrávače + media session.
+        function setNowPlaying(title, poster) {
+            player.title = title || 'video';
+            if (poster) videoPlayer.poster = poster;
+            else videoPlayer.removeAttribute('poster');
+            if (!msSupported) return;
+            try {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: player.title,
+                    artist: 'WTZI',
+                    album: 'prehraj.to',
+                    artwork: poster ? [{ src: poster, sizes: '512x512' }] : [],
+                });
+            } catch (e) {}
+        }
+
+        // ===== Konec videa: co dál =====
+        function showPlayerEnd() {
+            playerEndTitle.textContent = player.title && player.title !== 'video' ? player.title : 'Dohráno';
+            playerEnd.hidden = false;
+            msSetState('paused');
+        }
+        function hidePlayerEnd() { playerEnd.hidden = true; }
+
+        async function replayVideo() {
+            hidePlayerEnd();
+            if (!player.page) { goHome(); return; }
+            player.lastTime = 0; player.resumeAt = 0; player.fixes = 0;
+            try {
+                videoPlayer.currentTime = 0;
+                await videoPlayer.play();
+            } catch (e) {
+                recoverPlayback('replay'); // odkaz na CDN mezitím vypršel -> čerstvý, od začátku
+            }
+        }
+
+        function searchAnother() {
+            stopVideo();
+            showSection(currentResults.length > 0 ? 'results' : 'placeholder');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            searchInput.focus();
+            searchInput.select(); // starý dotaz rovnou přepíšeš novým
+        }
+
+        document.getElementById('endReplayBtn').addEventListener('click', replayVideo);
+        document.getElementById('endHomeBtn').addEventListener('click', goHome);
+        document.getElementById('endSearchBtn').addEventListener('click', searchAnother);
 
         async function playVideoDirectly(prehrajtoUrl, title) {
             showStatus('🔄 Načítám video...', 'loading');
@@ -1383,7 +1496,7 @@
                     hideStatus();
                     nowPlaying.textContent = movie.title;
                     showSection('player');
-                });
+                }, movie.thumbnail);
             } catch (error) {
                 console.error('Play error:', error);
                 showStatus(`❌ ${error.message || 'Video se nepodařilo načíst'}`, 'error');
@@ -1437,6 +1550,7 @@
                 player.page = ''; player.cdn = '';
                 refreshDl();
                 clearTimeout(player.stallTimer); player.stallTimer = null;
+                hidePlayerEnd();
                 videoPlayer.pause();
                 videoPlayer.removeAttribute('src');
                 videoPlayer.load(); // Force release of media resources
