@@ -503,6 +503,52 @@ function handleValidate() {
 }
 
 /**
+ * Vytáhne WebVTT titulky z HTML stránky videa.
+ *
+ * prehraj.to je vkládá do inicializace přehrávače, ne do <track>:
+ *   Video.js: { src: "...vtt...", srclang: "eng", label: "...", kind: "captions", default: true }
+ *   JWPlayer: { file: "...vtt...", label: "ENG - 8175377 - eng", kind: "captions", default: true }
+ * Odkazy jsou podepsané na CDN (token + expires), takže se nikde dlouho necachují.
+ */
+function wtziSubtitles($html) {
+    $out = [];
+    $seen = [];
+    if (preg_match_all('/\{[^{}]*\.vtt[^{}]*\}/i', $html, $blocks)) {
+        foreach ($blocks[0] as $block) {
+            // Bereme jen caption stopy. Když chybí kind, poznáme je podle srclang.
+            if (!preg_match('/kind\s*:\s*["\']captions["\']/i', $block)
+                && !preg_match('/srclang\s*:/i', $block)) continue;
+            if (!preg_match('/(?:src|file)\s*:\s*["\']([^"\']+\.vtt[^"\']*)["\']/i', $block, $m)) continue;
+
+            $url = str_replace(['\/', '\u0026'], ['/', '&'], $m[1]);
+            $url = html_entity_decode($url, ENT_QUOTES, 'UTF-8');
+            if (!preg_match('#^https?://#i', $url)) continue;
+
+            $lang = '';
+            if (preg_match('/srclang\s*:\s*["\']([^"\']*)["\']/i', $block, $l)) $lang = trim($l[1]);
+            $label = '';
+            if (preg_match('/label\s*:\s*["\']([^"\']*)["\']/i', $block, $l)) $label = trim($l[1]);
+            // JWPlayer nemá srclang; jazyk je na konci labelu ("ENG - 8175377 - eng").
+            if ($lang === '' && preg_match('/-\s*([a-z]{2,3})\s*$/i', $label, $l)) $lang = strtolower($l[1]);
+            if ($label === '') $label = $lang !== '' ? strtoupper($lang) : 'Titulky';
+
+            // Stejný soubor může být na stránce víckrát; token v query ignorujeme.
+            $key = strtolower(preg_replace('/[?#].*$/', '', $url));
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+
+            $out[] = [
+                'url' => $url,
+                'lang' => strtolower($lang),
+                'label' => $label,
+                'default' => (bool) preg_match('/\bdefault\s*:\s*true\b/i', $block),
+            ];
+        }
+    }
+    return $out;
+}
+
+/**
  * Handle video URL extraction
  */
 function handleVideo() {
@@ -592,6 +638,8 @@ function handleVideo() {
         $allUrls = array_unique($allMatches[0]);
     }
     
+    $subtitles = wtziSubtitles($html);
+
     if ($videoUrl) {
         // Unescape if needed
         $videoUrl = str_replace('\/', '/', $videoUrl);
@@ -600,6 +648,7 @@ function handleVideo() {
             'success' => true,
             'videoUrl' => $videoUrl,
             'allUrls' => array_values($allUrls),
+            'subtitles' => $subtitles,
             'source' => 'prehraj.to proxy'
         ]);
     } else {

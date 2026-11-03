@@ -143,6 +143,17 @@ builder.Services.AddRateLimiter(o =>
         AutoReplenishment = true,
     }));
 
+    // Titulky: prohlížeč načte při otevření videa jeden až několik malých VTT souborů.
+    // "api" limit 6/s by je zbytečně zahazoval, samostatný limit je benevolentnější.
+    o.AddPolicy("subs", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
+    {
+        TokenLimit = 60,
+        TokensPerPeriod = 20,
+        ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+        QueueLimit = 0,
+        AutoReplenishment = true,
+    }));
+
     o.AddPolicy("thumb", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
     {
         TokenLimit = 40,
@@ -1023,6 +1034,76 @@ app.MapGet("/api/live/hls", async (string url, string? ua, string? referrer, IHt
         return Results.Empty;
     }
 }).RequireRateLimiting("live");
+
+// ------------------------------------------------------------------ /api/subtitles  (VTT relay)
+// <track> musí mít VTT z naší domény (CDN nemusí posílat CORS) a podepsaný odkaz
+// z prehraj.to po chvíli vyprší. Titulky proto stahuje server - jsou malé, takže
+// na rozdíl od videa relay nestojí za řeč. URL bere z "subtitles", které vrací PHP proxy.
+app.MapGet("/api/subtitles", async (string url, IHttpClientFactory f, HttpContext ctx) =>
+{
+    if (!Uri.TryCreate(url, UriKind.Absolute, out var target)
+        || (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps)
+        || IsPrivateHost(target.Host)
+        || !target.AbsolutePath.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase))
+        return Results.Json(new { success = false, error = "Neplatná URL titulků" }, statusCode: 400);
+
+    var client = f.CreateClient("prehraj");
+    using var req = new HttpRequestMessage(HttpMethod.Get, target);
+    req.Headers.Referrer = new Uri("https://prehraj.to/");
+    req.Headers.Accept.Clear();
+    req.Headers.Accept.ParseAdd("text/vtt,text/plain;q=0.9,*/*;q=0.5");
+
+    HttpResponseMessage res;
+    try
+    {
+        using var hcts = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
+        hcts.CancelAfter(TimeSpan.FromSeconds(20));
+        res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, hcts.Token);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { success = false, error = "Titulky nejdou načíst: " + ex.Message }, statusCode: 502);
+    }
+
+    using (res)
+    {
+        if (!res.IsSuccessStatusCode)
+            return Results.Json(new { success = false, error = $"CDN vrátila HTTP {(int)res.StatusCode}" }, statusCode: 502);
+        if (res.Content.Headers.ContentLength is > 1_000_000)
+            return Results.Json(new { success = false, error = "Titulky jsou příliš velké" }, statusCode: 413);
+
+        string vtt;
+        try
+        {
+            using var rcts = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
+            rcts.CancelAfter(TimeSpan.FromSeconds(20));
+            await using var src = await res.Content.ReadAsStreamAsync(rcts.Token);
+            using var ms = new MemoryStream();
+            var buf = new byte[16384];
+            while (true)
+            {
+                var n = await src.ReadAsync(buf.AsMemory(0, buf.Length), rcts.Token);
+                if (n <= 0) break;
+                if (ms.Length + n > 1_000_000)
+                    return Results.Json(new { success = false, error = "Titulky jsou příliš velké" }, statusCode: 413);
+                ms.Write(buf, 0, n);
+            }
+            vtt = Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
+        }
+        catch (Exception ex)
+        {
+            return Results.Json(new { success = false, error = "Titulky nejdou načíst: " + ex.Message }, statusCode: 502);
+        }
+
+        vtt = vtt.TrimStart('\uFEFF').TrimStart();
+        if (!vtt.StartsWith("WEBVTT", StringComparison.OrdinalIgnoreCase))
+            return Results.Json(new { success = false, error = "Zdroj nevrátil WebVTT titulky" }, statusCode: 502);
+
+        // Token v URL se mění, takže cache je vázaná na konkrétní odkaz; titulky jsou neměnné.
+        ctx.Response.Headers.CacheControl = "private, max-age=1800";
+        return Results.Text(vtt, "text/vtt; charset=utf-8");
+    }
+}).RequireRateLimiting("subs");
 
 // ------------------------------------------------------------------ /api/proxy  (extract video URL)
 app.MapGet("/api/proxy", async (string url, string[]? proxy, IHttpClientFactory f) =>

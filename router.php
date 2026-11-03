@@ -11,6 +11,7 @@
  *  - /api/proxy   -> index.php (získání URL videa)
  *  - /api/validate-> index.php?action=validate
  *  - /api/thumb   -> index.php?action=thumb (thumbnail pro homepage)
+ *  - /api/subtitles -> relay VTT titulků pro <track>
  *  - /api/stream  -> přeposílání videa z CDN (Range, obnova vypršelého odkazu) + stahování
  */
 
@@ -489,6 +490,57 @@ function catalogResponse($lang) {
     exit;
 }
 
+// --------------------------------------------------------------------------
+// /api/subtitles - relay VTT titulků pro <track>
+// Titulky jsou podepsané na CDN a nemusí posílat CORS; prohlížeč je proto načítá
+// z naší domény. Soubor je malý (jednotky až stovky kB), takže relay nic nebolí.
+function isValidSubtitleUrl($u) {
+    if (!is_string($u) || $u === '') return false;
+    $p = parse_url($u);
+    if (!$p || !in_array($p['scheme'] ?? '', ['http', 'https'], true)) return false;
+    $path = $p['path'] ?? '';
+    if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'vtt') return false;
+    $host = strtolower($p['host'] ?? '');
+    if ($host === '' || $host === 'localhost') return false;
+    $ip = filter_var($host, FILTER_VALIDATE_IP) ? $host : gethostbyname($host);
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) return false;
+    return true;
+}
+
+function subtitleRelay() {
+    $url = isset($_GET['url']) && is_string($_GET['url']) ? $_GET['url'] : '';
+    if (!isValidSubtitleUrl($url)) jsonError(['success' => false, 'error' => 'Neplatná URL titulků']);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_USERAGENT => STREAM_UA,
+        CURLOPT_REFERER => 'https://prehraj.to/',
+        CURLOPT_ENCODING => '',
+        CURLOPT_HTTPHEADER => ['Accept: text/vtt,text/plain;q=0.9,*/*;q=0.5'],
+    ]);
+    $body = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($err !== '' || !is_string($body) || $code < 200 || $code >= 300) {
+        jsonError(['success' => false, 'error' => 'Titulky se nepodařilo načíst: '
+            . ($err !== '' ? $err : 'HTTP ' . $code)], 502);
+    }
+    if (strlen($body) > 1000000) jsonError(['success' => false, 'error' => 'Titulky jsou příliš velké'], 413);
+    $body = ltrim($body, "\xEF\xBB\xBF \t\r\n");
+    if (stripos($body, 'WEBVTT') !== 0)
+        jsonError(['success' => false, 'error' => 'Zdroj nevrátil WebVTT titulky'], 502);
+
+    header('Content-Type: text/vtt; charset=utf-8');
+    header('Cache-Control: private, max-age=1800');
+    echo $body;
+    exit;
+}
+
 switch ($path) {
     case '/api/search':
         $q = $_GET['q'] ?? '';
@@ -519,6 +571,10 @@ switch ($path) {
         $_GET['action'] = 'video';
         require __DIR__ . '/index.php';
         return true;
+
+    case '/api/subtitles':
+        subtitleRelay();
+        exit;
 
     case '/api/stream':
         // Video jde vždy přímo z tohohle zařízení (stejná IP odkaz získá i stáhne);
