@@ -5,14 +5,19 @@
 
 Proxy pro přehrávání videí z Prehraj.to z libovolné lokace.
 
+**Autor:** Vojtěch Vokoun · [contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)
+(fork původního projektu WTZI, viz [Kredit](#kredit))
+
 ## Architektura
 
 ```
-Uživatel (kdekoli) → Azure App Service (HTTPS) → prehraj.to
+Uživatel (kdekoli) → Azure App Service (HTTPS) → PHP proxy (CZ hosting) → prehraj.to
 ```
 
-Od teď backend v `Program.cs` volá **prehraj.to přímo** (logika z `index.php` je přepsaná do C#:
-vyhledávání, získání URL videa a ověření videa). Externí PHP hosting (`tumarsrobot.unas.cz`) se už nepoužívá.
+Backend v `Program.cs` **prehraj.to nikdy nevolá přímo** – každý dotaz jde na PHP proxy
+(serverový seznam z `appsettings.json`, nebo ty, které pošle prohlížeč). Důvod: z datacentrové IP
+Azure prehraj.to vrací captcha stránku, která se tváří jako platná odpověď, ale nenajde nic.
+PHP servery z české IP vrací skutečné výsledky.
 
 > ⚠️ prehraj.to může blokovat zahraniční IP. Pokud Azure vrací chybu `HTTP error: 403` / `451`,
 > zvol region co nejblíž ČR, nebo zapni PHP proxy níže.
@@ -44,9 +49,10 @@ má v seznamu zaškrtnutý aspoň jeden server, appka pošle `&proxy=<url>` pro 
 Nastavení tlačítkem „+ přidat server“, nebo se dá změnit výchozí nabídka pro nové uživatele v
 `index.html` v poli `DEFAULT_PROXY_SERVERS`.
 
-V obou případech platí totéž chování: víc serverů = **souběžný** dotaz na všechny, vyhrává první
-úspěšná odpověď (2xx + neprázdné tělo); padlý nebo pomalý server se jen přeskočí a request se tím
-nezpomalí, dokud funguje aspoň jeden. Neplatné (ne-http/https) hodnoty backend tiše ignoruje.
+V obou případech platí totéž chování: servery se zkouší **postupně** v pořadí – první, který vrátí
+použitelnou odpověď (2xx + neprázdné tělo), vyhrává. Mrtvý nebo zaplněný server (timeout, 4xx/5xx,
+prázdné tělo) se přeskočí a zkusí se další. Server, který naposledy fungoval, jde příště na začátek,
+takže výpadek jedné proxy stojí jen jeden timeout. Neplatné (ne-http/https) hodnoty backend tiše ignoruje.
 
 ### Přidání/úprava serverů jedním příkazem
 ```bash
@@ -58,6 +64,34 @@ seznam ověří (musí to být `http://`/`https://` URL) a promítne ho najednou
 (`$SERVER_PROXIES`) - needituj ty tři bloky ručně zvlášť. `./scripts/change-proxy-servers.sh
 --no-edit` jen pushne aktuální obsah `proxy-servers.txt` bez otevření editoru (hodí se ze
 skriptu/CI). Potřebuje `python3` v PATH (jen na čisté přepsání `appsettings.json`).
+
+## Limity a ochrana proti scrapingu
+
+Appka je veřejná a bez přihlášení, takže `/api/*` má dvě vrstvy ochrany (obojí v `Program.cs`):
+
+**1. Rate limiting** – built-in `AddRateLimiter`, token bucket zvlášť pro každou IP:
+
+| Policy | Endpointy | Trvale | Dávka (burst) |
+|---|---|---|---|
+| `search` | `/api/search` | 3 dotazy/s | 8 |
+| `api` | `/api/proxy`, `/api/validate`, `/api/stream`, `/api/catalog` | 6/s | 20 |
+| `thumb` | `/api/thumb` | 10/s | 40 |
+
+Dávka je tam proto, že úvodní stránka posílá náhledy všech viditelných posterů najednou a přehrávač
+při seekování pošle několik Range dotazů v jedné vlně – s holým „3/s“ by se appka rozbila sama sobě.
+Překročení vrací `429` + `Retry-After: 5` a JSON `{"success":false,"error":"…"}`, který UI zobrazí
+jako běžnou chybu hledání. Za App Service se IP bere z `X-Forwarded-For` (`UseForwardedHeaders`),
+jinak by všechny požadavky měly IP front-endu Azure a limit by platil pro celý internet dohromady.
+
+**2. Blokace nástrojů** – požadavek na `/api` dostane `403`, když má User-Agent z deny-listu
+(curl, wget, python-requests, httpx, aiohttp, scrapy, go-http-client, okhttp, axios, httpie,
+Postman, PowerShell, headless Chrome, Puppeteer, Playwright, Selenium…), prázdný UA, nebo nemá
+ani `Sec-Fetch-Site` ani `Referer` na vlastní doménu. Statické soubory (`/`, `index.html`) se
+neblokují ani nelimitují, aby fungoval uptime monitoring.
+
+> Hlavičky jde podstrčit, takže blokace UA není bezpečnostní hranice – scraping reálně brzdí až
+> rate limiting. Pro ruční testování z terminálu je potřeba poslat prohlížečové hlavičky:
+> `curl -A 'Mozilla/5.0 … Chrome/131' -H 'Sec-Fetch-Site: same-origin' '…/api/search?q=matrix'`.
 
 ## Komponenty
 
@@ -114,8 +148,8 @@ přímé volání z CZ zařízení je rychlejší.
 
 ## Živá verze
 
-- **Aplikace**: https://blaniok.azurewebsites.net
-- **Zkrácená URL**: https://tinyurl.com/prehrajto
+Provozní URL sem záměrně nepatří – appka je sdílená jen s přáteli. Když ji potřebuješ,
+vyptej se provozovatele ([contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)).
 
 ## Funkce
 
@@ -157,15 +191,12 @@ Upload `index.php` na český hosting přes FTP.
 
 ---
 
-## Věnování
+## Kredit
 
-❤️
+Tenhle fork spravuje **Vojtěch Vokoun** – [contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io).
 
-**Mamince a Leničce věnuje Jiřík a jeho virtuální asistent**
-
-*V Olbramovicích dne 6. prosince 2025*
-
-PS: Mám vás moc rád, i když to asi neumím dávat dobře znát.
+Původní WTZI napsal **Jiřík**; od něj je základ aplikace, `index.php`, `router.php` a původní
+podoba README včetně jeho osobního věnování. Díky za základ, na kterém jde stavět.
 
 ---
 
