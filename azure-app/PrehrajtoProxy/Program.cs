@@ -385,6 +385,7 @@ static List<LiveChannel> ParseM3u(string text)
 
         // "Prima (1080p)" -> "Prima": kvalita do jména kanálu nepatří
         var clean = Regex.Replace(name, @"\s*\((?:\d{3,4}p|\d+k)\)\s*$", "", RegexOptions.IgnoreCase).Trim();
+        clean = Regex.Replace(clean, @"\s*\[[^\]]*\]\s*$", "").Trim();
         if (clean.Length == 0) clean = u.Host;
         if (seen.Add(line)) list.Add(new LiveChannel(clean, group ?? "", logo ?? "", line, id ?? ""));
         name = null; logo = null; group = null; id = null;
@@ -682,7 +683,7 @@ app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCac
 // ------------------------------------------------------------------ /api/live  (IPTV kanály)
 // Playlist tahá server, ne prohlížeč: seznamy mají desítky kB a část z nich neposílá CORS hlavičky.
 // Do UI jde jen jméno, skupina, logo a URL streamu. Zdroj:
-//   ?country=cz   -> https://raw.githubusercontent.com/iptv-org/iptv/master/streams/cz.m3u
+//   ?country=cz   -> https://iptv-org.github.io/iptv/countries/cz.m3u (když selže, streams/cz.m3u)
 //   ?lang=ces     -> https://iptv-org.github.io/iptv/languages/ces.m3u
 //   ?custom=<i>   -> "Prehraj:LivePlaylists" z konfigurace
 app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttpClientFactory f, IMemoryCache cache) =>
@@ -696,7 +697,9 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
     {
         var cc = (country ?? "cz").Trim().ToLowerInvariant();
         if (!Regex.IsMatch(cc, "^[a-z]{2}$")) cc = "cz";
-        url = $"https://raw.githubusercontent.com/iptv-org/iptv/master/streams/{cc}.m3u";
+        // Sestavený seznam má navíc tvg-logo a group-title (raw streams/xx.m3u je nemá), takže
+        // dlaždice vypadají jako dlaždice. Když sestavený seznam selže, zkusí se raw varianta.
+        url = $"https://iptv-org.github.io/iptv/countries/{cc}.m3u";
     }
 
     var key = "live|" + url;
@@ -704,6 +707,12 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
         return Results.Json(new { success = true, source = url, count = cached.Count, channels = cached });
 
     var (status, body, error) = await GetAsync(f, url, 25);
+    if ((error != null || !Is2xx(status) || body.Length == 0) && url.Contains("/countries/", StringComparison.Ordinal))
+    {
+        var cc = Regex.Match(url, @"/countries/([a-z]{2})\.m3u").Groups[1].Value;
+        url = $"https://raw.githubusercontent.com/iptv-org/iptv/master/streams/{cc}.m3u";
+        (status, body, error) = await GetAsync(f, url, 25);
+    }
     if (error != null || !Is2xx(status) || body.Length == 0)
         return Results.Json(new { success = false, error = "Playlist nedostupná: " + (error ?? "HTTP " + status) });
 

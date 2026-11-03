@@ -58,7 +58,7 @@ Všechny jsou `GET`, vracejí JSON `{success, …}` a leží pod `/api`, takže 
 | `/api/stream?url=[&v=][&download=1&name=]` | Server přeposílá video (Range, seeking) a sám obnovuje vypršelý podepsaný odkaz. Neumí HLS |
 | `/api/thumb?q=[&t=][&y=][&re=][&src=]` | Náhled pro katalog. Cache týden, nenalezené hodinu. `src=itunes` = plakát z iTunes |
 | `/api/catalog?lang=cz\|en` | Žebříček z iTunes RSS pro úvodní stránku, cache 1 den |
-| `/api/live?country=cz\|lang=ces\|custom=N` | Seznam IPTV kanálů z iptv-org (`streams/xx.m3u` nebo `languages/xxx.m3u`), cache 30 min. `custom` bere URL z `Prehraj:LivePlaylists` |
+| `/api/live?country=cz\|uk\|us\|lang=ces\|custom=N` | Seznam IPTV kanálů z iptv-org (`countries/xx.m3u`, fallback `streams/xx.m3u`, jazyky `languages/xxx.m3u`), cache 30 min. `custom` bere URL z `Prehraj:LivePlaylists` |
 | `/api/live/hls?url=` | Relay HLS playlistu: přepisuje playlisty, segmenty i klíče na sebe, takže prohlížeč nepotřebuje CORS od zdroje. Blokuje privátní adresy |
 
 ### Proxy řetěz
@@ -115,7 +115,8 @@ Jeden soubor, tři vrstvy: `<style>`, markup, jeden `<script>` na konci. Sekce s
   do `#pageSection`. Kontakt `CONTACT_MAIL`.
 - **Živě (IPTV)** – tlačítko `#liveBtn` v liště → `#liveSection` (grid `#liveGrid`, zdroj
   `#liveSource`, filtr `#liveFilter`). `openLive()`/`loadLive()`/`renderLive()` staví dlaždice z
-  `/api/live`, `playLive()` pustí HLS v `#livePlayerSection`. `hls.min.js` se dotahuje lazy při prvním
+  `/api/live`, `playLive()` pustí HLS v `#livePlayerSection`. Dlouhé seznamy (USA ~1 500 kanálů) se
+  vykreslují po `LIVE_PAGE = 300` s tlačítkem „Zobrazit další“, ne všechny najednou. `hls.min.js` se dotahuje lazy při prvním
   kanálu; Safari/iOS jde přes nativní HLS. Při chybě sítě se playlist zkusí ještě přes
   `/api/live/hls`, teprve pak se ukáže chyba. `showSection()` mimo `livePlayer` volá `stopLive()`,
   aby kanál nehrál na pozadí.
@@ -203,6 +204,8 @@ Když něco z toho potvrdit nemůžeš, napiš to, nevydávej to za otestované.
   Výjimka je `wwwroot/hls.min.js` (HLS v Chrome bez něj nejde) – drž ho lokálně, ne z CDN.
 - **Živé kanály umírají** – jsou to cizí streamy; mrtvý kanál není bug appky. Nova v iptv-org pro ČR
   není (jen Prima a spol.), takže ji tam nenajdeš, ani když tam „má být“.
+- **Kódy zemí** – Velká Británie je v iptv-org `uk` (ne `gb`), Slovensko `sk`, USA `us`. Neplatný kód
+  spadne zpátky na `cz`.
 - **Geoblokace vs. relay** – přímé přehrání jde z IP diváka (české kanály projdou), relay jde z Azure
   (projde na CORS, ne na geoblokaci). Proto se zkouší v tomhle pořadí.
 - **IPv6** – oba `HttpClient`y mají `ConnectCallback = ConnectPreferIpv4`; bez toho se některé

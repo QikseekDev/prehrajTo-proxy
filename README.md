@@ -75,9 +75,15 @@ playlist na zemi nebo jazyk:
 
 | Volba v UI | Co se stáhne |
 |---|---|
-| Česko | `streams/cz.m3u` (raw z repa iptv-org) |
-| Čeština | `iptv-org.github.io/iptv/languages/ces.m3u` |
-| Slovensko | `streams/sk.m3u` |
+| Česko (`cz`) | `iptv-org.github.io/iptv/countries/cz.m3u` – 107 kanálů |
+| Čeština (`lang=ces`) | `iptv-org.github.io/iptv/languages/ces.m3u` |
+| Slovensko (`sk`) | `countries/sk.m3u` |
+| USA (`us`) | `countries/us.m3u` – přes 1 400 kanálů |
+| Anglie / VB (`uk`) | `countries/uk.m3u` – Velká Británie má v iptv-org kód `uk`, ne `gb` |
+
+Sestavené seznamy (`countries/…`) obsahují navíc `tvg-logo` a `group-title`, takže dlaždice mají loga
+a kategorii. Když sestavený seznam selže, appka zkusí raw `streams/xx.m3u`. Dlouhé seznamy se
+v UI vykreslují po 300 kanálech (tlačítko „Zobrazit další“), aby se telefony nezadusily.
 
 Playlist tahá server (`/api/live`) a posílá do prohlížeče jen jméno, skupinu, logo a URL. HLS pak
 přehrává `hls.min.js` (přibalený v `wwwroot`, načítá se až při otevření kanálu; Safari/iOS použije
