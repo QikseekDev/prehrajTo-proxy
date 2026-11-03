@@ -830,6 +830,7 @@
             hideStatus();
             currentResults = [];
             searchInput.value = '';
+            if (activeChip !== 'Vše') { activeChip = 'Vše'; renderCatalog(); }
             window.history.pushState({}, '', window.location.pathname);
             showSection('placeholder');
         }
