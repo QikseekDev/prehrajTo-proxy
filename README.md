@@ -68,6 +68,29 @@ seznam ověří (musí to být `http://`/`https://` URL) a promítne ho najednou
 --no-edit` jen pushne aktuální obsah `proxy-servers.txt` bez otevření editoru (hodí se ze
 skriptu/CI). Potřebuje `python3` v PATH (jen na čisté přepsání `appsettings.json`).
 
+## Živé vysílání (IPTV)
+
+V liště je tlačítko **Živě**. Kanály se berou z [iptv-org](https://github.com/iptv-org/iptv) – jeden
+playlist na zemi nebo jazyk:
+
+| Volba v UI | Co se stáhne |
+|---|---|
+| Česko | `streams/cz.m3u` (raw z repa iptv-org) |
+| Čeština | `iptv-org.github.io/iptv/languages/ces.m3u` |
+| Slovensko | `streams/sk.m3u` |
+
+Playlist tahá server (`/api/live`) a posílá do prohlížeče jen jméno, skupinu, logo a URL. HLS pak
+přehrává `hls.min.js` (přibalený v `wwwroot`, načítá se až při otevření kanálu; Safari/iOS použije
+nativní HLS). Když zdroj nepošle CORS hlavičky, zkusí se stejný kanál přes `/api/live/hls`.
+
+Vlastní playlist (IPTV od poskytovatele) jde přidat konfigurací: `Prehraj:LivePlaylists` jako pole URL
+(Azure: `Prehraj__LivePlaylists__0`, `__1`, …) a pak `GET /api/live?custom=0`. Z prohlížeče se
+libovolná URL nenačítá, aby appka nebyla otevřený proxy pro cokoli.
+
+> Kanály jsou cizí streamy, které appka jen zprostředkovává – část z nich je geoblokovaná na ČR,
+> část je neoficiální re-stream a může kdykoli přestat fungovat. Když kanál nenaskočí, je to vlastnost
+> zdroje, ne chyba přehrávače.
+
 ## Limity a ochrana proti scrapingu
 
 Appka je veřejná a bez přihlášení, takže `/api/*` má dvě vrstvy ochrany (obojí v `Program.cs`):
@@ -79,6 +102,7 @@ Appka je veřejná a bez přihlášení, takže `/api/*` má dvě vrstvy ochrany
 | `search` | `/api/search` | 3 dotazy/s | 8 |
 | `api` | `/api/proxy`, `/api/validate`, `/api/stream`, `/api/catalog` | 6/s | 20 |
 | `thumb` | `/api/thumb` | 10/s | 40 |
+| `live` | `/api/live/hls` | 40/s | 120 |
 
 Dávka je tam proto, že úvodní stránka posílá náhledy všech viditelných posterů najednou a přehrávač
 při seekování pošle několik Range dotazů v jedné vlně – s holým „3/s“ by se appka rozbila sama sobě.
@@ -113,6 +137,10 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
     a sám obnovuje vypršelý odkaz, takže se přehrávání ani stahování nezasekne po pár minutách. S `download=1` se
     posílá jako příloha (tlačítko ⬇ Stáhnout video). Neumí HLS (`.m3u8`). Pozor na přenesená data: na Azure
     (zvlášť free tier) se tím video počítá do odchozího provozu, na self-hostu (Termux) je to zadarmo.
+  - `GET /api/live?country={kód}[&lang={kód}][&custom={index}]` - Seznam IPTV kanálů (viz [Živé vysílání](#živé-vysílání-iptv)).
+  - `GET /api/live/hls?url={playlist}` - Záložní relay HLS playlistu pro zdroje bez CORS; přepisuje playlist,
+    segmenty i klíče na sebe, takže prohlížeč nikdy nesahá mimo naši doménu. Neveřejné adresy (localhost, 10.x,
+    192.168.x) odmítá.
   - `GET /api/thumb?q={query}[&t={titul}][&y={rok}][&re={regex}][&src=itunes]` - Jen thumbnail pro homepage. Výchozí regex je `query*`
     (každé významné slovo z `q`/`t` jako začátek slova v názvu/slugu, bez diakritiky, pořadí je jedno); `re` ho přepíše.
     Výsledek se cachuje na serveru (týden, nenalezené hodinu).
@@ -163,6 +191,7 @@ vyptej se provozovatele ([contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)
 - 🔍 Vyhledávání filmů a seriálů
 - 🎥 Přehrávání videí přímo v prohlížeči
 - 📱 Responzivní design (mobil, tablet, desktop)
+- 📺 Živé vysílání – IPTV kanály (Česko, čeština, Slovensko)
 - 🔗 Sdílení odkazů na konkrétní videa
 - ⬅️ Navigace zpět/vpřed v prohlížeči
 
@@ -171,7 +200,7 @@ vyptej se provozovatele ([contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)
 - **Backend**: ASP.NET Core 9.0, PHP 8
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript
 - **Hosting**: Azure App Service, Webzdarma.cz
-- **Video**: HTML5 Video Player
+- **Video**: HTML5 Video Player, hls.js pro živé vysílání (`wwwroot/hls.min.js`)
 
 ## Lokální vývoj
 

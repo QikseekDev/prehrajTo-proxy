@@ -368,6 +368,56 @@
         .status.loading { display: block; background: rgba(255,255,255,0.08); border-left: 4px solid #fff; }
 
         /* ---------- Footer (Netflix patička) ---------- */
+        /* ---------- Živé vysílání (IPTV kanály) ---------- */
+        .nav-live {
+            display: inline-flex; align-items: center; gap: 7px; flex: none;
+            padding: 6px 13px; border-radius: 999px; font-size: 14px; font-weight: 700;
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.22); color: #fff;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .nav-live:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4); }
+        .nav-live .dot {
+            width: 8px; height: 8px; border-radius: 50%; background: var(--red);
+            box-shadow: 0 0 0 3px rgba(229,9,20,0.22);
+        }
+        .live-section { display: none; padding: 100px 4% 0; }
+        .live-head {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; flex-wrap: wrap; margin-bottom: 20px;
+        }
+        .live-title { font-size: clamp(22px, 2.6vw, 30px); font-weight: 800; letter-spacing: -0.3px; }
+        .live-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .live-tools .set-select { max-width: 170px; padding: 6px 8px; font-size: 14px; }
+        .live-filter {
+            width: 210px; max-width: 60vw; padding: 7px 10px; border-radius: 4px; font: inherit;
+            font-size: 14px; color: #fff; background: #000; border: 1px solid #444; outline: none;
+        }
+        .live-filter:focus { border-color: #fff; }
+        .live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px 8px; }
+        .live-card {
+            display: flex; flex-direction: column; align-items: center; gap: 6px;
+            padding: 10px 8px 12px; border-radius: 6px; text-align: center;
+            background: #181818; border: 1px solid #262626;
+            transition: background 0.2s, border-color 0.2s, transform 0.15s;
+        }
+        .live-card:hover { background: #232323; border-color: #454545; }
+        .live-card:active { transform: scale(0.98); }
+        .lc-logo {
+            width: 100%; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center;
+            background: #0d0d0d; border-radius: 4px; overflow: hidden; padding: 6px;
+        }
+        .lc-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .lc-init { font-size: 20px; font-weight: 800; letter-spacing: 0.5px; color: #fff; opacity: 0.85; }
+        .lc-name {
+            font-size: 13px; font-weight: 600; line-height: 1.25; color: #fff;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .lc-group { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .live-error {
+            margin-top: 14px; padding: 12px 16px; border-radius: 6px; font-size: 14px; line-height: 1.5;
+            background: rgba(229,9,20,0.14); border-left: 4px solid var(--red); color: #f2f2f2;
+        }
+
         /* ---------- Fokus (klávesnice, TV dálkový ovladač) ---------- */
         :focus-visible {
             outline: 3px solid #fff; outline-offset: 3px; border-radius: 6px;
@@ -466,6 +516,16 @@
             .page-body { font-size: 15px; }
             .footer { padding-left: 14px; padding-right: 14px; }
             .f-links { grid-template-columns: repeat(2, 1fr); gap: 12px 16px; }
+            .nav-live { padding: 5px 10px; font-size: 13px; gap: 6px; }
+            .nav-live .dot { width: 7px; height: 7px; }
+            .live-section { padding: 86px 14px 0; }
+            .live-head { gap: 10px; margin-bottom: 16px; }
+            .live-tools { width: 100%; }
+            .live-tools .set-select { flex: 1 1 auto; max-width: none; }
+            .live-filter { width: 100%; max-width: none; }
+            .live-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px 6px; }
+            .live-card { padding: 8px 6px 10px; }
+            .lc-name { font-size: 12px; }
         }
 
         /* ---------- Velká obrazovka / TV: víc místa, čitelnější text, tučné ovládání ---------- */
@@ -511,6 +571,9 @@
             <a onclick="goHome(); setChip('Rodinné')">Rodinné</a>
             <a onclick="goHome(); setChip('Sci-fi')">Sci-fi</a>
         </nav>
+        <button class="nav-live" id="liveBtn" title="Živé vysílání">
+            <span class="dot" aria-hidden="true"></span>Živě
+        </button>
         <div class="search-box" id="searchBox">
             <button id="searchBtn" onclick="searchMovies()" aria-label="Hledat" title="Hledat">
                 <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 20.6 20.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -573,6 +636,33 @@
             <a id="dlBtn" class="dl-btn" href="#" download>⬇ Stáhnout video</a>
         </div>
 
+        <!-- Živé vysílání: kanály z IPTV seznamů, přehrává hls.js -->
+        <div id="liveSection" class="live-section">
+            <div class="live-head">
+                <h1 class="live-title">Živě</h1>
+                <div class="live-tools">
+                    <select class="set-select" id="liveSource" aria-label="Zdroj kanálů">
+                        <option value="cz">Česko</option>
+                        <option value="lang:ces">Čeština</option>
+                        <option value="sk">Slovensko</option>
+                    </select>
+                    <input class="live-filter" id="liveFilter" type="search" placeholder="Filtrovat kanály…" autocomplete="off" aria-label="Filtrovat kanály">
+                </div>
+            </div>
+            <div id="liveState" class="results-state"></div>
+            <div id="liveGrid" class="live-grid"></div>
+        </div>
+
+        <!-- Přehrávač živého vysílání -->
+        <div id="livePlayerSection" class="player-section">
+            <button class="back-btn" id="liveBackBtn">← Zpět na živě</button>
+            <div class="video-container">
+                <video id="liveVideo" controls playsinline></video>
+            </div>
+            <div id="liveNow" class="now-playing"></div>
+            <div id="liveError" class="live-error" hidden></div>
+        </div>
+
         <!-- Statické stránky (odkazy v patičce) -->
         <div id="pageSection" class="page-section">
             <button class="back-btn" id="pageBackBtn" onclick="closePage()">← Zpět</button>
@@ -615,6 +705,16 @@
         const pageSection = document.getElementById('pageSection');
         const pageTitle = document.getElementById('pageTitle');
         const pageBody = document.getElementById('pageBody');
+        const liveSection = document.getElementById('liveSection');
+        const livePlayerSection = document.getElementById('livePlayerSection');
+        const liveGrid = document.getElementById('liveGrid');
+        const liveState = document.getElementById('liveState');
+        const liveSource = document.getElementById('liveSource');
+        const liveFilter = document.getElementById('liveFilter');
+        const liveVideo = document.getElementById('liveVideo');
+        const liveNow = document.getElementById('liveNow');
+        const liveError = document.getElementById('liveError');
+        const liveBtn = document.getElementById('liveBtn');
         const nowPlaying = document.getElementById('nowPlaying');
         const dlBtn = document.getElementById('dlBtn');
         const playerEnd = document.getElementById('playerEnd');
@@ -1055,6 +1155,10 @@
             resultsSection.style.display = 'none';
             playerSection.style.display = 'none';
             pageSection.style.display = 'none';
+            liveSection.style.display = 'none';
+            livePlayerSection.style.display = 'none';
+            // živé vysílání nesmí hrát na pozadí, když se přepne jinam
+            if (section !== 'livePlayer') stopLive();
             
             if (section === 'results') {
                 resultsSection.style.display = 'block';
@@ -1062,6 +1166,10 @@
                 playerSection.style.display = 'block';
             } else if (section === 'page') {
                 pageSection.style.display = 'block';
+            } else if (section === 'live') {
+                liveSection.style.display = 'block';
+            } else if (section === 'livePlayer') {
+                livePlayerSection.style.display = 'block';
             } else {
                 placeholder.style.display = 'block';
             }
@@ -1491,6 +1599,151 @@
             if (player.page) showPlayerEnd();
         });
 
+        // ===== Živé vysílání (IPTV) =====
+        // Seznam kanálů tahá server (/api/live) z iptv-org, protože playlisty jsou velké a část
+        // z nich neposílá CORS. hls.js se načítá až při prvním kliknutí na kanál, aby úvodní
+        // stránka nenačítala 400 kB navíc.
+        let liveChannels = [];
+        let liveHls = null;
+        let liveHlsPromise = null;
+
+        function liveQuery() {
+            const v = liveSource.value || 'cz';
+            if (v.startsWith('lang:')) return 'lang=' + encodeURIComponent(v.slice(5));
+            return 'country=' + encodeURIComponent(v);
+        }
+
+        function initials(name) {
+            return (name || '?').split(/\s+/).slice(0, 2).map(w => w.charAt(0)).join('').toUpperCase();
+        }
+
+        function openLive(push = true) {
+            stopVideo();
+            hideStatus();
+            showSection('live');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (push) window.history.pushState({}, '', '?live=' + encodeURIComponent(liveSource.value));
+            if (!liveChannels.length) loadLive();
+        }
+
+        async function loadLive() {
+            liveState.className = 'results-state show';
+            liveState.innerHTML = '<span class="spinner"></span><span class="state-text">Načítám kanály…</span>';
+            liveGrid.innerHTML = '';
+            try {
+                const r = await fetch('/api/live?' + liveQuery());
+                const d = await r.json();
+                if (!d.success) throw new Error(d.error || 'Seznam kanálů se nepodařilo načíst');
+                liveChannels = Array.isArray(d.channels) ? d.channels : [];
+                if (!liveChannels.length) throw new Error('Seznam je prázdný');
+                renderLive();
+            } catch (e) {
+                liveChannels = [];
+                liveState.className = 'results-state show error';
+                liveState.innerHTML = `<span class="state-text">${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        function renderLive() {
+            const q = liveFilter.value.trim().toLowerCase();
+            const items = liveChannels
+                .map((c, i) => ({ c, i }))
+                .filter(o => !q || o.c.name.toLowerCase().includes(q) || (o.c.group || '').toLowerCase().includes(q));
+
+            liveState.className = 'results-state' + (items.length ? '' : ' show empty');
+            liveState.innerHTML = items.length ? '' : '<span class="state-text">Takový kanál tu není. Zkus jiný název nebo jiný zdroj.</span>';
+
+            liveGrid.innerHTML = items.map(({ c, i }) => `
+                <button class="live-card" data-live="${i}" title="${escapeHtml(c.name)}">
+                    <span class="lc-logo">${c.logo
+                        ? `<img src="${escapeHtml(c.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+                        : `<span class="lc-init">${escapeHtml(initials(c.name))}</span>`}</span>
+                    <span class="lc-name">${escapeHtml(c.name)}</span>
+                    ${c.group ? `<span class="lc-group">${escapeHtml(c.group)}</span>` : ''}
+                </button>`).join('');
+        }
+
+        function ensureHls() {
+            if (window.Hls) return Promise.resolve(window.Hls);
+            if (!liveHlsPromise) {
+                liveHlsPromise = new Promise((resolve, reject) => {
+                    const sc = document.createElement('script');
+                    sc.src = '/hls.min.js';
+                    sc.async = true;
+                    sc.onload = () => resolve(window.Hls);
+                    sc.onerror = () => reject(new Error('Přehrávač HLS se nepodařilo načíst'));
+                    document.head.appendChild(sc);
+                });
+            }
+            return liveHlsPromise;
+        }
+
+        function showLiveError(msg) {
+            liveError.textContent = msg;
+            liveError.hidden = false;
+        }
+
+        async function playLive(ch) {
+            if (!ch) return;
+            liveNow.textContent = ch.name;
+            liveError.hidden = true;
+            liveVideo.poster = ch.logo || '';
+            showSection('livePlayer');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            window.history.pushState({}, '', '?live=' + encodeURIComponent(liveSource.value) + '&ch=' + encodeURIComponent(ch.name));
+            stopLive();
+
+            // Safari/iOS umí HLS nativně a CORS u videa neřeší - tam je přímé přehrání nejlepší.
+            if (liveVideo.canPlayType('application/vnd.apple.mpegurl')) {
+                liveVideo.src = ch.url;
+                liveVideo.play().catch(() => {});
+                return;
+            }
+
+            let Hls;
+            try { Hls = await ensureHls(); }
+            catch (e) { showLiveError(e.message); return; }
+            if (!Hls || !Hls.isSupported()) {
+                showLiveError('Tenhle prohlížeč neumí HLS. Zkus to v jiném prohlížeči.');
+                return;
+            }
+
+            let relayed = false;
+            const hls = new Hls({ enableWorker: true });
+            liveHls = hls;
+            hls.on(Hls.Events.ERROR, (_ev, data) => {
+                if (!data.fatal) return;
+                // CORS nebo zdroj, který prohlížeči nevrátí playlist: jedeme přes náš relay.
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !relayed) {
+                    relayed = true;
+                    hls.loadSource('/api/live/hls?url=' + encodeURIComponent(ch.url));
+                    hls.startLoad();
+                    return;
+                }
+                showLiveError('Kanál teď nejde přehrát – může být geoblokovaný, dočasně mimo provoz nebo změnil adresu. Zkus jiný kanál.');
+                hls.destroy();
+                if (liveHls === hls) liveHls = null;
+            });
+            hls.on(Hls.Events.MANIFEST_PARSED, () => liveVideo.play().catch(() => {}));
+            hls.loadSource(ch.url);
+            hls.attachMedia(liveVideo);
+        }
+
+        function stopLive() {
+            if (liveHls) { liveHls.destroy(); liveHls = null; }
+            if (liveVideo) {
+                liveVideo.pause();
+                liveVideo.removeAttribute('src');
+                liveVideo.load();
+            }
+        }
+
+        function backToLive() {
+            stopLive();
+            showSection('live');
+            window.history.pushState({}, '', '?live=' + encodeURIComponent(liveSource.value));
+        }
+
         // ===== Media Session: název a plakát na uzamčené obrazovce a v ovládání sluchátek =====
         const msSupported = 'mediaSession' in navigator;
         function msSetState(state) {
@@ -1635,12 +1888,16 @@
             const videoUrl = params.get('watch');
             const title = params.get('title');
             const searchQuery = params.get('q');
+            const liveParam = params.get('live');
             
             // Always stop video first when navigating
             stopVideo();
             
             if (videoUrl) {
                 playVideoDirectly(videoUrl, title || 'Video');
+            } else if (liveParam) {
+                showSection('live');
+                if (!liveChannels.length) loadLive();
             } else if (searchQuery) {
                 searchInput.value = searchQuery;
                 if (currentResults.length > 0) {
@@ -1673,8 +1930,9 @@
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
             const el = document.activeElement;
-            if (!el || !el.classList.contains('poster')) return;
-            const cards = Array.from(el.parentElement.querySelectorAll('.poster'));
+            const isLiveCard = el && el.classList.contains('live-card');
+            if (!el || (!el.classList.contains('poster') && !isLiveCard)) return;
+            const cards = Array.from(el.parentElement.querySelectorAll(isLiveCard ? '.live-card' : '.poster'));
             const next = cards[cards.indexOf(el) + (e.key === 'ArrowRight' ? 1 : -1)];
             if (!next) return;
             e.preventDefault();
@@ -1690,6 +1948,17 @@
         function setChip(c) { activeChip = c; renderCatalog(); }
         // fill search box state when opening ?q= links
         if (searchInput.value) searchBox.classList.add('has-text');
+
+        // ===== Živé vysílání: události =====
+        liveBtn.addEventListener('click', () => openLive());
+        liveBackBtn.addEventListener('click', backToLive);
+        liveSource.addEventListener('change', () => { liveChannels = []; loadLive(); });
+        liveFilter.addEventListener('input', () => { if (liveChannels.length) renderLive(); });
+        liveGrid.addEventListener('click', e => {
+            const card = e.target.closest('[data-live]');
+            if (!card) return;
+            playLive(liveChannels[Number(card.dataset.live)]);
+        });
 
         // ===== Nastavení: panel =====
         (function () {

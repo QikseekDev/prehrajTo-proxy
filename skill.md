@@ -58,6 +58,8 @@ Všechny jsou `GET`, vracejí JSON `{success, …}` a leží pod `/api`, takže 
 | `/api/stream?url=[&v=][&download=1&name=]` | Server přeposílá video (Range, seeking) a sám obnovuje vypršelý podepsaný odkaz. Neumí HLS |
 | `/api/thumb?q=[&t=][&y=][&re=][&src=]` | Náhled pro katalog. Cache týden, nenalezené hodinu. `src=itunes` = plakát z iTunes |
 | `/api/catalog?lang=cz\|en` | Žebříček z iTunes RSS pro úvodní stránku, cache 1 den |
+| `/api/live?country=cz\|lang=ces\|custom=N` | Seznam IPTV kanálů z iptv-org (`streams/xx.m3u` nebo `languages/xxx.m3u`), cache 30 min. `custom` bere URL z `Prehraj:LivePlaylists` |
+| `/api/live/hls?url=` | Relay HLS playlistu: přepisuje playlisty, segmenty i klíče na sebe, takže prohlížeč nepotřebuje CORS od zdroje. Blokuje privátní adresy |
 
 ### Proxy řetěz
 
@@ -78,6 +80,7 @@ Všechny jsou `GET`, vracejí JSON `{success, …}` a leží pod `/api`, takže 
 | `search` | `/api/search` | 3/s | 8 |
 | `api` | `/api/proxy`, `/api/validate`, `/api/stream`, `/api/catalog` | 6/s | 20 |
 | `thumb` | `/api/thumb` | 10/s | 40 |
+| `live` | `/api/live/hls` | 40/s | 120 |
 
 - Klíč limitu je IP klienta; za App Service ji doplní `UseForwardedHeaders` (KnownNetworks/KnownProxies
   vyčištěné). Překročení = `429` + `Retry-After: 5` + JSON chyba.
@@ -110,6 +113,12 @@ Jeden soubor, tři vrstvy: `<style>`, markup, jeden `<script>` na konci. Sekce s
   (`wtzi-thumbs-v3`).
 - **Patička** – `PAGES` (help, about, sources, terms, privacy, cookies, contact), otevírá `openPage()`
   do `#pageSection`. Kontakt `CONTACT_MAIL`.
+- **Živě (IPTV)** – tlačítko `#liveBtn` v liště → `#liveSection` (grid `#liveGrid`, zdroj
+  `#liveSource`, filtr `#liveFilter`). `openLive()`/`loadLive()`/`renderLive()` staví dlaždice z
+  `/api/live`, `playLive()` pustí HLS v `#livePlayerSection`. `hls.min.js` se dotahuje lazy při prvním
+  kanálu; Safari/iOS jde přes nativní HLS. Při chybě sítě se playlist zkusí ještě přes
+  `/api/live/hls`, teprve pak se ukáže chyba. `showSection()` mimo `livePlayer` volá `stopLive()`,
+  aby kanál nehrál na pozadí.
 - **Breakpointy** – `1180px` tablet, `900px` (skryté odkazy v liště, hero plakát přes celý billboard),
   `700px` mobil, `1600px+` TV; `hover: none` vypíná hover zvětšování karet.
 - **Pozor na `overflow-x: auto`** u řad a chipsů: samo o sobě zapne i `overflow-y: auto` a řada pak
@@ -139,6 +148,10 @@ Zkontroluj, že se seznam propsal na všech třech místech, a restartuj appku.
 
 **Nová stránka v patičce** – přidej klíč do `PAGES` (title + body s HTML) a tlačítko
 `class="f-link" data-page="klíč"` do patičky. Nic dalšího není potřeba.
+
+**Vlastní IPTV playlist** – do `appsettings.json` přidej
+`"Prehraj": { "LivePlaylists": ["https://…/muj.m3u"] }` (Azure `Prehraj__LivePlaylists__0`) a otevři
+`/api/live?custom=0`. UI tuhle volbu nenabízí schválně – z prohlížeče se nenačítá libovolná URL.
 
 **Nový API endpoint** – `app.MapGet("/api/…")` v `Program.cs` a `.RequireRateLimiting("api")`;
 cokoli pod `/api` automaticky projde bot guardem. Volání na prehraj.to veď přes `FirstWorking`/proxy
@@ -187,3 +200,10 @@ Když něco z toho potvrdit nemůžeš, napiš to, nevydávej to za otestované.
 - **Náhledy jdou z prehraj.to**, iTunes je jen fallback pro plakáty z katalogu; `src=itunes` z UI už
   nejde poslat.
 - **Nová závislost** jen když se bez ní nedá pokračovat – projekt je záměrně bez balíčků.
+  Výjimka je `wwwroot/hls.min.js` (HLS v Chrome bez něj nejde) – drž ho lokálně, ne z CDN.
+- **Živé kanály umírají** – jsou to cizí streamy; mrtvý kanál není bug appky. Nova v iptv-org pro ČR
+  není (jen Prima a spol.), takže ji tam nenajdeš, ani když tam „má být“.
+- **Geoblokace vs. relay** – přímé přehrání jde z IP diváka (české kanály projdou), relay jde z Azure
+  (projde na CORS, ne na geoblokaci). Proto se zkouší v tomhle pořadí.
+- **IPv6** – oba `HttpClient`y mají `ConnectCallback = ConnectPreferIpv4`; bez toho se některé
+  dual-stack CDN z Azure nikdy nenačtou (IPv6 visí do timeoutu).

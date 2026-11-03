@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -28,10 +29,11 @@ builder.Services.AddHttpClient("prehraj", c =>
     c.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-Mode", "navigate");
     c.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-Site", "none");
     c.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-User", "?1");
-}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
 {
     AllowAutoRedirect = true,
-    AutomaticDecompression = DecompressionMethods.All
+    AutomaticDecompression = DecompressionMethods.All,
+    ConnectCallback = ConnectPreferIpv4,
 });
 
 // Klient pro přeposílání videa (/api/stream): bez dekomprese (Range musí sedět na bajty souboru)
@@ -42,11 +44,46 @@ builder.Services.AddHttpClient("prehraj-stream", c =>
     c.DefaultRequestHeaders.UserAgent.ParseAdd(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     c.DefaultRequestHeaders.AcceptLanguage.ParseAdd("cs-CZ,cs;q=0.9,en;q=0.5");
-}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
 {
     AllowAutoRedirect = true,
-    AutomaticDecompression = DecompressionMethods.None
+    AutomaticDecompression = DecompressionMethods.None,
+    ConnectCallback = ConnectPreferIpv4,
 });
+
+// Některá CDN (třeba IPTV streamy) mají AAAA záznam, i když IPv6 v Azure nefunguje. .NET pak
+// čeká na IPv6 spojení, dokud nespadne timeout, a kanál se nenačte, i když IPv4 funguje hned.
+// Připojujeme se proto napřed na IPv4 a IPv6 zkoušíme jen jako záložní cestu.
+static async ValueTask<Stream> ConnectPreferIpv4(SocketsHttpConnectionContext ctx, CancellationToken ct)
+{
+    var host = ctx.DnsEndPoint.Host;
+    var port = ctx.DnsEndPoint.Port;
+    var addrs = IPAddress.TryParse(host, out var literal)
+        ? new[] { literal }
+        : await Dns.GetHostAddressesAsync(host, ct);
+
+    var ordered = addrs.Where(a => a.AddressFamily == AddressFamily.InterNetwork)
+                       .Concat(addrs.Where(a => a.AddressFamily != AddressFamily.InterNetwork));
+
+    Exception? last = null;
+    foreach (var ip in ordered)
+    {
+        var socket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(6));
+            await socket.ConnectAsync(new IPEndPoint(ip, port), cts.Token);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch (Exception ex)
+        {
+            last = ex;
+            socket.Dispose();
+        }
+    }
+    throw last ?? new IOException("DNS nevrátil pro " + host + " žádnou adresu");
+}
 
 builder.Services.AddMemoryCache();
 
@@ -98,6 +135,18 @@ builder.Services.AddRateLimiter(o =>
     {
         TokenLimit = 40,
         TokensPerPeriod = 10,
+        ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+        QueueLimit = 0,
+        AutoReplenishment = true,
+    }));
+
+    // HLS relay: jeden divák posílá playlist, segmenty a klíč každé pár sekund, takže holý "api"
+    // limit by přehrávání sám rozbil. Pořád to ale není neomezené - 40 dotazů/s na IP stačí na
+    // několik paralelních streamů a scraping přes relay je pomalý.
+    o.AddPolicy("live", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
+    {
+        TokenLimit = 120,
+        TokensPerPeriod = 40,
         ReplenishmentPeriod = TimeSpan.FromSeconds(1),
         QueueLimit = 0,
         AutoReplenishment = true,
@@ -165,6 +214,12 @@ app.UseStaticFiles();
 var serverProxies = app.Configuration.GetSection("Prehraj:ProxyUrls").Get<string[]>() ?? Array.Empty<string>();
 var proxyUrl = app.Configuration["Prehraj:ProxyUrl"];
 if (!string.IsNullOrWhiteSpace(proxyUrl)) serverProxies = serverProxies.Append(proxyUrl).ToArray();
+
+// Vlastní IPTV playlisty (M3U) nad rámec iptv-org: "Prehraj:LivePlaylists" v appsettings.json /
+// Azure jako Prehraj__LivePlaylists__0, __1, ... Index v tomhle poli posílá prohlížeč jako
+// /api/live?custom=<index>. Pro vlastní zdroj (IPTV od poskytovatele) je to jediná cesta -
+// z prohlížeče se libovolná URL nenačítá, aby appka nebyla otevřený proxy pro cokoli.
+var liveCustom = app.Configuration.GetSection("Prehraj:LivePlaylists").Get<string[]>() ?? Array.Empty<string>();
 
 const RegexOptions Ci = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
 
@@ -293,6 +348,98 @@ IEnumerable<string> OrderedProxies(IEnumerable<string> proxies)
     var good = lastGoodProxy;
     if (good == null || arr.Count < 2) return arr;
     return arr.OrderBy(p => string.Equals(p, good, StringComparison.OrdinalIgnoreCase) ? 0 : 1);
+}
+
+// ------------------------------------------------------------------ live helpers
+// M3U z iptv-org: hlavička #EXTINF s atributy a názvem za čárkou, na dalším řádku URL.
+static List<LiveChannel> ParseM3u(string text)
+{
+    var list = new List<LiveChannel>();
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    string? name = null, logo = null, group = null, id = null;
+
+    foreach (var raw in text.Split('\n'))
+    {
+        var line = raw.TrimEnd('\r').Trim();
+        if (line.Length == 0) continue;
+
+        if (line.StartsWith("#EXTINF", StringComparison.OrdinalIgnoreCase))
+        {
+            var comma = line.LastIndexOf(',');
+            var attrs = comma >= 0 ? line[..comma] : line;
+            name = comma >= 0 ? line[(comma + 1)..].Trim() : "";
+            logo = M3uAttr(attrs, "tvg-logo");
+            group = M3uAttr(attrs, "group-title");
+            id = M3uAttr(attrs, "tvg-id");
+            continue;
+        }
+        if (line.StartsWith('#')) continue;
+
+        if (name == null) continue;
+        if (!Uri.TryCreate(line, UriKind.Absolute, out var u)
+            || (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps))
+        {
+            name = null;
+            continue;
+        }
+
+        // "Prima (1080p)" -> "Prima": kvalita do jména kanálu nepatří
+        var clean = Regex.Replace(name, @"\s*\((?:\d{3,4}p|\d+k)\)\s*$", "", RegexOptions.IgnoreCase).Trim();
+        if (clean.Length == 0) clean = u.Host;
+        if (seen.Add(line)) list.Add(new LiveChannel(clean, group ?? "", logo ?? "", line, id ?? ""));
+        name = null; logo = null; group = null; id = null;
+    }
+    return list;
+}
+
+static string M3uAttr(string attrs, string key)
+{
+    var m = Regex.Match(attrs, key + "=\"([^\"]*)\"", RegexOptions.IgnoreCase);
+    return m.Success ? m.Groups[1].Value.Trim() : "";
+}
+
+// Playlist přes nás: relativní i absolutní URI přepíšeme na /api/live/hls?url=..., aby prohlížeč
+// nikdy nesahal mimo naši doménu (CORS) a aby fungovaly i absolutní CDN adresy uvnitř playlistu.
+static string RewritePlaylist(string text, Uri baseUri)
+{
+    var sb = new StringBuilder(text.Length + 512);
+    foreach (var raw in text.Split('\n'))
+    {
+        var line = raw.TrimEnd('\r');
+        var t = line.Trim();
+        if (t.Length == 0) { sb.Append('\n'); continue; }
+        if (t.StartsWith('#'))
+        {
+            if (t.Contains("URI=\"", StringComparison.Ordinal))
+                line = Regex.Replace(line, "URI=\"([^\"]+)\"", m => "URI=\"" + RelayHlsUrl(m.Groups[1].Value, baseUri) + "\"");
+            sb.Append(line).Append('\n');
+            continue;
+        }
+        sb.Append(RelayHlsUrl(t, baseUri)).Append('\n');
+    }
+    return sb.ToString();
+}
+
+static string RelayHlsUrl(string raw, Uri baseUri)
+{
+    if (!Uri.TryCreate(baseUri, raw, out var abs)) return raw;
+    if (abs.Scheme != Uri.UriSchemeHttp && abs.Scheme != Uri.UriSchemeHttps) return raw;
+    return "/api/live/hls?url=" + Uri.EscapeDataString(abs.ToString());
+}
+
+// Relay nesmí být cesta do vnitřní sítě (localhost, 10.x, 192.168.x, ...).
+static bool IsPrivateHost(string host)
+{
+    if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+    if (!IPAddress.TryParse(host, out var ip)) return false;
+    if (IPAddress.IsLoopback(ip) || ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal) return true;
+    var b = ip.GetAddressBytes();
+    if (b.Length != 4) return false;
+    return b[0] == 10
+        || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+        || (b[0] == 192 && b[1] == 168)
+        || (b[0] == 169 && b[1] == 254)
+        || b[0] == 0 || b[0] >= 224;
 }
 
 // ------------------------------------------------------------------ /api/search
@@ -531,6 +678,101 @@ app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCac
         return Results.Json(new { success = false, error = "iTunes feed parse error: " + ex.Message });
     }
 }).RequireRateLimiting("api");
+
+// ------------------------------------------------------------------ /api/live  (IPTV kanály)
+// Playlist tahá server, ne prohlížeč: seznamy mají desítky kB a část z nich neposílá CORS hlavičky.
+// Do UI jde jen jméno, skupina, logo a URL streamu. Zdroj:
+//   ?country=cz   -> https://raw.githubusercontent.com/iptv-org/iptv/master/streams/cz.m3u
+//   ?lang=ces     -> https://iptv-org.github.io/iptv/languages/ces.m3u
+//   ?custom=<i>   -> "Prehraj:LivePlaylists" z konfigurace
+app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttpClientFactory f, IMemoryCache cache) =>
+{
+    string url;
+    if (custom is int idx && idx >= 0 && idx < liveCustom.Length && IsValidProxyUrl(liveCustom[idx]))
+        url = liveCustom[idx];
+    else if (!string.IsNullOrWhiteSpace(lang) && Regex.IsMatch(lang.Trim(), "^[a-zA-Z]{2,3}$"))
+        url = $"https://iptv-org.github.io/iptv/languages/{lang.Trim().ToLowerInvariant()}.m3u";
+    else
+    {
+        var cc = (country ?? "cz").Trim().ToLowerInvariant();
+        if (!Regex.IsMatch(cc, "^[a-z]{2}$")) cc = "cz";
+        url = $"https://raw.githubusercontent.com/iptv-org/iptv/master/streams/{cc}.m3u";
+    }
+
+    var key = "live|" + url;
+    if (cache.TryGetValue<List<LiveChannel>>(key, out var cached) && cached is { Count: > 0 })
+        return Results.Json(new { success = true, source = url, count = cached.Count, channels = cached });
+
+    var (status, body, error) = await GetAsync(f, url, 25);
+    if (error != null || !Is2xx(status) || body.Length == 0)
+        return Results.Json(new { success = false, error = "Playlist nedostupná: " + (error ?? "HTTP " + status) });
+
+    var channels = ParseM3u(body);
+    if (channels.Count == 0)
+        return Results.Json(new { success = false, error = "Playlist neobsahuje žádné kanály" });
+
+    cache.Set(key, channels, TimeSpan.FromMinutes(30));
+    return Results.Json(new { success = true, source = url, count = channels.Count, channels });
+}).RequireRateLimiting("api");
+
+// ------------------------------------------------------------------ /api/live/hls  (relay playlistu)
+// HLS v prohlížeči potřebuje CORS na playlistu i na každém segmentu. Řada IPTV zdrojů ho nemá,
+// takže UI zkouší napřed přímé přehrávání (funguje i pro geoblokované kanály, protože jde z IP
+// diváka) a tenhle relay je záložní cesta. Playlist se přepisuje tak, aby další playlisty,
+// segmenty i klíče šly zase přes nás.
+app.MapGet("/api/live/hls", async (string url, IHttpClientFactory f, HttpContext ctx) =>
+{
+    if (!Uri.TryCreate(url, UriKind.Absolute, out var target)
+        || (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps)
+        || IsPrivateHost(target.Host))
+        return Results.Json(new { success = false, error = "Neplatná URL" }, statusCode: 400);
+
+    var client = f.CreateClient("prehraj-stream");
+    using var req = new HttpRequestMessage(HttpMethod.Get, target);
+    req.Headers.TryAddWithoutValidation("Accept", "*/*");
+    var range = ctx.Request.Headers.Range.ToString();
+    if (range.Length > 0) req.Headers.TryAddWithoutValidation("Range", range);
+
+    HttpResponseMessage res;
+    try
+    {
+        using var hcts = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
+        hcts.CancelAfter(TimeSpan.FromSeconds(20));
+        res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, hcts.Token);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { success = false, error = "Zdroj neodpovídá: " + ex.Message }, statusCode: 502);
+    }
+
+    using (res)
+    {
+        var mediaType = res.Content.Headers.ContentType?.MediaType ?? "";
+        var looksPlaylist = mediaType.Contains("mpegurl", StringComparison.OrdinalIgnoreCase)
+            || target.AbsolutePath.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase)
+            || target.AbsolutePath.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase);
+
+        if (looksPlaylist)
+        {
+            var text = await res.Content.ReadAsStringAsync(ctx.RequestAborted);
+            if (!text.TrimStart().StartsWith("#EXTM3U", StringComparison.OrdinalIgnoreCase))
+                return Results.Json(new { success = false, error = "Zdroj nevrátil playlist" }, statusCode: 502);
+            ctx.Response.Headers.CacheControl = "no-store";
+            return Results.Text(RewritePlaylist(text, target), "application/vnd.apple.mpegurl");
+        }
+
+        ctx.Response.StatusCode = (int)res.StatusCode;
+        foreach (var h in new[] { "Content-Type", "Content-Length", "Content-Range", "Accept-Ranges" })
+        {
+            if (res.Content.Headers.TryGetValues(h, out var cv)) { ctx.Response.Headers[h] = cv.ToArray(); continue; }
+            if (res.Headers.TryGetValues(h, out var hv)) ctx.Response.Headers[h] = hv.ToArray();
+        }
+        ctx.Response.Headers.CacheControl = "no-store";
+        await using var src = await res.Content.ReadAsStreamAsync(ctx.RequestAborted);
+        await src.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
+        return Results.Empty;
+    }
+}).RequireRateLimiting("live");
 
 // ------------------------------------------------------------------ /api/proxy  (extract video URL)
 app.MapGet("/api/proxy", async (string url, string[]? proxy, IHttpClientFactory f) =>
@@ -776,3 +1018,5 @@ app.Run();
 record ThumbResult(string Thumbnail, string Title, string Url);
 // Položka katalogu pro homepage (iTunes RSS): t=název, y=rok, img=plakát, q=hledací výraz, g=žánry
 record CatalogItem(string T, string Y, string Img, string Q, string[] G);
+
+record LiveChannel(string Name, string Group, string Logo, string Url, string Id);

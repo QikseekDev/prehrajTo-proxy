@@ -16,6 +16,11 @@ Přečti `skill.md` – obsahuje pravidla a mapu repa; tady je jen to, co je roz
 | `a35d4d8` | Sedm reálných stránek v patičce |
 | `83ab3f1` | Smazané nepoužívané direct-fetch helpery |
 
+**Živé vysílání (IPTV)** – tlačítko Živě v liště, kanály z iptv-org, přehrávání přes HLS. Backend:
+`/api/live` (seznam, cache 30 min) a `/api/live/hls` (relay playlistu, segmentů a klíčů, policy `live`).
+Frontend: `#liveSection` + `#livePlayerSection`, `hls.min.js` v `wwwroot` (415 kB, hls.js 1.5.20, lazy).
+Přidán `ConnectPreferIpv4` pro oba `HttpClient`y – bez něj se dual-stack CDN z Azure vůbec nenačetly.
+
 Navíc README srovnané s aktuálním chováním: proxy jsou vždy zapnuté (žádný přepínač, žádné „Použít
 PHP proxy“), Nastavení má jen katalog a limit náhledů, zdroj náhledů je vždy `prehraj.to`, seznam
 proxy se needituje v prohlížeči, a opravené odkazy na `⚙️` → avatar i porty (`5218` u `dotnet run`,
@@ -40,13 +45,20 @@ force ne.)
    stáhnout (download padá na timeoutu). Ověřeno jen `node --check`, párování CSS závorek a HTTP 200.
    Potřebuje pohled na skutečném telefonu/tabletu — hlavně Top 5 řada a svislý swipe na řadách — a
    ideálně i na TV/velké obrazovce.
-2. **`preview-server.js` je necommitnutý** lokální náhledový server (`:8099`). Buď ho smazat, nebo
+2. **Přehrávání živého vysílání není ověřené v prohlížeči.** Ověřené je jen API (91 kanálů pro ČR,
+   90 pro češtinu, relay vrací přepsaný playlist i segmenty). Jestli kanály v Chrome/iOS skutečně
+   naskočí, musí potvrdit provozovatel – sandbox prohlížeč nemá.
+3. **Nova v iptv-org pro ČR není.** Seznam `streams/cz.m3u` obsahuje Primu a spol., Novu ne. Když ji
+   tam chceš, musíš dodat vlastní playlist (`Prehraj:LivePlaylists`).
+4. **Relay živého vysílání jde přes Azure** a počítá se do přenesených dat – u IPTV to je řádově
+   víc než u filmů. Pro partu to jde, na veřejný provoz ne.
+5. **`preview-server.js` je necommitnutý** lokální náhledový server (`:8099`). Buď ho smazat, nebo
    vědomě přidat do repa jako vývojovou pomůcku.
-3. **Hero popis je generovaný** (`heroDesc`), protože iTunes synopsi neposílá. Není to bug, ale text
+6. **Hero popis je generovaný** (`heroDesc`), protože iTunes synopsi neposílá. Není to bug, ale text
    „příběh, který vás od prvního záběru nepustí“ je fiktivní.
-4. **Náhledy mají natvrdo zdroj `prehraj.to`**; iTunes se používá jen na plakáty z katalogu. Volba
+7. **Náhledy mají natvrdo zdroj `prehraj.to`**; iTunes se používá jen na plakáty z katalogu. Volba
    v UI byla záměrně odstraněna, `src=itunes` na `/api/thumb` ale na serveru pořád funguje.
-5. **429 od prehraj.to je sdílené** pro všechny tři proxy (stejná IP hostingů). Nejde to obejít
+8. **429 od prehraj.to je sdílené** pro všechny tři proxy (stejná IP hostingů). Nejde to obejít
    přidáním dalšího serveru na stejný hosting, jen jiným hostingem nebo pomalejším načítáním náhledů.
 
 ## Co odsud nejde ověřit
@@ -58,6 +70,7 @@ force ne.)
 
 ## Kam dál (návrhy)
 
+- Zkontrolovat živé vysílání v prohlížeči (kanál, přepnutí zdroje, chování při mrtvém streamu).
 - Vizuální kontrola na telefonu a TV, doladit, co zbylo.
 - Vyřešit přepsanou historii (`purge-live-url`).
 - Zvážit pokračování ve sledování („Pokračovat ve sledování“ řada z `localStorage`) – rozepsané
