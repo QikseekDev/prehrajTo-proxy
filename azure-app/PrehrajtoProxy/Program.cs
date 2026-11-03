@@ -107,10 +107,10 @@ builder.Services.AddRateLimiter(o =>
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.OnRejected = async (ctx, ct) =>
     {
-        ctx.HttpContext.Response.Headers.RetryAfter = "5";
+        ctx.HttpContext.Response.Headers.RetryAfter = "4";
         ctx.HttpContext.Response.ContentType = "application/json; charset=utf-8";
         await ctx.HttpContext.Response.WriteAsync(
-            "{\"success\":false,\"error\":\"Příliš mnoho požadavků. Chvilku počkej a zkus to znovu.\"}", ct);
+            "{\"success\":false,\"rateLimited\":true,\"retryAfter\":4,\"error\":\"Příliš mnoho požadavků. Chvilku počkej a zkus to znovu.\"}", ct);
     };
 
     o.AddPolicy("search", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
@@ -318,8 +318,21 @@ static async Task<(bool ok, string body, List<string> errors)> FirstWorking(
 }
 
 // Společná chybová odpověď, když selže úplně všechno (proxy i přímé volání).
-static IResult AllFailed(List<string> errors) =>
-    Results.Json(new { success = false, valid = false, error = "Všechny zdroje selhaly: " + string.Join(" | ", errors) });
+// Když některý zdroj vrátil 429, klient dostane rateLimited + retryAfter a sám to za pár vteřin zkusí znovu.
+static IResult AllFailed(List<string> errors)
+{
+    var rl = errors.Any(e => e.Contains("429"));
+    return Results.Json(new
+    {
+        success = false,
+        valid = false,
+        rateLimited = rl,
+        retryAfter = rl ? 4 : 0,
+        error = rl
+            ? "Příliš mnoho požadavků na prehraj.to. Chvilku počkej a zkus to znovu."
+            : "Všechny zdroje selhaly: " + string.Join(" | ", errors),
+    });
+}
 
 // Client-supplied "proxy" query param(s) (Nastavení → "Použít PHP proxy"). Repeatable:
 // ?proxy=a&proxy=b&proxy=c. Only absolute http(s) URLs are accepted, so a client can't point

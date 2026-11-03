@@ -300,6 +300,13 @@
         .results-state .state-btn { flex: 0 0 auto; background: #fff; color: #000; border: 0; border-radius: 4px;
             padding: 8px 16px; font: inherit; font-weight: 700; cursor: pointer; }
         .results-state .state-btn:hover { background: rgba(255,255,255,0.75); }
+        .results-state.ratelimit { border-left-color: #f5c518; background: rgba(245,197,24,0.12); }
+        .rl-body { flex: 1 1 auto; min-width: 0; }
+        .rl-title { font-weight: 700; margin-bottom: 4px; }
+        .rl-text { color: var(--muted); font-size: 0.92em; line-height: 1.4; }
+        .rl-bar { height: 4px; margin-top: 10px; border-radius: 2px; background: rgba(255,255,255,0.14); overflow: hidden; }
+        .rl-bar > i { display: block; height: 100%; width: 0; background: #f5c518; }
+        .status.ratelimit { display: block; background: rgba(245,197,24,0.12); border-left: 4px solid #f5c518; }
         .spinner { width: 18px; height: 18px; flex: 0 0 auto; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25);
             border-top-color: #fff; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -924,9 +931,8 @@
                         const item = CATALOG.find(m => m.q === q) || { t: q, q };
                         const p = new URLSearchParams({ q: item.q, t: item.t });
                         if (item.y) p.set('y', item.y);
-                        const r = await fetch('/api/thumb?' + p + proxyQS());
-                        const d = await r.json();
-                        if (d.success) {
+                        const { data: d } = await apiJson('/api/thumb?' + p + proxyQS(), { retries: 2 });
+                        if (d && d.success) {
                             u = d.thumbnail || '';
                             thumbCache[q] = { u, t: Date.now() };
                             saveThumbs();
@@ -1106,9 +1112,8 @@
         // Když se ho nepodaří stáhnout, zůstane záložní CATALOG výše (české klasiky se přidávají vždy).
         async function loadCatalog() {
             try {
-                const r = await fetch('/api/catalog?lang=' + (settings.catLang === 'en' ? 'en' : 'cz'));
-                const d = await r.json();
-                if (!d.success || !Array.isArray(d.items) || d.items.length === 0) return;
+                const { data: d } = await apiJson('/api/catalog?lang=' + (settings.catLang === 'en' ? 'en' : 'cz'), { retries: 2 });
+                if (!d || !d.success || !Array.isArray(d.items) || d.items.length === 0) return;
                 CATALOG = d.items.concat(BUILTIN_CATALOG.filter(m => (m.g || []).includes('České')));
                 heroOffset = 0;
                 renderHero();
@@ -1139,6 +1144,71 @@
             if (e.key === 'Enter') searchMovies();
         });
         
+        // ===== Rate limit (429) =====
+        // prehraj.to (i naše vlastní omezení) při přetížení nevrací jen kód - proto se pozná i podle textu
+        // chyby. Místo holé chyby ukážeme krátké vysvětlení s ukazatelem do dalšího pokusu a zkusíme to
+        // samo znovu (3-5 s, max. 3x).
+        function isRateLimited(status, data) {
+            if (status === 429) return true;
+            if (!data || typeof data !== 'object') return false;
+            if (data.rateLimited) return true;
+            return data.success === false && /429|příliš mnoho|too many|rate.?limit/i.test(String(data.error || ''));
+        }
+
+        function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
+
+        function retryDelaySeconds(response, data) {
+            const h = response && response.headers ? Number(response.headers.get('Retry-After')) : 0;
+            const s = Number(data && data.retryAfter) || h || 4;
+            return Math.min(5, Math.max(3, s));
+        }
+
+        // fetch + JSON s automatickým opakováním při rate limitu.
+        // onWait(secs, pokus, max) se zavolá před čekáním, onRetry() těsně před dalším pokusem.
+        async function apiJson(url, opts) {
+            opts = opts || {};
+            const max = opts.retries == null ? 3 : opts.retries;
+            for (let attempt = 0; ; attempt++) {
+                const response = await fetch(url);
+                let data = null;
+                try { data = await response.json(); } catch (e) { data = null; }
+                if (!isRateLimited(response.status, data)) return { response, data, rateLimited: false };
+                if (attempt >= max) return { response, data, rateLimited: true };
+                const secs = retryDelaySeconds(response, data);
+                if (opts.onWait) opts.onWait(secs, attempt + 1, max);
+                await sleep(secs * 1000);
+                if (opts.onRetry) opts.onRetry();
+            }
+        }
+
+        function rateLimitHtml(attempt, max) {
+            return '<div class="rl-body"><div class="rl-title">Server chvilku nestíhá</div>'
+                + '<div class="rl-text">prehraj.to omezuje počet dotazů, když jich přijde moc najednou. '
+                + 'Za pár vteřin to zkusím znovu automaticky (pokus ' + attempt + ' z ' + max + ').</div>'
+                + '<div class="rl-bar"><i></i></div></div>';
+        }
+
+        function runRateLimitBar(root, secs) {
+            const bar = root.querySelector('.rl-bar > i');
+            if (!bar) return;
+            void bar.offsetWidth;
+            bar.style.transition = 'width ' + secs + 's linear';
+            bar.style.width = '100%';
+        }
+
+        function resultsRateLimited(secs, attempt, max) {
+            resultsState.className = 'results-state show ratelimit';
+            resultsState.innerHTML = rateLimitHtml(attempt, max);
+            resultsInfo.textContent = '';
+            runRateLimitBar(resultsState, secs);
+        }
+
+        function statusRateLimited(secs, attempt, max) {
+            status.className = 'status ratelimit';
+            status.innerHTML = rateLimitHtml(attempt, max);
+            runRateLimitBar(status, secs);
+        }
+
         function showStatus(message, type) {
             status.className = 'status ' + type;
             status.textContent = message;
@@ -1393,11 +1463,13 @@
             resultsLoading(`Hledám „${query}" …`);
 
             try {
-                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}${proxyQS()}`);
-                let data = null;
-                try { data = await response.json(); } catch (e) { data = null; }
+                const { response, data, rateLimited } = await apiJson(
+                    `/api/search?q=${encodeURIComponent(query)}${proxyQS()}`,
+                    { onWait: resultsRateLimited, onRetry: () => resultsLoading(`Hledám „${query}" …`) });
 
-                if (!data) {
+                if (rateLimited) {
+                    resultsError('Server pořád hlásí příliš mnoho dotazů. Zkus to prosím za chvilku znovu.');
+                } else if (!data) {
                     resultsError(`Server nevrátil platnou odpověď (HTTP ${response.status}).`);
                 } else if (data.success && data.movies && data.movies.length > 0) {
                     const catItem = CATALOG.find(m => m.q === query);
@@ -1474,12 +1546,12 @@
             for (const chunk of chunks) {
                 await Promise.all(chunk.map(async ({ movie, index }) => {
                     try {
-                        const response = await fetch(`/api/validate?url=${encodeURIComponent(movie.url)}${proxyQS()}`);
-                        const data = await response.json();
+                        const { data, rateLimited } = await apiJson(`/api/validate?url=${encodeURIComponent(movie.url)}${proxyQS()}`, { retries: 2 });
                         
                         checkedCount++;
                         
-                        if (!data.valid) {
+                        // neověřeno (rate limit / nečitelná odpověď) neznamená nefunkční - kartu necháme
+                        if (!rateLimited && data && !data.valid) {
                             // Remove invalid video from display
                             const card = cardElements[index];
                             if (card && card.parentNode) {
@@ -1539,9 +1611,11 @@
         });
 
         async function fetchVideoUrl(page) {
-            const r = await fetch(`/api/proxy?url=${encodeURIComponent(page)}${proxyQS()}&_=${Date.now()}`);
-            const d = await r.json();
-            if (!d.success || !d.videoUrl) throw new Error(d.error || 'Video se nepodařilo načíst');
+            const { data: d, rateLimited } = await apiJson(
+                `/api/proxy?url=${encodeURIComponent(page)}${proxyQS()}&_=${Date.now()}`,
+                { onWait: statusRateLimited, onRetry: hideStatus });
+            if (rateLimited) throw new Error('Server pořád hlásí příliš mnoho dotazů. Zkus to prosím za chvilku znovu.');
+            if (!d || !d.success || !d.videoUrl) throw new Error((d && d.error) || 'Video se nepodařilo načíst');
             return d.videoUrl;
         }
 
