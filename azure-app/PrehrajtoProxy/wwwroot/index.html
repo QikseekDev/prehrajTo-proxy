@@ -415,6 +415,24 @@
             display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
         }
         .lc-group { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .live-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+        .lchip {
+            padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+            color: #e5e5e5; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.2);
+        }
+        .lchip:hover { background: rgba(255,255,255,0.14); }
+        .lchip.active { background: #fff; color: #000; border-color: #fff; }
+        .lc-badges {
+            display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 2px;
+        }
+        .lc-badge {
+            font-size: 10px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.6;
+            padding: 0 5px; border-radius: 3px; white-space: nowrap;
+            background: rgba(255,255,255,0.12); color: #ddd;
+        }
+        .lc-badge.geo { background: rgba(245,197,24,0.18); color: #f5c518; }
+        .lc-badge.not24 { background: rgba(255,255,255,0.08); color: #9a9a9a; }
+        .lc-badge.q { background: rgba(84,185,197,0.18); color: #54b9c5; }
         .live-more {
             grid-column: 1 / -1; justify-self: center; margin-top: 10px;
             padding: 10px 22px; border-radius: 999px; font-size: 14px; font-weight: 700;
@@ -531,6 +549,8 @@
             .live-tools { width: 100%; }
             .live-tools .set-select { flex: 1 1 auto; max-width: none; }
             .live-filter { width: 100%; max-width: none; }
+            .live-tags { gap: 6px; margin-bottom: 12px; }
+            .lchip { padding: 5px 11px; font-size: 12px; }
             .live-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px 6px; }
             .live-card { padding: 8px 6px 10px; }
             .lc-name { font-size: 12px; }
@@ -658,6 +678,12 @@
                     </select>
                     <input class="live-filter" id="liveFilter" type="search" placeholder="Filtrovat kanály…" autocomplete="off" aria-label="Filtrovat kanály">
                 </div>
+            </div>
+            <div class="live-tags" id="liveTags">
+                <button class="lchip active" data-flag="all" type="button">Vše</button>
+                <button class="lchip" data-flag="hd" type="button">1080p</button>
+                <button class="lchip" data-flag="noGeo" type="button">Bez geo bloku</button>
+                <button class="lchip" data-flag="only24" type="button">Jen 24/7</button>
             </div>
             <div id="liveState" class="results-state"></div>
             <div id="liveGrid" class="live-grid"></div>
@@ -1619,6 +1645,10 @@
         let liveHls = null;
         let liveHlsPromise = null;
 
+        // Filtry podle tagů: "hd" = 1080p/4K, "noGeo" skryje geo-blokované, "only24" skryje ty,
+        // co nejedou 24/7. Vzájemně se násobí, "Vše" je zruší.
+        const liveFlags = { hd: false, noGeo: false, only24: false };
+
         function liveQuery() {
             const v = liveSource.value || 'cz';
             if (v.startsWith('lang:')) return 'lang=' + encodeURIComponent(v.slice(5));
@@ -1664,7 +1694,14 @@
             const q = liveFilter.value.trim().toLowerCase();
             const items = liveChannels
                 .map((c, i) => ({ c, i }))
-                .filter(o => !q || o.c.name.toLowerCase().includes(q) || (o.c.group || '').toLowerCase().includes(q));
+                .filter(o => !q || o.c.name.toLowerCase().includes(q) || (o.c.group || '').toLowerCase().includes(q))
+                .filter(o => {
+                    const tags = o.c.tags || [];
+                    if (liveFlags.hd && !(o.c.quality === '1080p' || o.c.quality === '4k')) return false;
+                    if (liveFlags.noGeo && tags.includes('geo')) return false;
+                    if (liveFlags.only24 && tags.includes('not24')) return false;
+                    return true;
+                });
 
             liveState.className = 'results-state' + (items.length ? '' : ' show empty');
             liveState.innerHTML = items.length ? '' : '<span class="state-text">Takový kanál tu není. Zkus jiný název nebo jiný zdroj.</span>';
@@ -1676,6 +1713,11 @@
                         ? `<img src="${escapeHtml(c.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
                         : `<span class="lc-init">${escapeHtml(initials(c.name))}</span>`}</span>
                     <span class="lc-name">${escapeHtml(c.name)}</span>
+                    ${(c.quality || (c.tags || []).length) ? `<span class="lc-badges">
+                        ${c.quality ? `<span class="lc-badge q">${escapeHtml(c.quality)}</span>` : ''}
+                        ${(c.tags || []).includes('geo') ? '<span class="lc-badge geo">geo blok</span>' : ''}
+                        ${(c.tags || []).includes('not24') ? '<span class="lc-badge not24">ne 24/7</span>' : ''}
+                    </span>` : ''}
                     ${c.group ? `<span class="lc-group">${escapeHtml(c.group)}</span>` : ''}
                 </button>`).join('')
                 + (rest ? `<button class="live-more" id="liveMore">Zobrazit další (${rest})</button>` : '');
@@ -1985,6 +2027,23 @@
         liveBackBtn.addEventListener('click', backToLive);
         liveSource.addEventListener('change', () => { liveChannels = []; loadLive(); });
         liveFilter.addEventListener('input', () => { if (liveChannels.length) renderLive(true); });
+        document.getElementById('liveTags').addEventListener('click', e => {
+            const chip = e.target.closest('[data-flag]');
+            if (!chip) return;
+            const flag = chip.dataset.flag;
+            if (flag === 'all') {
+                liveFlags.hd = liveFlags.noGeo = liveFlags.only24 = false;
+            } else {
+                liveFlags[flag] = !liveFlags[flag];
+            }
+            document.querySelectorAll('#liveTags .lchip').forEach(c => {
+                const f = c.dataset.flag;
+                c.classList.toggle('active', f === 'all'
+                    ? (!liveFlags.hd && !liveFlags.noGeo && !liveFlags.only24)
+                    : !!liveFlags[f]);
+            });
+            if (liveChannels.length) renderLive(true);
+        });
         liveGrid.addEventListener('click', e => {
             if (e.target.closest('#liveMore')) {
                 liveShown += LIVE_PAGE;

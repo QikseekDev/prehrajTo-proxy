@@ -120,7 +120,8 @@ Jeden soubor, tři vrstvy: `<style>`, markup, jeden `<script>` na konci. Sekce s
   kanálu; Safari/iOS jde přes nativní HLS. Kanál s `ua`/`referrer` (z `#EXTVLCOPT` nebo atributů
   `#EXTINF`) jde vždy přes `/api/live/hls`, protože hlavičky u `<video>` nastavit nelze. Při chybě
   sítě se playlist zkusí ještě přes relay, teprve pak se ukáže chyba. `showSection()` mimo `livePlayer` volá `stopLive()`,
-  aby kanál nehrál na pozadí.
+  aby kanál nehrál na pozadí. Každý kanál nese `quality` (`1080p`, `720p`, …) a `tags` (`geo`, `not24`)
+  z poznámek v playlistu; dlaždice je ukazuje jako odznaky a `#liveTags` je filtruje (`liveFlags`).
 - **Breakpointy** – `1180px` tablet, `900px` (skryté odkazy v liště, hero plakát přes celý billboard),
   `700px` mobil, `1600px+` TV; `hover: none` vypíná hover zvětšování karet.
 - **Pozor na `overflow-x: auto`** u řad a chipsů: samo o sobě zapne i `overflow-y: auto` a řada pak

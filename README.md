@@ -85,6 +85,10 @@ Sestavené seznamy (`countries/…`) obsahují navíc `tvg-logo` a `group-title`
 a kategorii. Když sestavený seznam selže, appka zkusí raw `streams/xx.m3u`. Dlouhé seznamy se
 v UI vykreslují po 300 kanálech (tlačítko „Zobrazit další“), aby se telefony nezadusily.
 
+Dlaždice nesou odznak kvality (`1080p`, `720p`, …) a tagy, které playlist sám uvádí: **`geo blok`**
+(kanál pustí jen IP dané země) a **`ne 24/7`** (nevysílá nonstop). Nad mřížkou jdou stejné věci
+filtrovat: `1080p`, `Bez geo bloku`, `Jen 24/7`; filtry se násobí a `Vše` je zruší.
+
 Některé kanály v playlistu vyžadují konkrétní prohlížeč nebo Referer – ať už jako atribut
 `http-user-agent="…"` v `#EXTINF`, nebo jako řádek `#EXTVLCOPT:http-user-agent=…` /
 `#EXTVLCOPT:http-referrer=…` před URL. Server to přečte a takový kanál posílá **vždy přes relay**

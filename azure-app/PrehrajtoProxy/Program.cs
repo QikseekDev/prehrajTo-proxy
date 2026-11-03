@@ -395,11 +395,28 @@ static List<LiveChannel> ParseM3u(string text)
             continue;
         }
 
+        // Poznámky v playlistu ("[Geo-blocked]", "[Not 24/7]") si necháme jako tagy pro UI,
+        // protože přesně říkají, proč kanál občas nejde. Z názvu ale zmizí.
+        var quality = "";
+        var qm = Regex.Match(name, @"\((\d{3,4}p|\d+k)\)", RegexOptions.IgnoreCase);
+        if (qm.Success) quality = qm.Groups[1].Value.ToLowerInvariant();
+
+        var tags = new List<string>();
+        foreach (Match marker in Regex.Matches(name, @"\[([^\]]+)\]"))
+        {
+            var m = marker.Groups[1].Value;
+            if (m.Contains("geo", StringComparison.OrdinalIgnoreCase) && !tags.Contains("geo")) tags.Add("geo");
+            if (m.Contains("24/7", StringComparison.OrdinalIgnoreCase) && !tags.Contains("not24")) tags.Add("not24");
+        }
+
         // "Prima (1080p)" -> "Prima": kvalita do jména kanálu nepatří
         var clean = Regex.Replace(name, @"\s*\((?:\d{3,4}p|\d+k)\)\s*$", "", RegexOptions.IgnoreCase).Trim();
         clean = Regex.Replace(clean, @"\s*\[[^\]]*\]\s*$", "").Trim();
+        // poznámka mohla být za kvalitou ("RTM+ (720p) [Not 24/7]"), takže kvalitu sundáme znovu
+        clean = Regex.Replace(clean, @"\s*\(\d{3,4}p\)|\s*\(\d+k\)", "", RegexOptions.IgnoreCase).Trim();
         if (clean.Length == 0) clean = u.Host;
-        if (seen.Add(line)) list.Add(new LiveChannel(clean, group ?? "", logo ?? "", line, id ?? "", ua ?? "", referrer ?? ""));
+        if (seen.Add(line))
+            list.Add(new LiveChannel(clean, group ?? "", logo ?? "", line, id ?? "", ua ?? "", referrer ?? "", quality, tags.ToArray()));
         name = null; logo = null; group = null; id = null; ua = null; referrer = null;
     }
     return list;
@@ -1067,4 +1084,4 @@ record ThumbResult(string Thumbnail, string Title, string Url);
 // Položka katalogu pro homepage (iTunes RSS): t=název, y=rok, img=plakát, q=hledací výraz, g=žánry
 record CatalogItem(string T, string Y, string Img, string Q, string[] G);
 
-record LiveChannel(string Name, string Group, string Logo, string Url, string Id, string Ua, string Referrer);
+record LiveChannel(string Name, string Group, string Logo, string Url, string Id, string Ua, string Referrer, string Quality, string[] Tags);
