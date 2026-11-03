@@ -2234,7 +2234,7 @@
         function renderLiveSrc() {
             const q = liveNorm(liveSrcSearch.value.trim());
             const cur = liveSource.value;
-            const match = it => !q || liveNorm(it.n).includes(q) || it.v === q;
+            const match = it => !q || liveNorm(it.n).includes(q) || (it.en && liveNorm(it.en).includes(q)) || it.v === q;
             const item = it => `<button type="button" class="lsrc-item${it.v === cur ? ' active' : ''}" role="option" aria-selected="${it.v === cur}" data-v="${escapeHtml(it.v)}">${escapeHtml(it.n)}</button>`;
             let html = '';
             const rec = LIVE_RECOMMENDED.filter(match);
@@ -2271,7 +2271,7 @@
                             const cs = names && names.of(code);
                             if (cs && cs !== code) n = cs;
                         } catch (e) { /* neplatný kód - zůstane anglický název */ }
-                        return { v: code.toLowerCase(), n };
+                        return { v: code.toLowerCase(), n, en: c.name || '' };
                     })
                     .sort((a, b) => a.n.localeCompare(b.n, 'cs'));
                 liveOthersState = 'ready';
