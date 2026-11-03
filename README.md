@@ -148,8 +148,8 @@ přímé volání z CZ zařízení je rychlejší.
 
 ## Živá verze
 
-- **Aplikace**: https://wtzi.runasp.net
-- **Zkrácená URL**: https://tinyurl.com/prehrajto
+Provozní URL sem záměrně nepatří – appka je sdílená jen s přáteli. Když ji potřebuješ,
+vyptej se provozovatele ([contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)).
 
 ## Funkce
 
