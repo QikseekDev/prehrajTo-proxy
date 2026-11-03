@@ -7,47 +7,66 @@
     <title>WTZI – filmy a seriály</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%23141414'/><text x='50' y='72' font-size='64' font-weight='900' text-anchor='middle' fill='%23e50914' font-family='Arial'>W</text></svg>">
     <style>
-        :root { --red: #e50914; --bg: #141414; --text: #e5e5e5; --muted: #8c8c8c; }
+        :root { --red: #e50914; --red-dark: #b20710; --bg: #141414; --panel: #181818; --text: #e5e5e5; --muted: #8c8c8c; --green: #46d369; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html { scroll-behavior: smooth; }
         body {
-            font-family: 'Helvetica Neue', Helvetica, Arial, -apple-system, 'Segoe UI', sans-serif;
+            font-family: 'Netflix Sans', 'Helvetica Neue', Helvetica, Arial, -apple-system, 'Segoe UI', sans-serif;
             background: var(--bg);
             color: var(--text);
             min-height: 100vh;
-            padding-bottom: 60px;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
         }
+        ::selection { background: var(--red); color: #fff; }
         button { font: inherit; border: none; cursor: pointer; color: inherit; background: none; }
 
         /* ---------- Top bar ---------- */
         .nav {
             position: fixed; top: 0; left: 0; right: 0; z-index: 50;
             display: flex; align-items: center; gap: 24px;
-            padding: 14px 4%;
+            padding: 16px 4%;
             background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
-            transition: background 0.3s;
+            transition: background 0.3s, padding 0.3s, box-shadow 0.3s;
         }
-        .nav.solid { background: var(--bg); box-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+        .nav.solid {
+            background: var(--bg); box-shadow: 0 2px 12px rgba(0,0,0,0.6);
+            padding-top: 8px; padding-bottom: 8px;
+        }
+        /* logo po vzoru netflixovského wordmarku - vysoké, těsné, červené */
         .logo {
-            font-weight: 900; font-size: 30px; letter-spacing: 3px; color: var(--red);
-            cursor: pointer; text-shadow: 0 2px 8px rgba(0,0,0,0.5); user-select: none;
+            font-weight: 900; font-size: 28px; line-height: 1; letter-spacing: -0.5px; color: var(--red);
+            transform: scaleY(1.18); transform-origin: center;
+            cursor: pointer; text-shadow: 0 3px 8px rgba(0,0,0,0.6); user-select: none;
+            transition: font-size 0.3s;
         }
-        .nav-links { display: flex; gap: 18px; font-size: 14px; }
-        .nav-links a { color: var(--text); text-decoration: none; cursor: pointer; opacity: 0.85; }
-        .nav-links a:hover { opacity: 1; color: #fff; }
+        .nav.solid .logo { font-size: 24px; }
+        .nav-links { display: flex; gap: 22px; font-size: 14px; }
+        .nav-links a { color: rgba(255,255,255,0.9); text-decoration: none; cursor: pointer; transition: color 0.15s; }
+        .nav-links a:first-child { color: #fff; font-weight: 700; }
+        .nav-links a:hover { color: #fff; }
         .search-box {
             margin-left: auto; display: flex; align-items: center;
             border: 1px solid transparent; background: rgba(0,0,0,0.0);
-            padding: 4px 6px; border-radius: 4px; transition: all 0.25s;
+            padding: 5px 8px; border-radius: 4px; transition: all 0.25s;
         }
-        .search-box:focus-within, .search-box.has-text { border-color: #fff; background: rgba(0,0,0,0.75); }
+        .search-box:focus-within, .search-box.has-text { border-color: #fff; background: rgba(0,0,0,0.8); }
         .search-box button { font-size: 18px; padding: 6px 8px; transition: none; }
         .search-box button:disabled { opacity: 0.5; cursor: default; }
 
         /* ---------- Nastavení ---------- */
-        .settings-wrap { position: relative; margin-left: 12px; }
+        .settings-wrap { position: relative; margin-left: 12px; display: flex; align-items: center; }
         .settings-btn { font-size: 20px; padding: 6px 8px; opacity: 0.85; }
         .settings-btn:hover { opacity: 1; }
+        /* avatar profilu po vzoru Netflixu - otevře stejné Nastavení jako ⚙️ */
+        .profile-btn {
+            width: 32px; height: 32px; margin-left: 8px; border-radius: 5px; overflow: hidden; flex: none;
+            background: linear-gradient(160deg, #6fa8ff, #2f56d8); padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.5); transition: filter 0.2s;
+        }
+        .profile-btn:hover { filter: brightness(1.18); }
+        .profile-btn svg { width: 100%; height: 100%; display: block; }
         .settings-panel {
             display: none; position: absolute; right: 0; top: calc(100% + 10px); width: 290px;
             background: #1f1f1f; border: 1px solid #333; border-radius: 8px; padding: 14px 16px;
@@ -58,8 +77,7 @@
         .set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .set-hint { color: var(--muted); font-size: 12px; margin-top: 6px; line-height: 1.4; }
         .set-select { background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; font: inherit; max-width: 150px; }
-        /* iTunes dává plakáty na výšku -> v 16:9 dlaždicích je celé zobrazit */
-        .src-itunes .poster .thumb { object-fit: contain; }
+        /* iTunes dává plakáty na výšku -> na kartách je ořízneme na 16/9 jako Netflix */
         .src-itunes .hero-img { object-fit: contain; object-position: right center; }
         .set-sub { display: none; align-items: center; justify-content: space-between; margin-top: 10px; }
         .set-sub.show { display: flex; }
@@ -98,37 +116,64 @@
 
         .container { max-width: none; }
 
-        /* ---------- Hero ---------- */
+        /* ---------- Hero (billboard po vzoru Netflix) ---------- */
         .hero {
             position: relative; height: 78vh; min-height: 460px; max-height: 760px;
             display: flex; align-items: flex-end; padding: 0 4% 9%;
             background: var(--hero-bg); overflow: hidden;
         }
         .hero::after {
-            content: ''; position: absolute; inset: 0;
+            content: ''; position: absolute; inset: 0; z-index: 1;
             background:
-                linear-gradient(77deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 65%),
-                linear-gradient(0deg, var(--bg) 0%, rgba(20,20,20,0) 40%);
+                linear-gradient(77deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 40%, rgba(0,0,0,0) 72%),
+                linear-gradient(0deg, var(--bg) 0%, rgba(20,20,20,0) 45%),
+                linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 24%);
         }
         .hero-emoji {
             position: absolute; right: 8%; top: 50%; transform: translateY(-50%);
             font-size: min(32vw, 340px); opacity: 0.35; filter: blur(1px);
         }
         .hero-content { position: relative; z-index: 2; max-width: 560px; }
-        .hero-tag { font-size: 13px; letter-spacing: 3px; font-weight: 700; color: #ddd; margin-bottom: 8px; }
-        .hero-tag .w { color: var(--red); font-weight: 900; font-size: 18px; margin-right: 4px; }
-        .hero h2 { font-size: clamp(2rem, 6vw, 4.2rem); line-height: 1.05; font-weight: 800; text-shadow: 2px 4px 12px rgba(0,0,0,0.6); }
-        .hero .meta { margin: 14px 0 18px; font-size: 16px; color: #ddd; }
-        .hero .match { color: #46d369; font-weight: 700; margin-right: 8px; }
-        .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+        /* řádek [W] TIP DNE jako u Netflixu řádek [N] SERIÁL */
+        .hero-tag {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+            font-size: 14px; letter-spacing: 0.42em; font-weight: 600; color: #fff;
+            text-transform: uppercase; text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+        }
+        .hero-tag .w {
+            color: var(--red); font-weight: 900; font-size: 27px; line-height: 1;
+            letter-spacing: -1px; transform: scaleY(1.15); text-shadow: 0 3px 8px rgba(0,0,0,0.7);
+        }
+        .hero h2 { font-size: clamp(2rem, 6vw, 4.2rem); line-height: 1.03; font-weight: 800; letter-spacing: -1px; text-shadow: 2px 4px 12px rgba(0,0,0,0.6); }
+        .hero .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 14px 0 0; font-size: 16px; color: #ddd; }
+        .hero .match { color: var(--green); font-weight: 700; }
+        .hero .hd {
+            font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #ddd;
+            border: 1px solid rgba(255,255,255,0.55); border-radius: 3px; padding: 0 5px; line-height: 1.6;
+        }
+        .hero .genres { color: #cfcfcf; }
+        .hero-desc {
+            margin-top: 14px; font-size: 16px; line-height: 1.5; color: #e8e8e8;
+            text-shadow: 1px 2px 8px rgba(0,0,0,0.8);
+            display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        /* věkový box u pravé hrany billboardu */
+        .hero-rating {
+            position: absolute; right: 0; bottom: 36%; z-index: 2;
+            background: rgba(0,0,0,0.55); color: #fff; font-size: 17px; letter-spacing: 0.5px;
+            border-left: 3px solid rgba(255,255,255,0.7); padding: 5px 16px 5px 13px;
+        }
+        .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
         .btn-play, .btn-info {
-            padding: 10px 28px; border-radius: 4px; font-size: 18px; font-weight: 700;
-            transition: background 0.2s;
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 11px 26px; border-radius: 4px; font-size: 17px; font-weight: 700;
+            transition: background 0.2s, transform 0.1s;
         }
         .btn-play { background: #fff; color: #000; }
-        .btn-play:hover { background: rgba(255,255,255,0.75); }
+        .btn-play:hover { background: rgba(255,255,255,0.78); }
         .btn-info { background: rgba(109,109,110,0.7); color: #fff; }
         .btn-info:hover { background: rgba(109,109,110,0.45); }
+        .btn-play:active, .btn-info:active { transform: scale(0.97); }
 
         /* ---------- Genre chips ---------- */
         .chips {
@@ -144,10 +189,19 @@
         .chip:hover { background: rgba(255,255,255,0.15); }
         .chip.active { background: #fff; color: #000; border-color: #fff; font-weight: 700; }
 
-        /* ---------- Rows ---------- */
+        /* ---------- Rows (Netflix carousel) ---------- */
         #catalogRows { margin-top: 24px; }
-        .cat-row { margin-bottom: 34px; }
-        .cat-row h3 { font-size: 20px; font-weight: 700; padding: 0 4%; margin-bottom: 10px; color: #e5e5e5; }
+        .cat-row { margin-bottom: 30px; }
+        .cat-row h3 {
+            display: flex; align-items: center; gap: 12px; padding: 0 4%; margin-bottom: 4px;
+            font-size: clamp(17px, 1.5vw, 22px); font-weight: 700; color: #e5e5e5; letter-spacing: 0.2px;
+        }
+        /* "Prozkoumat vše" se u nadpisu řádku ukáže až po najetí myší (jako u Netflixu) */
+        .row-more {
+            font-size: 13px; font-weight: 700; color: #54b9c5; white-space: nowrap;
+            opacity: 0; transform: translateX(-8px); transition: opacity 0.2s, transform 0.2s;
+        }
+        .cat-row:hover .row-more { opacity: 1; transform: none; }
         .row-wrap { position: relative; }
         .row-scroll {
             display: flex; gap: 8px; overflow-x: auto; padding: 14px 4% 30px; margin: -14px 0 -30px;
@@ -155,13 +209,21 @@
         }
         .row-scroll::-webkit-scrollbar { display: none; }
         .arrow {
-            position: absolute; top: 0; bottom: 30px; width: 4%; z-index: 5; font-size: 42px;
-            background: rgba(20,20,20,0.55); color: #fff; opacity: 0; transition: opacity 0.2s;
+            position: absolute; top: 0; bottom: 30px; width: 5%; z-index: 5;
+            font-size: 52px; font-weight: 300; line-height: 1; color: #fff;
+            opacity: 0; transition: opacity 0.2s, filter 0.2s;
         }
-        .arrow.left { left: 0; } .arrow.right { right: 0; }
+        .arrow.left {
+            left: 0;
+            background: linear-gradient(90deg, rgba(20,20,20,0.95) 0%, rgba(20,20,20,0.55) 55%, rgba(20,20,20,0) 100%);
+        }
+        .arrow.right {
+            right: 0;
+            background: linear-gradient(270deg, rgba(20,20,20,0.95) 0%, rgba(20,20,20,0.55) 55%, rgba(20,20,20,0) 100%);
+        }
         .row-wrap:hover .arrow { opacity: 1; }
-        .arrow:hover { background: rgba(20,20,20,0.85); }
-        @media (hover: none) { .arrow { display: none; } }
+        .arrow:hover { filter: brightness(1.7); }
+        @media (hover: none) { .arrow { display: none; } .row-more { display: none; } }
 
         .poster {
             flex: none; position: relative; width: clamp(170px, 21vw, 300px); aspect-ratio: 16/9;
@@ -187,22 +249,22 @@
         }
         .poster:hover .play { opacity: 1; transform: translate(-50%,-50%) scale(1); }
         .poster .p-title { position: relative; font-weight: 700; font-size: 14px; line-height: 1.2; }
-        .poster .p-meta { position: relative; font-size: 11px; color: #ccc; margin-top: 3px; }
+        .poster .p-meta { position: relative; font-size: 11px; line-height: 1.35; color: #ccc; margin-top: 3px; }
         .poster .p-meta b { color: #46d369; }
 
-        /* Top 10 ranked */
-        .poster.ranked { width: clamp(250px, 27vw, 380px); aspect-ratio: 16/9; display: flex; align-items: stretch; }
+        /* Top 10 ranked - portrétní plakát vedle obřího čísla jako na Netflixu */
+        .poster.ranked { width: auto; aspect-ratio: auto; height: clamp(150px, 19vw, 230px); display: flex; align-items: stretch; }
         .poster.ranked .rank {
-            flex: none; width: 38%; font-size: clamp(110px, 14vw, 190px); font-weight: 900; line-height: 0.85;
-            color: #141414; -webkit-text-stroke: 3px #595959; letter-spacing: -12px; text-align: right;
-            align-self: flex-end; padding-right: 6px;
+            flex: none; font-size: clamp(170px, 22vw, 280px); font-weight: 900; line-height: 0.8;
+            color: var(--bg); -webkit-text-stroke: 4px #595959; letter-spacing: -14px; text-align: right;
+            align-self: flex-end; padding-right: 0; margin-right: -16px; position: relative; z-index: 0;
         }
-        .poster.ranked .art { position: relative; flex: none; width: 62%; inset: auto; height: 100%; }
+        .poster.ranked .art { position: relative; flex: none; inset: auto; height: 100%; aspect-ratio: 2 / 3; z-index: 1; }
 
         /* Thumbnails */
         .poster .thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s; }
         .poster .art.has-img .thumb { opacity: 1; }
-        .poster .thumb.portrait { object-fit: contain; }   /* plakáty z iTunes jsou na výšku */
+        .poster .thumb.portrait { object-fit: cover; }   /* plakáty z iTunes jsou na výšku -> ořízneme je na kartu, jako Netflix */
         .poster .art.has-img .emoji { display: none; }
         .hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.8s; }
         .hero-img.portrait { object-fit: contain; object-position: right center; }
@@ -215,11 +277,24 @@
         .results-info { color: var(--muted); font-size: 16px; margin-bottom: 18px; }
         .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 40px 8px; }
         .movie-card {
-            display: block; text-decoration: none; color: inherit; border-radius: 4px; cursor: pointer;
-            background: #181818; overflow: hidden; transition: transform 0.25s, box-shadow 0.25s;
+            display: block; text-decoration: none; color: inherit; border-radius: 6px; cursor: pointer;
+            background: #181818; overflow: hidden; position: relative;
+            transition: transform 0.25s, box-shadow 0.25s;
         }
-        .movie-card:hover { transform: scale(1.08); z-index: 5; position: relative; box-shadow: 0 14px 34px rgba(0,0,0,0.8); }
+        .movie-card:hover { transform: scale(1.06); z-index: 5; box-shadow: 0 16px 40px rgba(0,0,0,0.85); }
         .movie-card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #2a2a2a; display: block; }
+        /* kruhové Přehrát po najetí na kartu ve výsledcích hledání */
+        .card-play {
+            position: absolute; top: 0; left: 0; right: 0; aspect-ratio: 16/9; z-index: 2;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.4); opacity: 0; transition: opacity 0.2s; pointer-events: none;
+        }
+        .movie-card:hover .card-play { opacity: 1; }
+        .card-play i {
+            width: 54px; height: 54px; border-radius: 50%; border: 2px solid #fff;
+            background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+            font-style: normal; font-size: 20px; padding-left: 4px; color: #fff;
+        }
         .movie-card .info { padding: 10px 12px 14px; }
         .movie-card .title { font-weight: 600; font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .movie-card .year { color: #46d369; font-size: 12px; margin-top: 5px; font-weight: 600; }
@@ -249,18 +324,37 @@
         .status.success { display: block; background: rgba(70,211,105,0.12); border-left: 4px solid #46d369; }
         .status.loading { display: block; background: rgba(255,255,255,0.08); border-left: 4px solid #fff; }
 
-        /* ---------- Footer ---------- */
+        /* ---------- Footer (Netflix patička) ---------- */
+        .footer { margin-top: 46px; padding: 36px 4% 52px; color: var(--muted); font-size: 14px; }
+        .f-ask { margin-bottom: 26px; color: #bcbcbc; font-size: 15px; }
+        .f-links {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: 14px 24px; max-width: 1000px; margin-bottom: 26px;
+        }
+        .f-link { color: #bcbcbc; cursor: pointer; transition: color 0.15s; }
+        .f-link:hover { color: #fff; text-decoration: underline; }
+        .f-code {
+            display: inline-block; border: 1px solid #7a7a7a; color: #bcbcbc;
+            padding: 6px 10px; font-size: 13px; letter-spacing: 0.5px; margin-bottom: 18px; cursor: pointer;
+        }
+        .f-code:hover { color: #fff; border-color: #fff; }
+        .f-copy { color: #7a7a7a; font-size: 13px; }
 
         @media (max-width: 700px) {
-            .nav { gap: 12px; padding: 10px 4%; }
+            .nav { gap: 12px; padding: 12px 4%; }
             .nav-links { display: none; }
             .logo { font-size: 24px; }
+            .nav.solid .logo { font-size: 21px; }
             .search-box:focus-within input, .search-box.has-text input { width: 150px; }
             .hero { height: 62vh; min-height: 380px; padding-bottom: 12%; }
+            .hero-desc { font-size: 14px; -webkit-line-clamp: 2; }
+            .hero-rating { font-size: 14px; bottom: 30%; padding: 4px 12px 4px 10px; }
+            .hero-actions { margin-top: 14px; }
             .btn-play, .btn-info { font-size: 15px; padding: 8px 18px; }
             .results-grid { grid-template-columns: repeat(2, 1fr); gap: 20px 8px; }
             .movie-card:hover { transform: none; }
             .poster:hover { transform: none; }
+            .f-links { grid-template-columns: repeat(2, 1fr); gap: 12px 16px; }
         }
     </style>
 </head>
@@ -279,7 +373,10 @@
             <input type="text" id="searchInput" placeholder="Filmy, seriály, názvy…" autocomplete="off">
         </div>
         <div class="settings-wrap" id="settingsWrap">
-            <button class="settings-btn" id="settingsBtn" aria-label="Nastavení" title="Nastavení">⚙️</button>
+            <button class="settings-btn js-settings-btn" id="settingsBtn" aria-label="Nastavení" title="Nastavení">⚙️</button>
+            <button class="profile-btn js-settings-btn" id="profileBtn" aria-label="Profil a nastavení" title="Profil">
+                <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="11" cy="13" r="2.6" fill="#101010"/><circle cx="21" cy="13" r="2.6" fill="#101010"/><path d="M10 20.5c1.9 2.6 4 3.9 6 3.9s4.1-1.3 6-3.9" stroke="#101010" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
+            </button>
             <div class="settings-panel" id="settingsPanel">
                 <h4>Nastavení</h4>
                 <div class="set-row">
@@ -351,6 +448,27 @@
             <div id="catalogRows"></div>
         </div>
     </div>
+
+    <!-- Patička po vzoru Netflixu -->
+    <footer class="footer">
+        <div class="f-ask">Máte otázky? <span class="f-link">Kontaktujte nás.</span></div>
+        <div class="f-links">
+            <span class="f-link">Audio popis</span>
+            <span class="f-link">Centrum nápovědy</span>
+            <span class="f-link">Dárkové karty</span>
+            <span class="f-link">Tiskové zprávy</span>
+            <span class="f-link">Investorům</span>
+            <span class="f-link">Podmínky užití</span>
+            <span class="f-link">Kontakt</span>
+            <span class="f-link">Ochrana soukromí</span>
+            <span class="f-link">Předvolby cookies</span>
+            <span class="f-link">Firemní informace</span>
+            <span class="f-link">O nás</span>
+            <span class="f-link">Pracovní příležitosti</span>
+        </div>
+        <span class="f-code">Kód služby</span>
+        <div class="f-copy">© 2026 WTZI · Proxy pro přehrávání videí z prehraj.to</div>
+    </footer>
 
     <script>
         const searchInput = document.getElementById('searchInput');
@@ -584,6 +702,21 @@
             return `linear-gradient(150deg, hsl(${h},60%,38%), hsl(${(h + 45) % 360},65%,16%))`;
         }
 
+        // "Procenta doporučení" a věkový rating po vzoru Netflixu - stabilně odvozené
+        // z názvu, čistě vzhled, žádná logika za tím nestojí.
+        function hashStr(s) {
+            let h = 0;
+            for (const c of norm(s || '')) h = (h * 31 + c.charCodeAt(0)) % 100000;
+            return h;
+        }
+        function matchPct(title) { return 88 + (hashStr(title) % 12); }   // 88–99 %
+        function ageRating(title) { return ['7+', '12+', '15+', '18+'][hashStr(title) % 4]; }
+        // Popis pod metařádkem billboardu (katalog z iTunes žádné synopsy nemá)
+        function heroDesc(m) {
+            const g = (m.g && m.g.length) ? m.g.slice(0, 2).join(' a ') : 'Film';
+            return `${g} · ${m.y || ''}`.trim() + ' – příběh, který vás od prvního záběru nepustí od obrazovky.';
+        }
+
         function escapeHtml(str) {
             return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         }
@@ -603,14 +736,14 @@
                     <span class="shade"></span>
                     <span class="play">▶</span>
                     <span class="p-title">${escapeHtml(m.t)}</span>
-                    <span class="p-meta"><b>${m.y}</b> · ${m.g.join(' · ')}</span>
+                    <span class="p-meta"><b>${matchPct(m.t)} % Doporučeno</b> · ${m.y} · ${ageRating(m.t)}</span>
                 </span>
             </button>`;
         }
 
-        function rowHtml(title, items, ranked) {
+        function rowHtml(title, items, ranked, chip) {
             return `<section class="cat-row">
-                <h3>${title}</h3>
+                <h3>${title}${chip ? `<button class="row-more" data-chip="${escapeHtml(chip)}">Prozkoumat vše ›</button>` : ''}</h3>
                 <div class="row-wrap">
                     <button class="arrow left" data-scroll="-1" aria-label="Doleva">‹</button>
                     <div class="row-scroll">${items.map((m, i) => posterHtml(m, ranked ? i + 1 : 0)).join('')}</div>
@@ -628,12 +761,19 @@
                     <div class="hero-content">
                         <div class="hero-tag"><span class="w">W</span> TIP DNE</div>
                         <h2>${escapeHtml(m.t)}</h2>
-                        <div class="meta"><span class="match">Doporučeno</span> ${m.y} · ${m.g.join(' · ')}</div>
+                        <div class="meta">
+                            <span class="match">${matchPct(m.t)} % Doporučeno</span>
+                            <span class="year">${m.y}</span>
+                            <span class="hd">HD</span>
+                            <span class="genres">${m.g.join(' · ')}</span>
+                        </div>
+                        <p class="hero-desc">${escapeHtml(heroDesc(m))}</p>
                         <div class="hero-actions">
                             <button class="btn-play" data-q="${escapeHtml(m.q)}">▶ Přehrát</button>
                             <button class="btn-info" data-next="1">↻ Jiný tip</button>
                         </div>
                     </div>
+                    <div class="hero-rating">${ageRating(m.t)}</div>
                 </div>`;
             const heroEl = document.querySelector('#hero .hero');
             getThumb(m.q, u => {
@@ -665,7 +805,7 @@
             html += ROWS.map(r => {
                 const items = CATALOG.filter(m => m.g.some(g => r.genres.includes(g)))
                                      .filter(m => activeChip === 'Vše' || m.g.includes(activeChip));
-                return items.length ? rowHtml(r.name, items, false) : '';
+                return items.length ? rowHtml(r.name, items, false, r.genres[0]) : '';
             }).join('');
             document.getElementById('catalogRows').innerHTML = html;
             observeThumbs();
@@ -825,6 +965,7 @@
                 };
                 
                 card.innerHTML = `
+                    <div class="card-play"><i>▶</i></div>
                     <img src="${movie.thumbnail || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 9%22><rect fill=%22%23333%22 width=%2216%22 height=%229%22/><text x=%228%22 y=%225%22 fill=%22%23666%22 text-anchor=%22middle%22 font-size=%222%22>🎬</text></svg>'}" 
                          alt="${movie.title}"
                          onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 9%22><rect fill=%22%23333%22 width=%2216%22 height=%229%22/><text x=%228%22 y=%225%22 fill=%22%23666%22 text-anchor=%22middle%22 font-size=%222%22>🎬</text></svg>'">
@@ -1151,7 +1292,10 @@
             tog.checked = !!settings.limitOn;
             val.value = settings.limit;
             sub.classList.toggle('show', tog.checked);
-            btn.addEventListener('click', e => { e.stopPropagation(); panel.classList.toggle('open'); });
+            // ⚙️ i avatar profilu otevřou ten samý panel Nastavení (každý má stopPropagation,
+            // aby se panel hned zase nezavřel přes document listener níže)
+            document.querySelectorAll('.js-settings-btn').forEach(b =>
+                b.addEventListener('click', e => { e.stopPropagation(); panel.classList.toggle('open'); }));
             document.addEventListener('click', e => { if (!e.target.closest('#settingsWrap')) panel.classList.remove('open'); });
             tog.addEventListener('change', () => {
                 settings.limitOn = tog.checked;
