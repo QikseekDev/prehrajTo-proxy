@@ -168,7 +168,8 @@
 
         /* ---------- Genre chips ---------- */
         .chips {
-            display: flex; gap: 10px; overflow-x: auto; padding: 0 4%; margin-top: -4vh;
+            display: flex; gap: 10px; padding: 0 4%; margin-top: -4vh;
+            overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
             position: relative; z-index: 3; scrollbar-width: none;
         }
         .chips::-webkit-scrollbar { display: none; }
@@ -195,7 +196,11 @@
         .cat-row:hover .row-more { opacity: 1; transform: none; }
         .row-wrap { position: relative; }
         .row-scroll {
-            display: flex; gap: 8px; overflow-x: auto; padding: 14px 4% 30px; margin: -14px 0 -30px;
+            display: flex; gap: 8px; padding: 14px 4% 30px; margin: -14px 0 -30px;
+            /* overflow-x: auto samo o sobě zapne i overflow-y: auto -> řada se pak dá posouvat
+               nahoru/dolů (a swipe místo scrollování stránky táhne řádu). Proto je y natvrdo hidden. */
+            overflow-x: auto; overflow-y: hidden;
+            overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
             scroll-snap-type: x proximity; scrollbar-width: none;
         }
         .row-scroll::-webkit-scrollbar { display: none; }
@@ -214,7 +219,17 @@
         }
         .row-wrap:hover .arrow { opacity: 1; }
         .arrow:hover { filter: brightness(1.7); }
-        @media (hover: none) { .arrow { display: none; } .row-more { display: none; } }
+        @media (hover: none) {
+            .arrow { display: none; }
+            .row-more { display: none; }
+            /* na dotyku hover "přilepí" a karta zůstane zvětšená - a přeteče přes řádu */
+            .poster:hover { transform: none; }
+            .poster:hover .play { opacity: 0; }
+            .poster:active { transform: scale(0.97); }
+            .movie-card:hover { transform: none; }
+            .movie-card:hover .card-play { opacity: 0; }
+            .movie-card:active { transform: scale(0.98); }
+        }
 
         .poster {
             flex: none; position: relative; width: clamp(170px, 21vw, 300px); aspect-ratio: 16/9;
@@ -239,8 +254,14 @@
             opacity: 0; transition: all 0.2s;
         }
         .poster:hover .play { opacity: 1; transform: translate(-50%,-50%) scale(1); }
-        .poster .p-title { position: relative; font-weight: 700; font-size: 14px; line-height: 1.2; }
-        .poster .p-meta { position: relative; font-size: 11px; line-height: 1.35; color: #ccc; margin-top: 3px; }
+        .poster .p-title {
+            position: relative; font-weight: 700; font-size: clamp(12px, 1.1vw, 14px); line-height: 1.2;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .poster .p-meta {
+            position: relative; font-size: clamp(10px, 0.85vw, 11px); line-height: 1.35; color: #ccc; margin-top: 3px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
         .poster .p-meta b { color: #46d369; }
 
         /* Top 10 ranked - portrétní plakát vedle obřího čísla jako na Netflixu */
@@ -347,6 +368,14 @@
         .status.loading { display: block; background: rgba(255,255,255,0.08); border-left: 4px solid #fff; }
 
         /* ---------- Footer (Netflix patička) ---------- */
+        /* ---------- Fokus (klávesnice, TV dálkový ovladač) ---------- */
+        :focus-visible {
+            outline: 3px solid #fff; outline-offset: 3px; border-radius: 6px;
+        }
+        .poster:focus-visible, .movie-card:focus-visible { outline-offset: 2px; }
+        .chip:focus-visible, .btn-play:focus-visible, .btn-info:focus-visible,
+        .search-box input:focus-visible, .arrow:focus-visible { outline-offset: 2px; }
+
         .footer { margin-top: 46px; padding: 36px 4% 52px; color: var(--muted); font-size: 14px; }
         .f-ask { margin-bottom: 26px; color: #bcbcbc; font-size: 15px; }
         .f-links {
@@ -372,22 +401,103 @@
         .page-body code { background: rgba(255,255,255,0.1); padding: 1px 6px; border-radius: 4px; font-size: 14px; }
         .page-body .btn-play { margin-top: 6px; }
 
-        @media (max-width: 700px) {
-            .nav { gap: 12px; padding: 12px 4%; }
+        /* ---------- Tablet: karty větší, aby se do nich vešel název i metařádek ---------- */
+        @media (max-width: 1180px) {
+            .nav { gap: 16px; }
+            .nav-links { gap: 16px; font-size: 13px; }
+            .poster { width: clamp(160px, 30vw, 240px); }
+            .poster.ranked { height: clamp(190px, 30vw, 250px); }
+            .poster.ranked .rank {
+                font-size: clamp(120px, 26vw, 200px); letter-spacing: -10px;
+                margin-right: -10px; -webkit-text-stroke: 3px #595959;
+            }
+            .cat-row { margin-bottom: 24px; }
+        }
+
+        @media (max-width: 900px) {
+            /* odkazy v liště jsou jen zkratky do kategorií - na úzké obrazovce je nahradí chips */
             .nav-links { display: none; }
+            .nav { padding-left: 14px; padding-right: 14px; }
+            .row-scroll { gap: 6px; }
+            /* na užší obrazovce se plakát na výšku nevejde vedle textu - roztáhneme ho přes
+               celý billboard a text podložíme zdola, ať nevzniká ostrý šev uprostřed */
+            .hero-img.portrait { object-fit: cover; object-position: 50% 25%; }
+            .hero::after {
+                background:
+                    linear-gradient(0deg, var(--bg) 3%, rgba(20,20,20,0.72) 42%, rgba(20,20,20,0.05) 74%),
+                    linear-gradient(180deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0) 28%);
+            }
+        }
+
+        /* ---------- Mobil ---------- */
+        @media (max-width: 700px) {
+            .nav { gap: 10px; padding: 12px 14px; }
             .logo { font-size: 24px; }
             .nav.solid .logo { font-size: 21px; }
-            .search-box input { width: 108px; }
-            .search-box:focus-within input { width: 150px; }
+            /* hledání dostane zbytek šířky, ať se do pole vejde i delší dotaz */
+            .search-box { flex: 1 1 auto; min-width: 0; margin-left: 0; }
+            .search-box input, .search-box:focus-within input { width: 100%; min-width: 0; }
+            .settings-wrap { margin-left: 8px; }
+            .settings-panel { width: min(300px, calc(100vw - 28px)); }
             .hero { height: 62vh; min-height: 380px; padding-bottom: 12%; }
+            .hero-content { max-width: none; }
+            .hero h2 { font-size: clamp(1.7rem, 8.5vw, 2.4rem); }
             .hero-desc { font-size: 14px; -webkit-line-clamp: 2; }
             .hero-rating { font-size: 14px; bottom: 30%; padding: 4px 12px 4px 10px; }
-            .hero-actions { margin-top: 14px; }
+            .hero-actions { margin-top: 14px; gap: 8px; }
             .btn-play, .btn-info { font-size: 15px; padding: 8px 18px; }
+            .chips { gap: 8px; margin-top: -18px; }
+            .chip { padding: 6px 14px; font-size: 13px; }
+            .cat-row h3 { font-size: 16px; gap: 8px; }
+            .row-scroll { padding: 12px 14px 26px; margin: -12px 0 -26px; }
+            .cat-row h3, .chips, .footer { padding-left: 14px; padding-right: 14px; }
+            .poster { width: clamp(150px, 42vw, 210px); }
+            .poster.ranked { height: clamp(170px, 48vw, 230px); }
+            .poster.ranked .rank { font-size: clamp(105px, 30vw, 160px); letter-spacing: -7px; -webkit-text-stroke: 2px #595959; }
+            .results-section { padding: 78px 14px 0; }
             .results-grid { grid-template-columns: repeat(2, 1fr); gap: 20px 8px; }
-            .movie-card:hover { transform: none; }
-            .poster:hover { transform: none; }
+            .player-section { padding: 74px 14px 0; }
+            .now-playing { font-size: 19px; margin-top: 14px; }
+            .player-end { gap: 14px; padding: 14px; }
+            .player-end-actions { gap: 8px; }
+            .player-end-actions .btn-play, .player-end-actions .btn-info { font-size: 13px; padding: 7px 14px; }
+            .page-section { padding: 86px 14px 0; }
+            .page-title { font-size: 26px; }
+            .page-body { font-size: 15px; }
+            .footer { padding-left: 14px; padding-right: 14px; }
             .f-links { grid-template-columns: repeat(2, 1fr); gap: 12px 16px; }
+        }
+
+        /* ---------- Velká obrazovka / TV: víc místa, čitelnější text, tučné ovládání ---------- */
+        @media (min-width: 1600px) {
+            .hero-content { max-width: 700px; }
+            .hero .meta { font-size: 18px; }
+            .hero-desc { font-size: 18px; }
+            .poster { width: clamp(220px, 17vw, 320px); }
+            .cat-row h3 { font-size: clamp(20px, 1.3vw, 26px); }
+            .cat-row { margin-bottom: 38px; }
+            .btn-play, .btn-info { font-size: 18px; padding: 12px 30px; }
+            .now-playing { font-size: 28px; }
+        }
+
+        /* ---------- Bezpečné okraje (výřez, zaoblené rohy) ---------- */
+        @supports (padding: env(safe-area-inset-left)) {
+            .nav {
+                padding-top: calc(16px + env(safe-area-inset-top));
+                padding-left: max(4%, env(safe-area-inset-left));
+                padding-right: max(4%, env(safe-area-inset-right));
+            }
+            .nav.solid { padding-top: calc(8px + env(safe-area-inset-top)); }
+            .footer { padding-bottom: calc(52px + env(safe-area-inset-bottom)); }
+            /* na telefonu zůstává kompaktní lišta, jen se posune pod výřez */
+            @media (max-width: 700px) {
+                .nav {
+                    padding-top: calc(12px + env(safe-area-inset-top));
+                    padding-left: max(14px, env(safe-area-inset-left));
+                    padding-right: max(14px, env(safe-area-inset-right));
+                }
+                .nav.solid { padding-top: calc(8px + env(safe-area-inset-top)); }
+            }
         }
     </style>
 </head>
@@ -1557,6 +1667,21 @@
             }
         }
     
+        // Klávesnice a TV ovladač: šipky vlevo/vpravo přesouvají fokus po kartách v řadě,
+        // Enter/Space kartu otevře (to umí <button> sám). Bez toho se dálkovým ovladačem
+        // nedá v řadách pohybovat.
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            const el = document.activeElement;
+            if (!el || !el.classList.contains('poster')) return;
+            const cards = Array.from(el.parentElement.querySelectorAll('.poster'));
+            const next = cards[cards.indexOf(el) + (e.key === 'ArrowRight' ? 1 : -1)];
+            if (!next) return;
+            e.preventDefault();
+            next.focus();
+            next.scrollIntoView({ block: 'nearest', inline: 'center' });
+        });
+
         // ===== Netflix-style nav behaviour =====
         const navEl = document.getElementById('nav');
         const searchBox = document.getElementById('searchBox');
