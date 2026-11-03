@@ -1834,6 +1834,7 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
             window.history.pushState({}, '', '?live=' + encodeURIComponent(liveSource.value) + '&ch=' + encodeURIComponent(ch.name));
             stopLive();
+            setNowPlayingLive(ch);
 
             // Kanál, který vyžaduje konkrétní User-Agent nebo Referer (#EXTVLCOPT), prohlížeč
             // napřímo nepřehraje - hlavičky u <video> nastavit nelze. Takový jde vždy přes relay.
@@ -1883,6 +1884,7 @@
                 liveVideo.removeAttribute('src');
                 liveVideo.load();
             }
+            msClear(liveVideo);
         }
 
         function backToLive() {
@@ -1891,30 +1893,107 @@
             window.history.pushState({}, '', '?live=' + encodeURIComponent(liveSource.value));
         }
 
-        // ===== Media Session: název a plakát na uzamčené obrazovce a v ovládání sluchátek =====
+        // ===== Media Session: název, plakát a posuvník na uzamčené obrazovce / v notifikaci / ve sluchátkách =====
+        // Platí pro film i pro živý kanál: msTarget je <video>, který právě „hraje“.
         const msSupported = 'mediaSession' in navigator;
+        var msTarget = null, msLive = false, msLastPos = 0;
+        var BASE_TITLE = document.title;
+
         function msSetState(state) {
             if (!msSupported) return;
             try { navigator.mediaSession.playbackState = state; } catch (e) {}
         }
+
+        function safeDecode(s) {
+            try { return decodeURIComponent(s); } catch (e) { return String(s || ''); }
+        }
+        // Do notifikace patří název filmu, ne soubor: bez přípony a bez okolních mezer.
+        function cleanTitle(t) {
+            return String(t || '').trim().replace(/\.(mp4|mkv|avi|mov|wmv|webm|m4v|ts)$/i, '').trim();
+        }
+
+        // Okno, ve kterém se dá posouvat. Film: 0..délka. Živě: seekable (okno, které kanál nabízí).
+        function msWindow() {
+            const v = msTarget;
+            if (!v) return null;
+            if (msLive) {
+                const s = v.seekable;
+                if (!s || !s.length) return null;
+                const start = s.start(0), end = s.end(s.length - 1);
+                return end - start >= 15 ? [start, end] : null;   // kratší okno nemá smysl jako posuvník
+            }
+            return isFinite(v.duration) && v.duration > 0 ? [0, v.duration] : null;
+        }
+
+        // Posuvník času na zamykací obrazovce (Chrome/Android, iOS, hardwarové ovládání).
+        function msPosition() {
+            if (!msSupported || !msTarget || !navigator.mediaSession.setPositionState) return;
+            try {
+                const w = msWindow();
+                if (!w) { navigator.mediaSession.setPositionState(); return; }   // bez posuvníku
+                const duration = w[1] - w[0];
+                const position = Math.min(duration, Math.max(0, msTarget.currentTime - w[0]));
+                navigator.mediaSession.setPositionState({ duration, position, playbackRate: msTarget.playbackRate || 1 });
+            } catch (e) {}
+        }
+
+        function msSetMetadata(target, live, title, artist, poster) {
+            msTarget = target; msLive = live;
+            document.title = title ? title + ' – ' + BASE_TITLE : BASE_TITLE;
+            if (!msSupported) return;
+            try {
+                let art = [];
+                if (poster) {
+                    let src = poster;
+                    try { src = new URL(poster, location.href).href; } catch (e) {}
+                    art = [{ src, sizes: '512x512' }];
+                }
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: title || '', artist: artist || '', album: 'WTZI', artwork: art,
+                });
+            } catch (e) {}
+            msPosition();
+        }
+
+        function msClear(target) {
+            if (!msTarget || (target && msTarget !== target)) return;
+            msTarget = null; msLive = false;
+            document.title = BASE_TITLE;
+            if (!msSupported) return;
+            try { navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; } catch (e) {}
+            try { navigator.mediaSession.setPositionState(); } catch (e) {}
+        }
+
         if (msSupported) {
             const setHandler = (action, fn) => { try { navigator.mediaSession.setActionHandler(action, fn); } catch (e) {} };
-            setHandler('play', () => videoPlayer.play().catch(() => {}));
-            setHandler('pause', () => videoPlayer.pause());
-            setHandler('seekbackward', d => {
-                videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - (d.seekOffset || 10));
-            });
-            setHandler('seekforward', d => {
-                const max = isFinite(videoPlayer.duration) ? videoPlayer.duration : Infinity;
-                videoPlayer.currentTime = Math.min(max, videoPlayer.currentTime + (d.seekOffset || 10));
-            });
+            const seekTo = t => {
+                const w = msWindow();
+                if (!msTarget) return;
+                msTarget.currentTime = w ? Math.min(w[1], Math.max(w[0], t)) : Math.max(0, t);
+            };
+            setHandler('play', () => { if (msTarget) msTarget.play().catch(() => {}); });
+            setHandler('pause', () => { if (msTarget) msTarget.pause(); });
+            setHandler('seekbackward', d => { if (msTarget) seekTo(msTarget.currentTime - (d.seekOffset || 10)); });
+            setHandler('seekforward', d => { if (msTarget) seekTo(msTarget.currentTime + (d.seekOffset || 10)); });
             setHandler('seekto', d => {
-                if (typeof d.seekTime === 'number') videoPlayer.currentTime = d.seekTime;
+                if (!msTarget || typeof d.seekTime !== 'number') return;
+                const w = msWindow();
+                seekTo(msLive && w ? w[0] + d.seekTime : d.seekTime);   // živě je čas relativní k oknu
             });
         }
-        videoPlayer.addEventListener('play', () => msSetState('playing'));
+
+        [videoPlayer, liveVideo].forEach(el => {
+            el.addEventListener('play', () => { if (el === msTarget) { msSetState('playing'); msPosition(); } });
+            el.addEventListener('pause', () => { if (el === msTarget && !el.ended) { msSetState('paused'); msPosition(); } });
+            ['loadedmetadata', 'durationchange', 'seeked', 'ratechange', 'playing'].forEach(ev =>
+                el.addEventListener(ev, () => { if (el === msTarget) msPosition(); }));
+            el.addEventListener('timeupdate', () => {
+                if (el !== msTarget) return;
+                const now = Date.now();
+                if (now - msLastPos > 1000) { msLastPos = now; msPosition(); }
+            });
+        });
         videoPlayer.addEventListener('playing', hidePlayerEnd);
-        videoPlayer.addEventListener('pause', () => { if (!videoPlayer.ended) msSetState('paused'); });
 
         // Plakát k titulu: z výsledků, z katalogu, nebo z cache náhledů (klíčem je dotaz).
         function posterFor(title) {
@@ -1931,15 +2010,12 @@
             player.title = title || 'video';
             if (poster) videoPlayer.poster = poster;
             else videoPlayer.removeAttribute('poster');
-            if (!msSupported) return;
-            try {
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: player.title,
-                    artist: 'WTZI',
-                    album: 'prehraj.to',
-                    artwork: poster ? [{ src: poster, sizes: '512x512' }] : [],
-                });
-            } catch (e) {}
+            msSetMetadata(videoPlayer, false, title ? cleanTitle(title) : '', 'WTZI', poster);
+        }
+
+        // Živý kanál: název kanálu + logo, posuvník podle okna, které kanál nabízí.
+        function setNowPlayingLive(ch) {
+            msSetMetadata(liveVideo, true, ch.name || '', 'Živě', ch.logo || '');
         }
 
         // ===== Konec videa: co dál =====
@@ -1977,7 +2053,7 @@
         async function playVideoDirectly(prehrajtoUrl, title) {
             showStatus('🔄 Načítám video...', 'loading');
             showSection('player');
-            nowPlaying.textContent = decodeURIComponent(title);
+            nowPlaying.textContent = safeDecode(title);
 
             try {
                 await loadAndPlay(prehrajtoUrl, nowPlaying.textContent, hideStatus);
@@ -2069,6 +2145,7 @@
                 videoPlayer.removeAttribute('src');
                 videoPlayer.load(); // Force release of media resources
             }
+            msClear(videoPlayer);
         }
     
         // Klávesnice a TV ovladač: šipky vlevo/vpravo přesouvají fokus po kartách v řadě,
