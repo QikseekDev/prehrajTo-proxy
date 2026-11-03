@@ -842,7 +842,7 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
 
 // ------------------------------------------------------------------ /api/live/countries  (výběr zdroje)
 // Seznam zemí z iptv-org pro položku "Ostatní" ve výběru zdroje. Vrací jen dvoupísmenné kódy
-// (to jsou ty, pro které umí /api/live?country= složit playlist). Doporučené země vyřazuje klient.
+// zemí, pro které iptv-org opravdu má playlist (viz níž). Doporučené země vyřazuje klient.
 app.MapGet("/api/live/countries", async (IHttpClientFactory f, IMemoryCache cache) =>
 {
     const string lcKey = "live-countries";
@@ -876,7 +876,41 @@ app.MapGet("/api/live/countries", async (IHttpClientFactory f, IMemoryCache cach
     if (lcList.Count == 0)
         return Results.Json(new { success = false, error = "Seznam zemí je prázdný" });
 
-    cache.Set(lcKey, lcList, TimeSpan.FromHours(24));
+    // countries.json je kompletní seznam (250 zemí), ale playlist má jen ~200 z nich. Které, říká
+    // adresář streams/ v repu iptv-org (cz.m3u, sk.m3u, ...): berou se jen dvoupísmenné soubory,
+    // takže at_pluto.m3u a spol. ne. Názvy zemí zůstávají z countries.json. Když výpis selže nebo
+    // vypadá podezřele (rate limit GitHub API, změna struktury repa), vrátí se celý seznam
+    // a za 10 minut se to zkusí znovu.
+    var lcTtl = TimeSpan.FromHours(24);
+    var (lsStatus, lsBody, lsError) = await GetAsync(f,
+        "https://api.github.com/repos/iptv-org/iptv/contents/streams", 25,
+        lsReq => { lsReq.Headers.Accept.Clear(); lsReq.Headers.Accept.ParseAdd("application/vnd.github+json"); });
+    var lcWithStreams = new HashSet<string>();
+    if (lsError == null && Is2xx(lsStatus))
+    {
+        try
+        {
+            using var lsDoc = JsonDocument.Parse(lsBody);
+            if (lsDoc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var lsEl in lsDoc.RootElement.EnumerateArray())
+                {
+                    if (lsEl.ValueKind != JsonValueKind.Object) continue;
+                    var lsName = lsEl.TryGetProperty("name", out var lsNameEl) && lsNameEl.ValueKind == JsonValueKind.String
+                        ? lsNameEl.GetString() : null;
+                    var lsM = lsName == null ? null : Regex.Match(lsName, "^([a-z]{2})\\.m3u$");
+                    if (lsM is { Success: true }) lcWithStreams.Add(lsM.Groups[1].Value);
+                }
+            }
+        }
+        catch (JsonException) { }
+    }
+    if (lcWithStreams.Count >= 20)
+        lcList = lcList.Where(x => lcWithStreams.Contains(x.Code)).ToList();
+    else
+        lcTtl = TimeSpan.FromMinutes(10);
+
+    cache.Set(lcKey, lcList, lcTtl);
     return Results.Json(new { success = true, countries = lcList });
 }).RequireRateLimiting("api");
 
