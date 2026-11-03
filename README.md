@@ -247,8 +247,7 @@ Upload `index.php` na český hosting přes FTP.
 
 Tenhle fork spravuje **Vojtěch Vokoun** – [contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io).
 
-Původní WTZI napsal **Jiřík**; od něj je základ aplikace, `index.php`, `router.php` a původní
-podoba README včetně jeho osobního věnování. Díky za základ, na kterém jde stavět.
+Původní WTZI napsal **Jiřík**; od něj je základ aplikace.
 
 ---
 
