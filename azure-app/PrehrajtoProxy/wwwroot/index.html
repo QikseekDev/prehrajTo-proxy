@@ -1696,6 +1696,14 @@
             return liveHlsPromise;
         }
 
+        // Relay URL pro kanál, který chce vlastní User-Agent / Referer (#EXTVLCOPT v playlistu).
+        function liveRelayUrl(ch) {
+            let url = '/api/live/hls?url=' + encodeURIComponent(ch.url);
+            if (ch.ua) url += '&ua=' + encodeURIComponent(ch.ua);
+            if (ch.referrer) url += '&referrer=' + encodeURIComponent(ch.referrer);
+            return url;
+        }
+
         function showLiveError(msg) {
             liveError.textContent = msg;
             liveError.hidden = false;
@@ -1711,8 +1719,13 @@
             window.history.pushState({}, '', '?live=' + encodeURIComponent(liveSource.value) + '&ch=' + encodeURIComponent(ch.name));
             stopLive();
 
+            // Kanál, který vyžaduje konkrétní User-Agent nebo Referer (#EXTVLCOPT), prohlížeč
+            // napřímo nepřehraje - hlavičky u <video> nastavit nelze. Takový jde vždy přes relay.
+            const needsHeaders = !!(ch.ua || ch.referrer);
+            const relayUrl = liveRelayUrl(ch);
+
             // Safari/iOS umí HLS nativně a CORS u videa neřeší - tam je přímé přehrání nejlepší.
-            if (liveVideo.canPlayType('application/vnd.apple.mpegurl')) {
+            if (!needsHeaders && liveVideo.canPlayType('application/vnd.apple.mpegurl')) {
                 liveVideo.src = ch.url;
                 liveVideo.play().catch(() => {});
                 return;
@@ -1726,7 +1739,7 @@
                 return;
             }
 
-            let relayed = false;
+            let relayed = needsHeaders;
             const hls = new Hls({ enableWorker: true });
             liveHls = hls;
             hls.on(Hls.Events.ERROR, (_ev, data) => {
@@ -1734,7 +1747,7 @@
                 // CORS nebo zdroj, který prohlížeči nevrátí playlist: jedeme přes náš relay.
                 if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !relayed) {
                     relayed = true;
-                    hls.loadSource('/api/live/hls?url=' + encodeURIComponent(ch.url));
+                    hls.loadSource(relayUrl);
                     hls.startLoad();
                     return;
                 }
@@ -1743,7 +1756,7 @@
                 if (liveHls === hls) liveHls = null;
             });
             hls.on(Hls.Events.MANIFEST_PARSED, () => liveVideo.play().catch(() => {}));
-            hls.loadSource(ch.url);
+            hls.loadSource(needsHeaders ? relayUrl : ch.url);
             hls.attachMedia(liveVideo);
         }
 

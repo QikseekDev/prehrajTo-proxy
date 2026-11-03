@@ -85,6 +85,12 @@ Sestavené seznamy (`countries/…`) obsahují navíc `tvg-logo` a `group-title`
 a kategorii. Když sestavený seznam selže, appka zkusí raw `streams/xx.m3u`. Dlouhé seznamy se
 v UI vykreslují po 300 kanálech (tlačítko „Zobrazit další“), aby se telefony nezadusily.
 
+Některé kanály v playlistu vyžadují konkrétní prohlížeč nebo Referer – ať už jako atribut
+`http-user-agent="…"` v `#EXTINF`, nebo jako řádek `#EXTVLCOPT:http-user-agent=…` /
+`#EXTVLCOPT:http-referrer=…` před URL. Server to přečte a takový kanál posílá **vždy přes relay**
+(`/api/live/hls?url=…&ua=…&referrer=…`), protože prohlížeč u `<video>` hlavičky nastavit neumí.
+Hlavičky se přenášejí i do přepsaných segmentů, takže funguje i samotné přehrávání, ne jen playlist.
+
 Playlist tahá server (`/api/live`) a posílá do prohlížeče jen jméno, skupinu, logo a URL. HLS pak
 přehrává `hls.min.js` (přibalený v `wwwroot`, načítá se až při otevření kanálu; Safari/iOS použije
 nativní HLS). Když zdroj nepošle CORS hlavičky, zkusí se stejný kanál přes `/api/live/hls`.

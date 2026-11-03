@@ -356,7 +356,7 @@ static List<LiveChannel> ParseM3u(string text)
 {
     var list = new List<LiveChannel>();
     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    string? name = null, logo = null, group = null, id = null;
+    string? name = null, logo = null, group = null, id = null, ua = null, referrer = null;
 
     foreach (var raw in text.Split('\n'))
     {
@@ -371,6 +371,18 @@ static List<LiveChannel> ParseM3u(string text)
             logo = M3uAttr(attrs, "tvg-logo");
             group = M3uAttr(attrs, "group-title");
             id = M3uAttr(attrs, "tvg-id");
+            // některé playlisty mají hlavičky přímo v #EXTINF
+            ua = NilIfEmpty(M3uAttr(attrs, "http-user-agent")) ?? ua;
+            referrer = NilIfEmpty(M3uAttr(attrs, "http-referrer")) ?? referrer;
+            continue;
+        }
+        if (line.StartsWith("#EXTVLCOPT:", StringComparison.OrdinalIgnoreCase))
+        {
+            var opt = line["#EXTVLCOPT:".Length..].Trim();
+            if (opt.StartsWith("http-user-agent=", StringComparison.OrdinalIgnoreCase))
+                ua = CleanHeader(opt["http-user-agent=".Length..]);
+            else if (opt.StartsWith("http-referrer=", StringComparison.OrdinalIgnoreCase))
+                referrer = CleanHeader(opt["http-referrer=".Length..]);
             continue;
         }
         if (line.StartsWith('#')) continue;
@@ -387,11 +399,13 @@ static List<LiveChannel> ParseM3u(string text)
         var clean = Regex.Replace(name, @"\s*\((?:\d{3,4}p|\d+k)\)\s*$", "", RegexOptions.IgnoreCase).Trim();
         clean = Regex.Replace(clean, @"\s*\[[^\]]*\]\s*$", "").Trim();
         if (clean.Length == 0) clean = u.Host;
-        if (seen.Add(line)) list.Add(new LiveChannel(clean, group ?? "", logo ?? "", line, id ?? ""));
-        name = null; logo = null; group = null; id = null;
+        if (seen.Add(line)) list.Add(new LiveChannel(clean, group ?? "", logo ?? "", line, id ?? "", ua ?? "", referrer ?? ""));
+        name = null; logo = null; group = null; id = null; ua = null; referrer = null;
     }
     return list;
 }
+
+static string? NilIfEmpty(string v) => string.IsNullOrWhiteSpace(v) ? null : v;
 
 static string M3uAttr(string attrs, string key)
 {
@@ -401,7 +415,7 @@ static string M3uAttr(string attrs, string key)
 
 // Playlist přes nás: relativní i absolutní URI přepíšeme na /api/live/hls?url=..., aby prohlížeč
 // nikdy nesahal mimo naši doménu (CORS) a aby fungovaly i absolutní CDN adresy uvnitř playlistu.
-static string RewritePlaylist(string text, Uri baseUri)
+static string RewritePlaylist(string text, Uri baseUri, string? ua = null, string? referrer = null)
 {
     var sb = new StringBuilder(text.Length + 512);
     foreach (var raw in text.Split('\n'))
@@ -412,20 +426,33 @@ static string RewritePlaylist(string text, Uri baseUri)
         if (t.StartsWith('#'))
         {
             if (t.Contains("URI=\"", StringComparison.Ordinal))
-                line = Regex.Replace(line, "URI=\"([^\"]+)\"", m => "URI=\"" + RelayHlsUrl(m.Groups[1].Value, baseUri) + "\"");
+                line = Regex.Replace(line, "URI=\"([^\"]+)\"", m => "URI=\"" + RelayHlsUrl(m.Groups[1].Value, baseUri, ua, referrer) + "\"");
             sb.Append(line).Append('\n');
             continue;
         }
-        sb.Append(RelayHlsUrl(t, baseUri)).Append('\n');
+        sb.Append(RelayHlsUrl(t, baseUri, ua, referrer)).Append('\n');
     }
     return sb.ToString();
 }
 
-static string RelayHlsUrl(string raw, Uri baseUri)
+static string RelayHlsUrl(string raw, Uri baseUri, string? ua = null, string? referrer = null)
 {
     if (!Uri.TryCreate(baseUri, raw, out var abs)) return raw;
     if (abs.Scheme != Uri.UriSchemeHttp && abs.Scheme != Uri.UriSchemeHttps) return raw;
-    return "/api/live/hls?url=" + Uri.EscapeDataString(abs.ToString());
+    var url = "/api/live/hls?url=" + Uri.EscapeDataString(abs.ToString());
+    if (ua != null) url += "&ua=" + Uri.EscapeDataString(ua);
+    if (referrer != null) url += "&referrer=" + Uri.EscapeDataString(referrer);
+    return url;
+}
+
+// Hlavička z playlistu je cizí vstup: bez CR/LF (injection) a s rozumnou délkou.
+static string? CleanHeader(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value)) return null;
+    var v = value.Trim();
+    if (v.Length == 0 || v.Length > 300) return null;
+    if (v.Contains('\r') || v.Contains('\n')) return null;
+    return v;
 }
 
 // Relay nesmí být cesta do vnitřní sítě (localhost, 10.x, 192.168.x, ...).
@@ -729,7 +756,7 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
 // takže UI zkouší napřed přímé přehrávání (funguje i pro geoblokované kanály, protože jde z IP
 // diváka) a tenhle relay je záložní cesta. Playlist se přepisuje tak, aby další playlisty,
 // segmenty i klíče šly zase přes nás.
-app.MapGet("/api/live/hls", async (string url, IHttpClientFactory f, HttpContext ctx) =>
+app.MapGet("/api/live/hls", async (string url, string? ua, string? referrer, IHttpClientFactory f, HttpContext ctx) =>
 {
     if (!Uri.TryCreate(url, UriKind.Absolute, out var target)
         || (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps)
@@ -737,8 +764,20 @@ app.MapGet("/api/live/hls", async (string url, IHttpClientFactory f, HttpContext
         return Results.Json(new { success = false, error = "Neplatná URL" }, statusCode: 400);
 
     var client = f.CreateClient("prehraj-stream");
+    var uaClean = CleanHeader(ua);
+    var referrerClean = CleanHeader(referrer);
+
     using var req = new HttpRequestMessage(HttpMethod.Get, target);
     req.Headers.TryAddWithoutValidation("Accept", "*/*");
+    // Některé kanály pustí jen konkrétní prohlížeč nebo s Refererem - to jsou právě ty
+    // #EXTVLCOPT:http-user-agent / http-referrer řádky v playlistu. Prohlížeč tyhle hlavičky
+    // nastavit neumí, takže takový kanál jde vždycky přes relay.
+    if (uaClean != null)
+    {
+        req.Headers.Remove("User-Agent");
+        req.Headers.TryAddWithoutValidation("User-Agent", uaClean);
+    }
+    if (referrerClean != null) req.Headers.TryAddWithoutValidation("Referer", referrerClean);
     var range = ctx.Request.Headers.Range.ToString();
     if (range.Length > 0) req.Headers.TryAddWithoutValidation("Range", range);
 
@@ -767,7 +806,7 @@ app.MapGet("/api/live/hls", async (string url, IHttpClientFactory f, HttpContext
             if (!text.TrimStart().StartsWith("#EXTM3U", StringComparison.OrdinalIgnoreCase))
                 return Results.Json(new { success = false, error = "Zdroj nevrátil playlist" }, statusCode: 502);
             ctx.Response.Headers.CacheControl = "no-store";
-            return Results.Text(RewritePlaylist(text, target), "application/vnd.apple.mpegurl");
+            return Results.Text(RewritePlaylist(text, target, uaClean, referrerClean), "application/vnd.apple.mpegurl");
         }
 
         ctx.Response.StatusCode = (int)res.StatusCode;
@@ -1028,4 +1067,4 @@ record ThumbResult(string Thumbnail, string Title, string Url);
 // Položka katalogu pro homepage (iTunes RSS): t=název, y=rok, img=plakát, q=hledací výraz, g=žánry
 record CatalogItem(string T, string Y, string Img, string Q, string[] G);
 
-record LiveChannel(string Name, string Group, string Logo, string Url, string Id);
+record LiveChannel(string Name, string Group, string Logo, string Url, string Id, string Ua, string Referrer);
