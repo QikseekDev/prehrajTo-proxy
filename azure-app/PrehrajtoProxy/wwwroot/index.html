@@ -1644,7 +1644,7 @@
         //     sám obnovuje). To platí i pro přímé přehrávání: po opakovaných chybách se pro
         //     tohle přehrávání dočasně použije server, nastavení se nemění,
         //  3) tlačítko Stáhnout jde vždy přes /api/stream (CDN odkaz napřímo se stáhnout nedá).
-        const player = { page: '', cdn: '', title: '', mode: 'direct', lastTime: 0, resumeAt: 0, fixes: 0, busy: false, stallTimer: null, subs: [], subSig: '', subLang: null, subOff: false };
+        const player = { page: '', cdn: '', title: '', mode: 'direct', lastTime: 0, resumeAt: 0, fixes: 0, busy: false, stallTimer: null, subs: [], subSig: '', subLang: null, subOff: false, subIndex: -1 };
 
         // ===== Titulky (WebVTT z prehraj.to) =====
         // PHP proxy vytáhne stopy z inicializace přehrávače do "subtitles". Prohlížeč je
@@ -1666,10 +1666,17 @@
             return label;
         }
 
-        function applySubtitle(index) {
+        function applySubtitle(index, force = false) {
+            player.subIndex = index;
             const tracks = videoPlayer.textTracks;
             for (let i = 0; i < tracks.length; i++) {
                 tracks[i].mode = i === index ? 'showing' : 'disabled';
+            }
+            // Fullscreen někdy stopu nechá jako "showing", ale přestane vykreslovat cue.
+            // Přepnutí hidden -> showing ji donutí znovu načíst/vykreslit.
+            if (force && index >= 0 && tracks[index]) {
+                tracks[index].mode = 'hidden';
+                tracks[index].mode = 'showing';
             }
             subtitleSelect.value = index >= 0 ? String(index) : '';
         }
@@ -1679,6 +1686,7 @@
             player.subSig = '';
             player.subLang = null;
             player.subOff = false;
+            player.subIndex = -1;
             videoPlayer.querySelectorAll('track[data-wtzi-sub]').forEach(t => t.remove());
             subtitleSelect.innerHTML = '';
             subtitleBar.hidden = true;
@@ -1697,6 +1705,7 @@
             if (!subs.length) {
                 player.subLang = null;
                 player.subOff = false;
+                player.subIndex = -1;
                 return;
             }
 
@@ -1743,6 +1752,25 @@
             const v = subtitleSelect.value;
             selectSubtitle(v === '' ? -1 : parseInt(v, 10));
         });
+
+        // Při přechodu do/z celé obrazovky některé prohlížeče resetují režim textové stopy.
+        // Znovu zapneme stejnou volbu; když divák mezitím zvolil jinou, nic nepřepisujeme.
+        function restoreSubtitleAfterFullscreen() {
+            const subs = player.subs;
+            const index = player.subIndex;
+            if (!subs.length) return;
+            const restore = () => {
+                if (player.subs === subs && player.subIndex === index) applySubtitle(index, true);
+            };
+            restore();
+            requestAnimationFrame(restore);
+            setTimeout(restore, 100);
+            setTimeout(restore, 400);
+        }
+        document.addEventListener('fullscreenchange', restoreSubtitleAfterFullscreen);
+        document.addEventListener('webkitfullscreenchange', restoreSubtitleAfterFullscreen);
+        videoPlayer.addEventListener('webkitbeginfullscreen', restoreSubtitleAfterFullscreen);
+        videoPlayer.addEventListener('webkitendfullscreen', restoreSubtitleAfterFullscreen);
 
         // v = přesný CDN odkaz, který právě hraje: server stáhne/přepošle ten samý soubor
         // (a při vypršení ho najde na stránce podle cesty), takže se nemůže splést s jiným videem.
