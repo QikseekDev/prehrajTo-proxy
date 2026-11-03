@@ -65,7 +65,6 @@ var proxyUrl = app.Configuration["Prehraj:ProxyUrl"];
 if (!string.IsNullOrWhiteSpace(proxyUrl)) serverProxies = serverProxies.Append(proxyUrl).ToArray();
 
 const RegexOptions Ci = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
-const RegexOptions CiS = Ci | RegexOptions.Singleline;
 
 // ------------------------------------------------------------------ helpers
 static bool IsPrehrajUrl(string u) =>
@@ -129,7 +128,7 @@ static Func<CancellationToken, Task<(int status, string body, string? err)>> Pro
     {
         var r = await GetAsync(f, url, timeoutSeconds, null, ct);
         // server, který odpověděl správně, se příště zkouší jako první
-        if (onGood != null && r.err == null && Is2xx(r.status) && r.body.Length > 0 && IsGoodBody(r.body))
+        if (onGood != null && r.error == null && Is2xx(r.status) && r.body.Length > 0 && IsGoodBody(r.body))
             onGood(proxyBase);
         return r;
     };
@@ -189,87 +188,6 @@ IEnumerable<string> OrderedProxies(IEnumerable<string> proxies)
     var good = lastGoodProxy;
     if (good == null || arr.Count < 2) return arr;
     return arr.OrderBy(p => string.Equals(p, good, StringComparison.OrdinalIgnoreCase) ? 0 : 1);
-}
-
-string? FindVideoUrl(string html, bool strict)
-{
-    // Same patterns, same order as index.php
-    var patterns = strict
-        ? new[]
-        {
-            @"[""']?(https?:\/\/[^""']*premiumcdn\.net[^""']*\.m3u8[^""']*)[""']?",
-            @"[""']?(https?:\/\/[^""']*premiumcdn\.net[^""']*\.mp4[^""']*)[""']?",
-        }
-        : new[]
-        {
-            @"[""']?(https?:\/\/[^""']*premiumcdn\.net[^""']*\.m3u8[^""']*)[""']?",
-            @"[""']?(https?:\/\/[^""']*premiumcdn\.net[^""']*\.mp4[^""']*)[""']?",
-            @"[""']?(https?:\/\/[^""']*cdn[^""']*\.(?:m3u8|mp4)[^""']*)[""']?",
-            @"<source[^>]+src=[""']([^""']+)[""'][^>]*>",
-            @"<video[^>]+src=[""']([^""']+)[""'][^>]*>",
-            @"""file""\s*:\s*""([^""]+)""",
-            @"""src""\s*:\s*""([^""]+)""",
-            @"""url""\s*:\s*""([^""]+\.m3u8[^""]*)""",
-        };
-
-    foreach (var p in patterns)
-    {
-        var m = Regex.Match(html, p, Ci);
-        if (!m.Success) continue;
-        var candidate = m.Groups[1].Value;
-        if (strict || Regex.IsMatch(candidate, @"\.(m3u8|mp4)", Ci))
-            return candidate.Replace("\\/", "/");
-    }
-    return null;
-}
-
-// ------------------------------------------------------------------ search (sdílené: /api/search + /api/thumb)
-// Parsování výsledků hledání z HTML prehraj.to - používá přímá cesta v /api/search i thumb.
-List<Movie> ParseSearchHtml(string html)
-{
-    var movies = new List<Movie>();
-    var seen = new HashSet<string>();
-
-    var linkRx = new Regex(
-        @"<a[^>]*class=""[^""]*video[^""]*""[^>]*href=""(\/[a-z0-9+-]+\/[a-z0-9]+)""[^>]*title=""([^""]+)""[^>]*>", Ci);
-
-    foreach (Match m in linkRx.Matches(html))
-    {
-        var url = m.Groups[1].Value;
-        if (!seen.Add(url)) continue;
-        var title = WebUtility.HtmlDecode(m.Groups[2].Value);
-
-        var thumb = "";
-        var tm = Regex.Match(html, "href=\"" + Regex.Escape(url) + "\".*?<img[^>]*src=\"([^\"]+thumb[^\"]*\\.jpg)\"", CiS);
-        if (tm.Success) thumb = tm.Groups[1].Value;
-
-        var year = "";
-        var ym = Regex.Match(title, @"[-(](\d{4})[)-]");
-        if (ym.Success) year = ym.Groups[1].Value;
-        else
-        {
-            ym = Regex.Match(url, @"-(\d{4})[-/]");
-            if (ym.Success) year = ym.Groups[1].Value;
-        }
-
-        movies.Add(new Movie("https://prehraj.to" + url, title, thumb, year));
-        if (movies.Count >= 30) break;
-    }
-
-    // Fallback pattern (same as index.php)
-    if (movies.Count == 0)
-    {
-        var alt = new Regex(
-            @"data-video-id=""[^""]*"".*?href=""(\/[^""]+)""[^>]*title=""([^""]+)"".*?src=""([^""]+\.jpg)""", CiS);
-        foreach (Match m in alt.Matches(html))
-        {
-            movies.Add(new Movie("https://prehraj.to" + m.Groups[1].Value,
-                WebUtility.HtmlDecode(m.Groups[2].Value), m.Groups[3].Value, ""));
-            if (movies.Count >= 30) break;
-        }
-    }
-
-    return movies;
 }
 
 // ------------------------------------------------------------------ /api/search
@@ -362,9 +280,6 @@ async Task<ThumbResult?> ItunesThumb(IHttpClientFactory f, string term, Regex rx
     }
     catch (Exception) { return null; }
 }
-
-string FixThumb(string u) =>
-    u.Length == 0 ? "" : u.StartsWith("//") ? "https:" + u : u.StartsWith("/") ? "https://prehraj.to" + u : u;
 
 app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string? src, string[]? proxy, IHttpClientFactory f, IMemoryCache cache, HttpContext ctx) =>
 {
@@ -569,18 +484,6 @@ static string NormCdn(string u) => WebUtility.HtmlDecode(u.Replace("\\/", "/")).
 static string CdnKey(string u) =>
     Uri.TryCreate(u, UriKind.Absolute, out var x) ? (x.Host + x.AbsolutePath).ToLowerInvariant() : u.ToLowerInvariant();
 
-// Na stránce bývá víc video odkazů; vezmeme ten, co má stejnou cestu jako ten, který klient právě hraje.
-static string? PickByHint(string html, string hint)
-{
-    var key = CdnKey(hint);
-    foreach (Match m in Regex.Matches(html, @"https?:\\?/\\?/[^""'<>\s]+\.(?:m3u8|mp4)[^""'<>\s]*", Ci))
-    {
-        var u = NormCdn(m.Value);
-        if (CdnKey(u) == key) return u;
-    }
-    return null;
-}
-
 // hint = CDN odkaz, který klient právě přehrává (&v=). Přímo ho používáme jen pro premiumcdn.net
 // (jinak by šlo přes server stahovat cokoli); jinak slouží jen k nalezení správného souboru na stránce.
 async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, string page, bool fresh, string? hint)
@@ -765,7 +668,6 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
 
 app.Run();
 
-record Movie(string Url, string Title, string Thumbnail, string Year);
 record ThumbResult(string Thumbnail, string Title, string Url);
 // Položka katalogu pro homepage (iTunes RSS): t=název, y=rok, img=plakát, q=hledací výraz, g=žánry
 record CatalogItem(string T, string Y, string Img, string Q, string[] G);
