@@ -840,6 +840,46 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
     return Results.Json(new { success = true, source = url, count = channels.Count, channels });
 }).RequireRateLimiting("api");
 
+// ------------------------------------------------------------------ /api/live/countries  (výběr zdroje)
+// Seznam zemí z iptv-org pro položku "Ostatní" ve výběru zdroje. Vrací jen dvoupísmenné kódy
+// (to jsou ty, pro které umí /api/live?country= složit playlist). Doporučené země vyřazuje klient.
+app.MapGet("/api/live/countries", async (IHttpClientFactory f, IMemoryCache cache) =>
+{
+    const string lcKey = "live-countries";
+    if (cache.TryGetValue<List<LiveCountry>>(lcKey, out var lcCached) && lcCached is { Count: > 0 })
+        return Results.Json(new { success = true, countries = lcCached });
+
+    var (lcStatus, lcBody, lcError) = await GetAsync(f, "https://iptv-org.github.io/api/countries.json", 25);
+    if (lcError != null || !Is2xx(lcStatus) || lcBody.Length == 0)
+        return Results.Json(new { success = false, error = "Seznam zemí nedostupný: " + (lcError ?? "HTTP " + lcStatus) });
+
+    var lcList = new List<LiveCountry>();
+    try
+    {
+        using var lcDoc = JsonDocument.Parse(lcBody);
+        if (lcDoc.RootElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var lcEl in lcDoc.RootElement.EnumerateArray())
+            {
+                if (lcEl.ValueKind != JsonValueKind.Object) continue;
+                string? lcCode = lcEl.TryGetProperty("code", out var lcCodeEl) && lcCodeEl.ValueKind == JsonValueKind.String
+                    ? lcCodeEl.GetString() : null;
+                string? lcName = lcEl.TryGetProperty("name", out var lcNameEl) && lcNameEl.ValueKind == JsonValueKind.String
+                    ? lcNameEl.GetString() : null;
+                if (lcCode != null && Regex.IsMatch(lcCode, "^[A-Za-z]{2}$") && !string.IsNullOrWhiteSpace(lcName))
+                    lcList.Add(new LiveCountry(lcCode.ToLowerInvariant(), lcName.Trim()));
+            }
+        }
+    }
+    catch (JsonException) { }
+
+    if (lcList.Count == 0)
+        return Results.Json(new { success = false, error = "Seznam zemí je prázdný" });
+
+    cache.Set(lcKey, lcList, TimeSpan.FromHours(24));
+    return Results.Json(new { success = true, countries = lcList });
+}).RequireRateLimiting("api");
+
 // ------------------------------------------------------------------ /api/live/hls  (relay playlistu)
 // HLS v prohlížeči potřebuje CORS na playlistu i na každém segmentu. Řada IPTV zdrojů ho nemá,
 // takže UI zkouší napřed přímé přehrávání (funguje i pro geoblokované kanály, protože jde z IP
@@ -1170,3 +1210,4 @@ record ThumbResult(string Thumbnail, string Title, string Url);
 record CatalogItem(string T, string Y, string Img, string Q, string[] G);
 
 record LiveChannel(string Name, string Group, string Logo, string Url, string Id, string Ua, string Referrer, string Quality, string[] Tags);
+record LiveCountry(string Code, string Name);
