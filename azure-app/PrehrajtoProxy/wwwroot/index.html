@@ -348,14 +348,24 @@
             display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
             gap: 14px 24px; max-width: 1000px; margin-bottom: 26px;
         }
-        .f-link { color: #bcbcbc; cursor: pointer; transition: color 0.15s; }
-        .f-link:hover { color: #fff; text-decoration: underline; }
-        .f-code {
-            display: inline-block; border: 1px solid #7a7a7a; color: #bcbcbc;
-            padding: 6px 10px; font-size: 13px; letter-spacing: 0.5px; margin-bottom: 18px; cursor: pointer;
+        .f-link {
+            color: #bcbcbc; cursor: pointer; transition: color 0.15s;
+            background: none; border: 0; padding: 0; font: inherit; text-align: left;
         }
-        .f-code:hover { color: #fff; border-color: #fff; }
+        .f-link:hover { color: #fff; text-decoration: underline; }
         .f-copy { color: #7a7a7a; font-size: 13px; }
+
+        /* ---------- Statické stránky z patičky ---------- */
+        .page-section { display: none; padding: 100px 4% 0; max-width: 900px; }
+        .page-title { font-size: 34px; font-weight: 800; margin: 6px 0 22px; }
+        .page-body { color: #cfcfcf; font-size: 16px; line-height: 1.7; }
+        .page-body h2 { color: #fff; font-size: 19px; font-weight: 700; margin: 28px 0 10px; }
+        .page-body p { margin-bottom: 14px; }
+        .page-body ul { margin: 0 0 14px 22px; }
+        .page-body li { margin-bottom: 8px; }
+        .page-body a { color: #fff; text-decoration: underline; }
+        .page-body code { background: rgba(255,255,255,0.1); padding: 1px 6px; border-radius: 4px; font-size: 14px; }
+        .page-body .btn-play { margin-top: 6px; }
 
         @media (max-width: 700px) {
             .nav { gap: 12px; padding: 12px 4%; }
@@ -459,6 +469,13 @@
             <a id="dlBtn" class="dl-btn" href="#" download>⬇ Stáhnout video</a>
         </div>
 
+        <!-- Statické stránky (odkazy v patičce) -->
+        <div id="pageSection" class="page-section">
+            <button class="back-btn" id="pageBackBtn" onclick="closePage()">← Zpět</button>
+            <h1 class="page-title" id="pageTitle"></h1>
+            <div class="page-body" id="pageBody"></div>
+        </div>
+
         <!-- Homepage catalog -->
         <div id="placeholder" class="catalog">
             <div id="hero"></div>
@@ -469,22 +486,16 @@
 
     <!-- Patička po vzoru Netflixu -->
     <footer class="footer">
-        <div class="f-ask">Máte otázky? <span class="f-link">Kontaktujte nás.</span></div>
+        <div class="f-ask">Máte otázky? <button type="button" class="f-link" onclick="openPage('contact')">Kontaktujte nás.</button></div>
         <div class="f-links">
-            <span class="f-link">Audio popis</span>
-            <span class="f-link">Centrum nápovědy</span>
-            <span class="f-link">Dárkové karty</span>
-            <span class="f-link">Tiskové zprávy</span>
-            <span class="f-link">Investorům</span>
-            <span class="f-link">Podmínky užití</span>
-            <span class="f-link">Kontakt</span>
-            <span class="f-link">Ochrana soukromí</span>
-            <span class="f-link">Předvolby cookies</span>
-            <span class="f-link">Firemní informace</span>
-            <span class="f-link">O nás</span>
-            <span class="f-link">Pracovní příležitosti</span>
+            <button type="button" class="f-link" onclick="openPage('help')">Centrum nápovědy</button>
+            <button type="button" class="f-link" onclick="openPage('about')">O projektu</button>
+            <button type="button" class="f-link" onclick="openPage('sources')">Zdroje a technologie</button>
+            <button type="button" class="f-link" onclick="openPage('terms')">Podmínky užití</button>
+            <button type="button" class="f-link" onclick="openPage('privacy')">Ochrana soukromí</button>
+            <button type="button" class="f-link" onclick="openPage('cookies')">Předvolby cookies</button>
+            <button type="button" class="f-link" onclick="openPage('contact')">Kontakt</button>
         </div>
-        <span class="f-code">Kód služby</span>
         <div class="f-copy">© 2026 WTZI · Proxy pro přehrávání videí z prehraj.to</div>
     </footer>
 
@@ -497,6 +508,9 @@
         const resultsInfo = document.getElementById('resultsInfo');
         const playerSection = document.getElementById('playerSection');
         const videoPlayer = document.getElementById('videoPlayer');
+        const pageSection = document.getElementById('pageSection');
+        const pageTitle = document.getElementById('pageTitle');
+        const pageBody = document.getElementById('pageBody');
         const nowPlaying = document.getElementById('nowPlaying');
         const dlBtn = document.getElementById('dlBtn');
         const placeholder = document.getElementById('placeholder');
@@ -944,14 +958,171 @@
             placeholder.style.display = 'none';
             resultsSection.style.display = 'none';
             playerSection.style.display = 'none';
+            pageSection.style.display = 'none';
             
             if (section === 'results') {
                 resultsSection.style.display = 'block';
             } else if (section === 'player') {
                 playerSection.style.display = 'block';
+            } else if (section === 'page') {
+                pageSection.style.display = 'block';
             } else {
                 placeholder.style.display = 'block';
             }
+        }
+
+        // ===== Statické stránky z patičky (všechno je součástí jedné stránky) =====
+        const CONTACT_MAIL = 'contact@qikseek.qzz.io';
+        const PAGES = {
+            help: {
+                title: 'Centrum nápovědy',
+                body: `
+                    <h2>Hledání</h2>
+                    <p>Napiš název do vyhledávání a zmáčkni Enter. Hledá se přes prehraj.to, takže se vyplácí zkusit i jiný tvar názvu – bez roku, bez diakritiky, nebo naopak anglický originál.</p>
+                    <p>Když se nic nenajde, zkus kratší část názvu (např. jen první slovo). Čím kratší dotaz, tím víc výsledků – a naopak.</p>
+                    <h2>Video se nespustí nebo je černé</h2>
+                    <ul>
+                        <li>Zkus jiný výsledek – každý záznam je jiný rip a některé už na CDN nejsou.</li>
+                        <li>Tlačítko „Stáhnout video“ použij hned: odkaz na CDN je podepsaný a po chvíli přestane platit.</li>
+                        <li>Některé soubory nejdou přehrát v prohlížeči (jiný kontejner/kodek) – tehdy pomůže stažení.</li>
+                    </ul>
+                    <h2>Chyba 429 (Too Many Requests)</h2>
+                    <p>Prehraj.to limituje počet dotazů. Když se to objeví, dej appce minutu pauzu a v ⚙️ Nastavení zapni „Omezit souběžné dotazy na náhledy“ – načítání náhledů je nejčastější příčina.</p>
+                    <h2>Proxy servery</h2>
+                    <p>Appka nikdy nevolá prehraj.to přímo. Dotazy jdou na PHP proxy servery v seznamu (⚙️ Nastavení) a používá se první, která odpoví. Když je jeden mrtvý, stačí ho v seznamu vypnout nebo přidat jiný.</p>
+                    <h2>Náhledy a nastavení</h2>
+                    <p>V ⚙️ Nastavení jde náhledy úplně vypnout, přepnout jejich zdroj na iTunes, změnit katalog na úvodní stránce a spravovat proxy servery. Vše se ukládá jen do tvého prohlížeče.</p>
+                `,
+            },
+            about: {
+                title: 'O projektu',
+                body: `
+                    <p>WTZI je malý hobby projekt: webové rozhraní ve stylu streamovacích služeb pro filmy, které jsou veřejně dostupné na prehraj.to. Bez registrace, bez reklam, zdarma.</p>
+                    <h2>Jak to funguje</h2>
+                    <ul>
+                        <li>Server je ASP.NET Core (.NET 9) běžící na Azure App Service.</li>
+                        <li>Katalog na úvodní stránce bere server z žebříčků iTunes (CZ nebo EN) a cachuje ho na den.</li>
+                        <li>Hledání a náhledy jdou přes PHP proxy servery, které požadavek na prehraj.to udělají za server.</li>
+                        <li>Přehrávání zajišťuje HTML5 přehrávač; video streamuje server přes <code>/api/stream</code>, protože CDN vyžaduje hlavičku Referer.</li>
+                    </ul>
+                    <h2>Co tady nenajdeš</h2>
+                    <p>Žádná videa se na serveru neukládají ani nehostují. Appka jen zprostředkuje požadavek a přehraje to, co je veřejně dostupné. Účty, profily ani historii sledování nevedeme.</p>
+                    <p>Nápady a chyby posílej na <a href="mailto:${CONTACT_MAIL}">${CONTACT_MAIL}</a>.</p>
+                `,
+            },
+            sources: {
+                title: 'Zdroje a technologie',
+                body: `
+                    <h2>Odkud se berou data</h2>
+                    <ul>
+                        <li><strong>Katalog:</strong> iTunes RSS (topmovies, CZ/EN) – bez API klíče, stahuje ho server.</li>
+                        <li><strong>Plakáty:</strong> prehraj.to náhledy, volitelně iTunes Search API.</li>
+                        <li><strong>Vyhledávání a přehrávání:</strong> prehraj.to, přes vlastní PHP proxy skripty.</li>
+                    </ul>
+                    <h2>Použité technologie</h2>
+                    <ul>
+                        <li>ASP.NET Core / .NET 9 (MIT) – backend a API.</li>
+                        <li>Čisté HTML, CSS a JavaScript – frontend bez frameworku a bez externích fontů.</li>
+                        <li>PHP proxy skripty – vlastní, běží na běžném CZ hostingu.</li>
+                    </ul>
+                    <p>Logo a ikony jsou textové/emoji, žádné cizí assety se nenačítají.</p>
+                `,
+            },
+            terms: {
+                title: 'Podmínky užití',
+                body: `
+                    <p>WTZI je nekomerční hobby služba dostupná tak, jak je, bez jakékoli záruky dostupnosti nebo funkčnosti.</p>
+                    <h2>Co appka dělá</h2>
+                    <p>Jen zprostředkovává vyhledání a přehrání obsahu, který je veřejně dostupný na prehraj.to. Videa nehostujeme, neukládáme je a nevlastníme. Za obsah odpovídají jeho původní autoři a provozovatel prehraj.to.</p>
+                    <h2>Odpovědnost uživatele</h2>
+                    <ul>
+                        <li>Za legálnost sledování v tvé zemi odpovídáš ty; WTZI není právní ani hostingová služba.</li>
+                        <li>Nepoužívej appku k hromadnému automatizovanému stahování ani k přetěžování proxy serverů.</li>
+                        <li>Nepokoušej se službu zneužít k šíření obsahu dál pod vlastní hlavičkou.</li>
+                    </ul>
+                    <h2>Změny</h2>
+                    <p>Provozovatel může službu kdykoli omezit, přerušit nebo ukončit, stejně jako zablokovat přístup. Aktuální verze těchto podmínek je vždy tady na stránce.</p>
+                    <p>Dotazy k podmínkám: <a href="mailto:${CONTACT_MAIL}">${CONTACT_MAIL}</a>.</p>
+                `,
+            },
+            privacy: {
+                title: 'Ochrana soukromí',
+                body: `
+                    <p>WTZI nemá registraci, přihlášení ani uživatelské účty. Žádná analytika, reklamní skripty ani sledovací cookies.</p>
+                    <h2>Co se ukládá u tebe v prohlížeči</h2>
+                    <p>Jen nastavení a cache náhledů (localStorage) – podrobnosti a tlačítko na smazání najdeš v <button type="button" class="f-link" onclick="openPage('cookies')" style="color:#fff;text-decoration:underline">Předvolbách cookies</button>.</p>
+                    <h2>Co projde serverem</h2>
+                    <ul>
+                        <li>Hledání a náhledy jdou z našeho serveru na PHP proxy a odtud na prehraj.to – prehraj.to vidí adresu proxy serveru, ne tvou.</li>
+                        <li>Přehrávání streamuje náš server, takže CDN vidí jeho adresu.</li>
+                        <li>Hosting (Azure App Service) vede běžné přístupové logy (IP, čas, URL) po dobu danou provozovatelem hostingu.</li>
+                        <li>Katalog stahuje server, ne tvůj prohlížeč.</li>
+                    </ul>
+                    <h2>Tvá práva</h2>
+                    <p>Nic o tobě dohledat nelze, protože nic o tobě neukládáme. Případné dotazy piš na <a href="mailto:${CONTACT_MAIL}">${CONTACT_MAIL}</a>.</p>
+                `,
+            },
+            cookies: {
+                title: 'Předvolby cookies',
+                body: `
+                    <p>WTZI nepoužívá cookies pro sledování ani reklamu a nemá žádnou přihlášenou relaci. Místo cookies si do prohlížeče ukládá dvě věci přes <code>localStorage</code>:</p>
+                    <ul>
+                        <li><code>${SETTINGS_KEY}</code> – tvoje nastavení (náhledy, zdroj náhledů, katalog, proxy servery).</li>
+                        <li><code>${THUMB_KEY}</code> – cache náhledů, aby se stejné obrázky nenačítaly pořád dokola.</li>
+                    </ul>
+                    <p>Obě položky zůstávají jen v tvém prohlížeči, na server se neposílají. Smazat je můžeš tlačítkem níž nebo v prohlížeči (Nastavení → Ochrana soukromí → Data stránek).</p>
+                    <button type="button" class="btn-play" onclick="clearStoredData()">Vymazat uložená data</button>
+                `,
+            },
+            contact: {
+                title: 'Kontakt',
+                body: `
+                    <p>WTZI je hobby projekt, takže odpověď může chvíli trvat – ale každý mail si přečtu.</p>
+                    <p>Piš na <a href="mailto:${CONTACT_MAIL}">${CONTACT_MAIL}</a>.</p>
+                    <h2>Ať to můžu vyřešit rychle</h2>
+                    <ul>
+                        <li>U chyby přilož název filmu a přesný text hlášky (nebo screenshot).</li>
+                        <li>U nesprávného výsledku napiš, co jsi hledal a co přišlo.</li>
+                        <li>U nedostupného videa pošli odkaz na stránku prehraj.to, kterou výsledek otevírá.</li>
+                    </ul>
+                    <p>Než napíšeš, koukni do <button type="button" class="f-link" onclick="openPage('help')" style="color:#fff;text-decoration:underline">Centra nápovědy</button> – většina problémů je limit prehraj.to (429) nebo mrtvý rip.</p>
+                `,
+            },
+        };
+
+        // Odkud se na stránku v patičce přišlo, abychom se vrátili na stejné místo.
+        let pageReturn = 'placeholder';
+
+        function openPage(key) {
+            const page = PAGES[key];
+            if (!page) return;
+            if (pageSection.style.display !== 'block') {
+                pageReturn = resultsSection.style.display === 'block' ? 'results' : 'placeholder';
+            }
+            stopVideo();
+            hideStatus();
+            pageTitle.textContent = page.title;
+            pageBody.innerHTML = page.body;
+            showSection('page');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function closePage() {
+            if (pageReturn === 'results' && currentResults.length > 0) {
+                showSection('results');
+            } else {
+                goHome();
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function clearStoredData() {
+            try {
+                localStorage.removeItem(SETTINGS_KEY);
+                localStorage.removeItem(THUMB_KEY);
+            } catch (e) {}
+            thumbCache = {};
+            window.location.href = window.location.pathname;
         }
         
         async function searchMovies() {
