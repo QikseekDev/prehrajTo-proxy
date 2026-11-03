@@ -276,6 +276,23 @@
         .results-section { padding: 100px 4% 0; }
         .results-info { color: var(--muted); font-size: 16px; margin-bottom: 18px; }
         .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 40px 8px; }
+
+        /* Stav hledání je součástí stránky s výsledky - žádná plovoucí hláška v rohu. */
+        .results-state { display: none; align-items: center; gap: 14px; padding: 16px 20px; margin-bottom: 22px;
+            border-radius: 6px; background: rgba(255,255,255,0.07); border-left: 4px solid rgba(255,255,255,0.45);
+            color: #f2f2f2; font-size: 15px; line-height: 1.45; }
+        .results-state.show { display: flex; }
+        .results-state.error { border-left-color: var(--red); background: rgba(229,9,20,0.16); }
+        .results-state.empty { border-left-color: #f5c518; background: rgba(245,197,24,0.12); }
+        .results-state .state-text { flex: 1 1 auto; }
+        .results-state .state-btn { flex: 0 0 auto; background: #fff; color: #000; border: 0; border-radius: 4px;
+            padding: 8px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+        .results-state .state-btn:hover { background: rgba(255,255,255,0.75); }
+        .spinner { width: 18px; height: 18px; flex: 0 0 auto; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25);
+            border-top-color: #fff; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .skel-card { aspect-ratio: 16 / 9; border-radius: 4px; background: rgba(255,255,255,0.06); animation: pulse 1.4s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
         .movie-card {
             display: block; text-decoration: none; color: inherit; border-radius: 6px; cursor: pointer;
             background: #181818; overflow: hidden; position: relative;
@@ -427,6 +444,7 @@
 
         <!-- Results -->
         <div id="resultsSection" class="results-section">
+            <div id="resultsState" class="results-state"></div>
             <div id="resultsInfo" class="results-info"></div>
             <div id="resultsGrid" class="results-grid"></div>
         </div>
@@ -884,6 +902,43 @@
             status.className = 'status';
             status.textContent = '';
         }
+
+        // ===== Stav hledání =====
+        // Načítání / chyba / prázdný výsledek patří přímo do stránky s výsledky, ne do plovoucí
+        // hlášky v rohu - hledání tak vždy skončí na stránce s výsledky, i když se nic nenašlo.
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function resultsClear() {
+            resultsState.className = 'results-state';
+            resultsState.innerHTML = '';
+        }
+
+        function resultsLoading(message) {
+            resultsState.className = 'results-state show';
+            resultsState.innerHTML = `<span class="spinner"></span><span class="state-text">${esc(message)}</span>`;
+            resultsInfo.textContent = '';
+            // kostry karet, ať je vidět, že se načítá
+            resultsGrid.innerHTML = Array.from({ length: 8 }, () => '<div class="skel-card"></div>').join('');
+        }
+
+        function resultsError(message) {
+            resultsState.className = 'results-state show error';
+            resultsState.innerHTML = `<span class="state-text">${esc(message)}</span>`
+                + '<button type="button" class="state-btn" onclick="retrySearch()">Zkusit znovu</button>';
+            resultsInfo.textContent = '';
+            resultsGrid.innerHTML = '';
+        }
+
+        function resultsEmpty(message, query) {
+            resultsState.className = 'results-state show empty';
+            resultsState.innerHTML = `<span class="state-text">${esc(message)}</span>`;
+            resultsInfo.textContent = query ? `0 výsledků pro „${query}"` : '';
+            resultsGrid.innerHTML = '';
+        }
+
+        function retrySearch() { searchMovies(); }
         
         function showSection(section) {
             placeholder.style.display = 'none';
@@ -902,43 +957,49 @@
         async function searchMovies() {
             const query = searchInput.value.trim();
             searchBox.classList.toggle('has-text', query.length > 0);
-            
-            if (!query) {
-                showStatus('❌ Zadej název filmu nebo seriálu', 'error');
-                return;
-            }
-            
+
             // Stop any playing video before searching
             stopVideo();
-            
+
+            // Rovnou na stránku s výsledky - stav hledání je její součást.
+            showSection('results');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            if (!query) {
+                resultsError('Zadej název filmu nebo seriálu.');
+                searchInput.focus();
+                return;
+            }
+
             // Update URL with search query
             const newUrl = `${window.location.pathname}?q=${encodeURIComponent(query)}`;
             window.history.pushState({}, '', newUrl);
-            
+
             searchBtn.disabled = true;
             searchBtn.textContent = '⏳';
-            showStatus('🔄 Vyhledávám na prehraj.to...', 'loading');
-            
+            currentResults = [];
+            resultsLoading(`Hledám „${query}" …`);
+
             try {
                 const response = await fetch(`/api/search?q=${encodeURIComponent(query)}${proxyQS()}`);
-                const data = await response.json();
-                
-                if (data.success && data.movies && data.movies.length > 0) {
+                let data = null;
+                try { data = await response.json(); } catch (e) { data = null; }
+
+                if (!data) {
+                    resultsError(`Server nevrátil platnou odpověď (HTTP ${response.status}).`);
+                } else if (data.success && data.movies && data.movies.length > 0) {
                     const catItem = CATALOG.find(m => m.q === query);
                     if (catItem) data.movies = rankMovies(catItem, data.movies);
                     currentResults = data.movies;
-                    hideStatus();
                     displayResults(data.movies, query);
-                } else if (data.success && (!data.movies || data.movies.length === 0)) {
-                    showStatus(`❌ Nic nenalezeno pro "${query}"`, 'error');
-                    showSection('placeholder');
+                } else if (data.success) {
+                    resultsEmpty(`Nic jsme nenašli pro „${query}". Zkus jiný název nebo jiný pravopis.`, query);
                 } else {
-                    showStatus(`❌ ${data.error || 'Chyba při vyhledávání'}`, 'error');
-                    showSection('placeholder');
+                    resultsError(data.error || 'Chyba při vyhledávání.');
                 }
             } catch (error) {
                 console.error('Search error:', error);
-                showStatus(`❌ Chyba připojení: ${error.message}`, 'error');
+                resultsError(`Chyba připojení: ${error.message}`);
             } finally {
                 searchBtn.disabled = false;
                 searchBtn.textContent = '🔍';
@@ -946,7 +1007,8 @@
         }
         
         function displayResults(movies, query) {
-            resultsInfo.textContent = `Nalezeno ${movies.length} výsledků pro "${query}" (ověřuji dostupnost...)`;
+            resultsClear();
+            resultsInfo.textContent = `Nalezeno ${movies.length} výsledků pro „${query}" (ověřuji dostupnost...)`;
             resultsGrid.innerHTML = '';
             
             // Store card elements by index for later removal
@@ -1034,7 +1096,7 @@
             resultsInfo.textContent = `Nalezeno ${validCount} funkčních výsledků pro "${query}"`;
             
             if (validCount === 0) {
-                showStatus(`❌ Žádné funkční video nenalezeno pro "${query}"`, 'error');
+                resultsEmpty(`Žádné z nalezených videí nejde přehrát. Zkus to znovu později nebo jiný název.`, query);
             }
         }
         
