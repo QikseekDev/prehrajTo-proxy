@@ -1147,7 +1147,7 @@
         // ===== Rate limit (429) =====
         // prehraj.to (i naše vlastní omezení) při přetížení nevrací jen kód - proto se pozná i podle textu
         // chyby. Místo holé chyby ukážeme krátké vysvětlení s ukazatelem do dalšího pokusu a zkusíme to
-        // samo znovu (3-5 s, max. 3x).
+        // samo znovu (5-10 s, max. 3x).
         function isRateLimited(status, data) {
             if (status === 429) return true;
             if (!data || typeof data !== 'object') return false;
@@ -1159,8 +1159,8 @@
 
         function retryDelaySeconds(response, data) {
             const h = response && response.headers ? Number(response.headers.get('Retry-After')) : 0;
-            const s = Number(data && data.retryAfter) || h || 4;
-            return Math.min(5, Math.max(3, s));
+            const s = Number(data && data.retryAfter) || h || 5;
+            return Math.min(10, Math.max(5, s));
         }
 
         // fetch + JSON s automatickým opakováním při rate limitu.
