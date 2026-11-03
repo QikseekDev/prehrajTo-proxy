@@ -349,10 +349,13 @@
         }
         video { width: 100%; height: 100%; }
         .now-playing { margin-top: 18px; font-size: 24px; font-weight: 700; }
+        .player-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+        .player-actions[hidden] { display: none; }
         .dl-btn {
-            display: inline-flex; align-items: center; gap: 8px; margin-top: 14px;
+            display: inline-flex; align-items: center; gap: 8px;
             padding: 8px 18px; border-radius: 4px; background: rgba(109,109,110,0.5); font-size: 15px;
         }
+        .dl-btn[hidden] { display: none; }
         .dl-btn:hover { background: rgba(109,109,110,0.8); }
         /* Po skončení videa: co dál. Leží přes video, takže neposouvá stránku. */
         .player-end {
@@ -656,6 +659,11 @@
                     <input type="number" id="limitValue" min="1" max="20" step="1">
                 </div>
                 <div class="set-hint" style="margin-bottom:14px">Vypnuto (výchozí): náhledy se načítají všechny naráz. Zapni, pokud prehraj.to vrací chybu 429.</div>
+                <div class="set-row">
+                    <label for="directToggle">Přímé přehrávání z CDN</label>
+                    <label class="switch"><input type="checkbox" id="directToggle"><span></span></label>
+                </div>
+                <div class="set-hint">Vypnuto (výchozí): appka se po opakovaných chybách přepne na server sama. Zapnuto: video i IPTV jdou přímo ze zdroje a serverová náhrada se nabídne jen tlačítkem – šetří to data a výkon hostingu. Když zdroj přímé přehrávání nepodporuje, použij „Přehrát přes server“.</div>
             </div>
         </div>
     </header>
@@ -685,7 +693,10 @@
                 </div>
             </div>
             <div id="nowPlaying" class="now-playing"></div>
-            <a id="dlBtn" class="dl-btn" href="#" download>⬇ Stáhnout video</a>
+            <div class="player-actions">
+                <a id="dlBtn" class="dl-btn" href="#" download>⬇ Stáhnout video</a>
+                <button type="button" id="proxyBtn" class="dl-btn" hidden>▶ Přehrát přes server</button>
+            </div>
         </div>
 
         <!-- Živé vysílání: kanály z IPTV seznamů, přehrává hls.js -->
@@ -725,6 +736,9 @@
             </div>
             <div id="liveNow" class="now-playing"></div>
             <div id="liveError" class="live-error" hidden></div>
+            <div class="player-actions" id="liveRelayActions" hidden>
+                <button type="button" id="liveRelayBtn" class="dl-btn">▶ Přehrát přes server</button>
+            </div>
         </div>
 
         <!-- Statické stránky (odkazy v patičce) -->
@@ -778,9 +792,12 @@
         const liveVideo = document.getElementById('liveVideo');
         const liveNow = document.getElementById('liveNow');
         const liveError = document.getElementById('liveError');
+        const liveRelayActions = document.getElementById('liveRelayActions');
+        const liveRelayBtn = document.getElementById('liveRelayBtn');
         const liveBtn = document.getElementById('liveBtn');
         const nowPlaying = document.getElementById('nowPlaying');
         const dlBtn = document.getElementById('dlBtn');
+        const proxyBtn = document.getElementById('proxyBtn');
         const playerEnd = document.getElementById('playerEnd');
         const playerEndTitle = document.getElementById('playerEndTitle');
         const placeholder = document.getElementById('placeholder');
@@ -857,13 +874,16 @@
             // PROXY-SERVERS:END
         ];
         const SETTINGS_KEY = 'wtzi-settings';
-        let settings = { catLang: 'cz', limitOn: false, limit: 3 };
+        let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: false };
         try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) {}
         // Starší verze ukládaly volby, které už v panelu nejsou (vypnuté náhledy, zdroj
         // náhledů, proxy). Zahodit, ať se v localStorage nevrátí zpátky do oběhu.
         ['thumbsOff', 'thumbSrc', 'proxyOn', 'proxyServers', 'proxyUrl'].forEach(k => delete settings[k]);
         const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} };
         const thumbLimit = () => settings.limitOn ? Math.max(1, settings.limit | 0) : Infinity;
+        // Přímé přehrávání z CDN (Nastavení, výchozí: vypnuto). Zapnuto = server se pro video
+        // a HLS použije jen na výslovné kliknutí, ne automaticky po chybách.
+        const directPreferred = () => settings.direct === true;
         // Proxy servery jsou vždy zapnuté - appka prehraj.to nikdy nevolá přímo. Seznam drží
         // DEFAULT_PROXY_SERVERS (mění ho scripts/change-proxy-servers.sh); backend je zkusí
         // jeden po druhém a vezme první, který odpoví bez chyby.
@@ -1323,7 +1343,9 @@
                     <h2>Proxy servery</h2>
                     <p>Appka nikdy nevolá prehraj.to přímo. Dotazy jdou přes PHP proxy servery, které má v sobě nastavené, a používá se první, která odpoví. Když je jeden mrtvý nebo zaplněný, appka ho přeskočí a zkusí další – uživatel se o tom nic nedozví.</p>
                     <h2>Náhledy a nastavení</h2>
-                    <p>V Nastavení (avatar vpravo nahoře) jde změnit katalog na úvodní stránce a omezit počet souběžných dotazů na náhledy. Vše se ukládá jen do tvého prohlížeče.</p>
+                    <p>V Nastavení (avatar vpravo nahoře) jde změnit katalog na úvodní stránce, omezit počet souběžných dotazů na náhledy a zapnout Přímé přehrávání z CDN. Vše se ukládá jen do tvého prohlížeče.</p>
+                    <h2>Přímé přehrávání z CDN</h2>
+                    <p>Ve výchozím stavu appka zkouší přehrát video přímo z CDN a po opakovaných chybách se sama přepne na server. Když přepínač zapneš, zůstane u přímého přehrávání a server nabídne jen tlačítkem „Přehrát přes server“. Šetří to data a výkon hostingu, ale některé zdroje (hlavně ty, co vyžadují hlavičku Referer nebo nemají CORS) půjdou jen přes server.</p>
                 `,
             },
             about: {
@@ -1335,7 +1357,7 @@
                         <li>Server je ASP.NET Core (.NET 9) běžící na Azure App Service.</li>
                         <li>Katalog na úvodní stránce bere server z žebříčků iTunes (CZ nebo EN) a cachuje ho na den.</li>
                         <li>Hledání a náhledy jdou přes PHP proxy servery, které požadavek na prehraj.to udělají za server.</li>
-                        <li>Přehrávání zajišťuje HTML5 přehrávač; video streamuje server přes <code>/api/stream</code>, protože CDN vyžaduje hlavičku Referer.</li>
+                        <li>Přehrávání zajišťuje HTML5 přehrávač. Video se primárně přehrává přímo z CDN; server přes <code>/api/stream</code> nastupuje při chybách (nebo ručně tlačítkem) a vždy při stahování.</li>
                     </ul>
                     <h2>Co tady nenajdeš</h2>
                     <p>Žádná videa se na serveru neukládají ani nehostují. Appka jen zprostředkuje požadavek a přehraje to, co je veřejně dostupné. Účty, profily ani historii sledování nevedeme.</p>
@@ -1386,7 +1408,7 @@
                     <h2>Co projde serverem</h2>
                     <ul>
                         <li>Hledání a náhledy jdou z našeho serveru na PHP proxy a odtud na prehraj.to – prehraj.to vidí adresu proxy serveru, ne tvou.</li>
-                        <li>Přehrávání streamuje náš server, takže CDN vidí jeho adresu.</li>
+                        <li>Při přímém přehrávání jde video z CDN přímo do tvého prohlížeče, takže CDN vidí tvoji IP. Když se přehrává přes server (výchozí chování po chybách nebo tlačítko „Přehrát přes server“), CDN vidí adresu serveru.</li>
                         <li>Hosting (Azure App Service) vede běžné přístupové logy (IP, čas, URL) po dobu danou provozovatelem hostingu.</li>
                         <li>Katalog stahuje server, ne tvůj prohlížeč.</li>
                     </ul>
@@ -1399,7 +1421,7 @@
                 body: `
                     <p>WTZI nepoužívá cookies pro sledování ani reklamu a nemá žádnou přihlášenou relaci. Místo cookies si do prohlížeče ukládá dvě věci přes <code>localStorage</code>:</p>
                     <ul>
-                        <li><code>${SETTINGS_KEY}</code> – tvoje nastavení (katalog na úvodní stránce, limit náhledů).</li>
+                        <li><code>${SETTINGS_KEY}</code> – tvoje nastavení (katalog na úvodní stránce, limit náhledů, přímé přehrávání).</li>
                         <li><code>${THUMB_KEY}</code> – cache náhledů, aby se stejné obrázky nenačítaly pořád dokola.</li>
                     </ul>
                     <p>Obě položky zůstávají jen v tvém prohlížeči, na server se neposílají. Smazat je můžeš tlačítkem níž nebo v prohlížeči (Nastavení → Ochrana soukromí → Data stránek).</p>
@@ -1610,7 +1632,8 @@
         // dalším dotahování (buffer dojde za ~3-5 min) dostane chybu a video se zasekne. Proto:
         //  1) při chybě/zaseknutí si vezmeme čerstvý odkaz a navážeme od místa, kde video skončilo,
         //  2) když ani to nepomůže, přepneme na /api/stream (server video přeposílá a odkaz si
-        //     sám obnovuje),
+        //     sám obnovuje) - ale jen když není zapnuté Přímé přehrávání z CDN; s ním se relay
+        //     nabídne tlačítkem a appka zkouší dál čerstvé CDN odkazy,
         //  3) tlačítko Stáhnout jde vždy přes /api/stream (CDN odkaz napřímo se stáhnout nedá).
         const player = { page: '', cdn: '', title: '', mode: 'direct', lastTime: 0, resumeAt: 0, fixes: 0, busy: false, stallTimer: null };
 
@@ -1644,6 +1667,7 @@
         async function loadAndPlay(page, title, beforePlay, poster) {
             player.page = page; player.cdn = ''; player.title = title || 'video'; player.mode = 'direct';
             player.lastTime = 0; player.resumeAt = 0; player.fixes = 0; player.busy = false;
+            proxyBtn.hidden = true;
             clearTimeout(player.stallTimer);
             refreshDl();
             hidePlayerEnd();
@@ -1665,7 +1689,12 @@
         async function recoverPlayback(reason) {
             if (!player.page || player.busy) return;
             if (player.fixes >= 6) {
-                showStatus('❌ Video se nepodařilo obnovit. Zkus stránku načíst znovu nebo použij Stáhnout.', 'error');
+                if (directPreferred() && player.mode === 'direct') {
+                    proxyBtn.hidden = false;
+                    showStatus('❌ Přímé přehrávání se nedaří. Zdroj může vyžadovat server – zkus „Přehrát přes server“.', 'error');
+                } else {
+                    showStatus('❌ Video se nepodařilo obnovit. Zkus stránku načíst znovu nebo použij Stáhnout.', 'error');
+                }
                 return;
             }
             player.busy = true;
@@ -1673,8 +1702,10 @@
             const page = player.page;
             const resumeAt = player.lastTime;
             player.resumeAt = resumeAt;
-            // po dvou neúspěšných pokusech s čerstvým CDN odkazem jdeme přes server
-            if (player.mode === 'direct' && player.fixes > 2) player.mode = 'relay';
+            // Výchozí chování: po dvou neúspěšných pokusech s čerstvým CDN odkazem jdeme přes server.
+            // S přímým přehráváním se automaticky nepřepíná - server se nabídne tlačítkem.
+            if (player.mode === 'direct' && player.fixes > 2 && !directPreferred()) player.mode = 'relay';
+            if (directPreferred() && player.mode === 'direct' && player.fixes >= 2) proxyBtn.hidden = false;
             console.warn('Obnova přehrávání:', reason, 'mode=' + player.mode, 'od', resumeAt);
             showStatus('🔄 Obnovuju přehrávání…', 'loading');
             try {
@@ -1695,11 +1726,33 @@
                 videoPlayer.src = src;
             } catch (e) {
                 console.error('Recover error:', e);
+                // Přímé přehrávání: když ani získání čerstvého odkazu nevyjde, nabídneme server.
+                if (directPreferred()) proxyBtn.hidden = false;
                 showStatus(`❌ ${e.message}`, 'error');
             } finally {
                 player.busy = false;
             }
         }
+
+        // Ruční přepnutí na server (tlačítko „Přehrát přes server“). Používá se jen když
+        // přímé přehrávání selhalo - výchozí chování se přepíná samo jako dřív.
+        function playThroughServer() {
+            if (!player.page) return;
+            const page = player.page;
+            const resumeAt = player.lastTime;
+            player.mode = 'relay';
+            player.fixes = 0;
+            proxyBtn.hidden = true;
+            showStatus('🔄 Přepínám na přehrávání přes server…', 'loading');
+            videoPlayer.addEventListener('loadedmetadata', () => {
+                if (player.page !== page) return;   // mezitím se přeplo na jiné video
+                if (resumeAt > 1) videoPlayer.currentTime = resumeAt;
+                videoPlayer.play().catch(() => {});
+                hideStatus();
+            }, { once: true });
+            videoPlayer.src = streamUrl(page, false, player.cdn);
+        }
+        proxyBtn.addEventListener('click', playThroughServer);
 
         videoPlayer.addEventListener('timeupdate', () => {
             clearTimeout(player.stallTimer);
@@ -1739,6 +1792,7 @@
         let liveShown = 0;
         let liveHls = null;
         let liveHlsPromise = null;
+        let liveChannel = null;   // kanál, který právě hraje (pro ruční relay)
 
         // Filtry podle tagů: "hd" = 1080p/4K, "noGeo" skryje geo-blokované, "only24" skryje ty,
         // co nejedou 24/7. Vzájemně se násobí, "Vše" je zruší.
@@ -1846,15 +1900,17 @@
             liveError.hidden = false;
         }
 
-        async function playLive(ch) {
+        async function playLive(ch, forceRelay = false) {
             if (!ch) return;
             liveNow.textContent = ch.name;
             liveError.hidden = true;
+            liveRelayActions.hidden = true;
             liveVideo.poster = ch.logo || '';
             showSection('livePlayer');
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            window.history.pushState({}, '', '?live=' + encodeURIComponent(liveSource.value) + '&ch=' + encodeURIComponent(ch.name));
+            if (!forceRelay) window.history.pushState({}, '', '?live=' + encodeURIComponent(liveSource.value) + '&ch=' + encodeURIComponent(ch.name));
             stopLive();
+            liveChannel = ch;
             setNowPlayingLive(ch);
 
             // Kanál, který vyžaduje konkrétní User-Agent nebo Referer (#EXTVLCOPT), prohlížeč
@@ -1863,9 +1919,18 @@
             const relayUrl = liveRelayUrl(ch);
 
             // Safari/iOS umí HLS nativně a CORS u videa neřeší - tam je přímé přehrání nejlepší.
-            if (!needsHeaders && liveVideo.canPlayType('application/vnd.apple.mpegurl')) {
+            const useRelay = forceRelay || needsHeaders;
+            if (!useRelay && liveVideo.canPlayType('application/vnd.apple.mpegurl')) {
                 liveVideo.src = ch.url;
                 liveVideo.play().catch(() => {});
+                if (directPreferred()) {
+                    // Safari/iOS umí HLS nativně; když přímý pokus selže, nabídneme server ručně.
+                    liveVideo.addEventListener('error', () => {
+                        if (liveChannel !== ch || liveVideo.getAttribute('src') !== ch.url) return;
+                        liveRelayActions.hidden = false;
+                        showLiveError('Přímé přehrávání selhalo. Zkus „Přehrát přes server“.');
+                    }, { once: true });
+                }
                 return;
             }
 
@@ -1877,13 +1942,24 @@
                 return;
             }
 
-            let relayed = needsHeaders;
+            let relayed = useRelay;
+            let directRetries = 0;
             const hls = new Hls({ enableWorker: true });
             liveHls = hls;
             hls.on(Hls.Events.ERROR, (_ev, data) => {
                 if (!data.fatal) return;
-                // CORS nebo zdroj, který prohlížeči nevrátí playlist: jedeme přes náš relay.
+                // CORS nebo zdroj, který prohlížeči nevrátí playlist: ve výchozím režimu jedeme
+                // přes náš relay. S přímým přehráváním se automaticky nepřepíná - zkusíme
+                // přímé přehrání jednou znovu a pak nabídneme server tlačítkem.
                 if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !relayed) {
+                    if (directPreferred()) {
+                        if (directRetries++ < 1) { hls.startLoad(); return; }
+                        hls.destroy();
+                        if (liveHls === hls) liveHls = null;
+                        liveRelayActions.hidden = false;
+                        showLiveError('Přímé přehrávání selhalo. Zkus „Přehrát přes server“.');
+                        return;
+                    }
                     relayed = true;
                     hls.loadSource(relayUrl);
                     hls.startLoad();
@@ -1894,11 +1970,17 @@
                 if (liveHls === hls) liveHls = null;
             });
             hls.on(Hls.Events.MANIFEST_PARSED, () => liveVideo.play().catch(() => {}));
-            hls.loadSource(needsHeaders ? relayUrl : ch.url);
+            hls.loadSource(useRelay ? relayUrl : ch.url);
             hls.attachMedia(liveVideo);
         }
 
+        liveRelayBtn.addEventListener('click', () => {
+            if (liveChannel) playLive(liveChannel, true);
+        });
+
         function stopLive() {
+            liveChannel = null;
+            liveRelayActions.hidden = true;
             if (liveHls) { liveHls.destroy(); liveHls = null; }
             if (liveVideo) {
                 liveVideo.pause();
@@ -2159,6 +2241,7 @@
         function stopVideo() {
             if (videoPlayer) {
                 player.page = ''; player.cdn = '';
+                proxyBtn.hidden = true;
                 refreshDl();
                 clearTimeout(player.stallTimer); player.stallTimer = null;
                 hidePlayerEnd();
@@ -2382,6 +2465,15 @@
                 settings.limit = Math.min(20, Math.max(1, parseInt(val.value, 10) || 3));
                 val.value = settings.limit;
                 saveSettings();
+            });
+            const directTog = document.getElementById('directToggle');
+            directTog.checked = directPreferred();
+            directTog.addEventListener('change', () => {
+                settings.direct = directTog.checked;
+                saveSettings();
+                // Vypnutí přímého přehrávání schová ruční nabídku serveru; aktuální
+                // přehrávání se nemění, aby se video zbytečně nepřerušilo.
+                if (!settings.direct) proxyBtn.hidden = true;
             });
 
         })();

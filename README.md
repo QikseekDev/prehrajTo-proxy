@@ -96,7 +96,11 @@ Hlavičky se přenášejí i do přepsaných segmentů, takže funguje i samotn�
 
 Playlist tahá server (`/api/live`) a posílá do prohlížeče jen jméno, skupinu, logo a URL. HLS pak
 přehrává `hls.min.js` (přibalený v `wwwroot`, načítá se až při otevření kanálu; Safari/iOS použije
-nativní HLS). Když zdroj nepošle CORS hlavičky, zkusí se stejný kanál přes `/api/live/hls`.
+nativní HLS). Když zdroj nepošle CORS hlavičky, zkusí se stejný kanál přes `/api/live/hls`. S vypnutým Přímým
+přehráváním (výchozí) se relay použije automaticky; se zapnutým se po chybě nejdřív zkusí přímé
+přehrání znovu a pak se relay nabídne tlačítkem. Kanály vyžadující vlastní hlavičky jdou přes relay vždy.
+Přímé HLS přehrávání spoléhá na to, že playlist předá platné (i relativní) adresy segmentů a klíčů; když
+CDN vyžaduje token v query každého segmentu a playlist ho nepředává, přímé přehrání neprojde a je potřeba relay.
 
 Vlastní playlist (IPTV od poskytovatele) jde přidat konfigurací: `Prehraj:LivePlaylists` jako pole URL
 (Azure: `Prehraj__LivePlaylists__0`, `__1`, …) a pak `GET /api/live?custom=0`. Z prohlížeče se
@@ -142,14 +146,15 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
 
 - **Frontend** (`wwwroot/index.html`) - WTZI, UI ve stylu streamovací služby: katalog doporučených
   filmů, vyhledávání, přehrávač. Jediný statický soubor (CSS i JS uvnitř). Nastavení (avatar vpravo
-  nahoře) nabízí jen katalog úvodní stránky a limit souběžných náhledů – proxy jsou vždy zapnuté
-  a zdroj náhledů je vždy prehraj.to.
+  nahoře) nabízí katalog úvodní stránky, limit souběžných náhledů a Přímé přehrávání z CDN – proxy
+  pro prehraj.to jsou vždy zapnuté a zdroj náhledů je vždy prehraj.to.
 - **API Endpoints**:
   - `GET /api/search?q={query}` - Vyhledávání filmů
   - `GET /api/proxy?url={prehrajto_url}` - Získání URL videa
   - `GET /api/validate?url={prehrajto_url}` - Ověření, že video funguje
   - `GET /api/stream?url={prehrajto_url}[&download=1&name={titul}]` - Server video přeposílá z CDN (podporuje Range/seeking)
-    a sám obnovuje vypršelý odkaz, takže se přehrávání ani stahování nezasekne po pár minutách. S `download=1` se
+    a sám obnovuje vypršelý odkaz, takže se přehrávání ani stahování nezasekne po pár minutách. Používá se pro
+    stahování, ruční přehrání přes server a jako záložní cesta, když přímé přehrávání z CDN neprojde. S `download=1` se
     posílá jako příloha (tlačítko ⬇ Stáhnout video). Neumí HLS (`.m3u8`). Pozor na přenesená data: na Azure
     (zvlášť free tier) se tím video počítá do odchozího provozu, na self-hostu (Termux) je to zadarmo.
   - `GET /api/live?country={kód}[&lang={kód}][&custom={index}]` - Seznam IPTV kanálů (viz [Živé vysílání](#živé-vysílání-iptv)).
@@ -168,6 +173,12 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
 **Přehrávání** (`index.html`): video se napřed pustí napřímo z CDN. Když se zasekne / vyhodí chybu / skončí
 předčasně (odkaz z CDN vyprší), appka si vezme čerstvý odkaz a naváže od stejného místa; po dvou neúspěšných
 pokusech přepne na `/api/stream`.
+
+V Nastavení je přepínač **Přímé přehrávání z CDN** (výchozí: vypnuto). Vypnutý zachovává tohle chování
+včetně automatického přepnutí na server. Zapnutý drží video i HLS přímo u zdroje, nepřepíná po chybách
+automaticky a server nabídne jen tlačítkem **Přehrát přes server** (u filmu i u živého kanálu). Tlačítko
+Stáhnout jde vždy přes `/api/stream`, protože přímý CDN odkaz se stáhnout nedá. Volba se ukládá do
+`localStorage` (`wtzi-settings`) vedle ostatních nastavení.
 
 ### `/index.php`
 PHP proxy pro český hosting – bez něj se .NET verze k prehraj.to nedostane (viz výše).

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
@@ -30,10 +31,17 @@ builder.Services.AddHttpClient("prehraj", c =>
     c.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-Mode", "navigate");
     c.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-Site", "none");
     c.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-User", "?1");
-}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+})
+    // Handlery (a s nimi pooled spojení) držíme 10 minut místo výchozích 2 - seekování
+    // a navazování přehrávání tak neplatí nové TLS handshaky pokaždé znovu.
+    .SetHandlerLifetime(TimeSpan.FromMinutes(10))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
 {
     AllowAutoRedirect = true,
     AutomaticDecompression = DecompressionMethods.All,
+    // Spojení na CDN držíme déle než výchozí 2 minuty. Seekování posílá několik Range
+    // dotazů za sebou a bez toho by každý začínal novým TLS handshake (režie navíc).
+    PooledConnectionLifetime = TimeSpan.FromMinutes(10),
     ConnectCallback = ConnectPreferIpv4,
 });
 
@@ -45,10 +53,13 @@ builder.Services.AddHttpClient("prehraj-stream", c =>
     c.DefaultRequestHeaders.UserAgent.ParseAdd(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     c.DefaultRequestHeaders.AcceptLanguage.ParseAdd("cs-CZ,cs;q=0.9,en;q=0.5");
-}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+})
+    .SetHandlerLifetime(TimeSpan.FromMinutes(10))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
 {
     AllowAutoRedirect = true,
     AutomaticDecompression = DecompressionMethods.None,
+    PooledConnectionLifetime = TimeSpan.FromMinutes(10),
     ConnectCallback = ConnectPreferIpv4,
 });
 
@@ -256,6 +267,32 @@ static async Task<(int status, string body, string? error)> GetAsync(
 
 // 2xx = úspěch. Cokoli jiného (429, 403, 5xx, timeout, ...) je chyba a jde se dalšího zdroje.
 static bool Is2xx(int s) => s >= 200 && s < 300;
+
+// Přeposílání streamu po blocích s hlídačem nečinnosti. Segment nebo soubor, který přestane
+// téct, nesmí držet spojení (a vlákno) na sdíleném hostingu viset až do timeoutu klienta.
+// Buffer se půjčuje z poolu, takže souběžné přenosy nealokují 32 kB každý znovu.
+static async Task CopyWithIdleTimeout(Stream src, Stream dst, CancellationToken ct, int idleSeconds = 30)
+{
+    var buf = ArrayPool<byte>.Shared.Rent(32768);
+    try
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        while (true)
+        {
+            int n;
+            try
+            {
+                cts.CancelAfter(TimeSpan.FromSeconds(idleSeconds));
+                n = await src.ReadAsync(buf.AsMemory(0, buf.Length), cts.Token);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+            catch (Exception) { return; }   // utržené spojení: klient dostane jen to, co už přišlo
+            if (n <= 0) break;
+            await dst.WriteAsync(buf.AsMemory(0, n), ct);
+        }
+    }
+    finally { ArrayPool<byte>.Shared.Return(buf); }
+}
 
 // Odpověď se počítá jako úspěšná jen když není JSON chyba. PHP proxy servery (wtzi.borec.cz atd.)
 // vrací chybu z prehraj.to jako HTTP 200 + {"success":false,...} - bez tohohle by taková odpověď
@@ -980,7 +1017,9 @@ app.MapGet("/api/live/hls", async (string url, string? ua, string? referrer, IHt
         }
         ctx.Response.Headers.CacheControl = "no-store";
         await using var src = await res.Content.ReadAsStreamAsync(ctx.RequestAborted);
-        await src.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
+        // Segmenty a klíče tečou po blocích s hlídačem nečinnosti - žádné načítání celého
+        // souboru do paměti a žádné visící spojení, když zdroj přestane odpovídat.
+        await CopyWithIdleTimeout(src, ctx.Response.Body, ctx.RequestAborted);
         return Results.Empty;
     }
 }).RequireRateLimiting("live");
@@ -1057,7 +1096,7 @@ static string CdnKey(string u) =>
 
 // hint = CDN odkaz, který klient právě přehrává (&v=). Přímo ho používáme jen pro premiumcdn.net
 // (jinak by šlo přes server stahovat cokoli); jinak slouží jen k nalezení správného souboru na stránce.
-async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, string page, bool fresh, string? hint)
+async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, string page, bool fresh, string? hint, CancellationToken ct = default)
 {
     var key = "cdn|" + page + "|" + (hint == null ? "" : CdnKey(hint));
     if (!fresh)
@@ -1075,8 +1114,9 @@ async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, stri
     // (naposledy funkční první).
     foreach (var p in OrderedProxies(serverProxies))
     {
+            if (ct.IsCancellationRequested) return null;
             var sep = p.Contains('?') ? "&" : "?";
-            var (ps, pb, pe) = await GetAsync(f, p + sep + "url=" + Uri.EscapeDataString(page), 30);
+            var (ps, pb, pe) = await GetAsync(f, p + sep + "url=" + Uri.EscapeDataString(page), 30, null, ct);
             if (pe != null || !Is2xx(ps) || !IsGoodBody(pb)) continue;   // 429/403/5xx nebo chybové JSON = další proxy
             try
             {
@@ -1121,11 +1161,14 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
     }
 
     long sent = 0; long? total = null; var started = false; var fresh = false; var lastStatus = 0;
-    var buf = new byte[81920];
-
-    for (var attempt = 0; attempt < 6 && !ct.IsCancellationRequested; attempt++)
+    // Půjčený buffer: 80 kB na požadavek by jinak bylo při víc souběžných filmech zbytečně
+    // mnoho alokací pro GC (a na sdíleném hostingu je paměť vzácná).
+    var buf = ArrayPool<byte>.Shared.Rent(81920);
+    try
     {
-        var cdn = await ResolveCdnUrl(f, cache, url, fresh, string.IsNullOrWhiteSpace(v) ? null : v);
+        for (var attempt = 0; attempt < 6 && !ct.IsCancellationRequested; attempt++)
+    {
+        var cdn = await ResolveCdnUrl(f, cache, url, fresh, string.IsNullOrWhiteSpace(v) ? null : v, ct);
         fresh = false;
         if (cdn == null)
         {
@@ -1160,7 +1203,7 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
         catch (Exception)
         {
             fresh = true;
-            await Task.Delay(300, CancellationToken.None);
+            try { await Task.Delay(300, ct); } catch (OperationCanceledException) { return Results.Empty; }
             continue;
         }
 
@@ -1183,7 +1226,7 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
             {
                 // odkaz vypršel / CDN se omylem zhoupla -> příště čerstvý odkaz
                 fresh = true;
-                await Task.Delay(300 * (attempt + 1), CancellationToken.None);
+                try { await Task.Delay(300 * (attempt + 1), ct); } catch (OperationCanceledException) { return Results.Empty; }
                 continue;
             }
             if (started && code == 200) break; // CDN ignorovala Range, navázat by nešlo bezpečně
@@ -1230,7 +1273,9 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
             if (total == null || sent >= total) break; // hotovo (nebo neznámá délka -> navázat nejde)
             fresh = true;                              // utrženo uprostřed -> další kolo s čerstvým odkazem
         }
+        }
     }
+    finally { ArrayPool<byte>.Shared.Return(buf); }
 
     if (!started)
         return Results.Json(new { success = false, error = $"CDN returned HTTP {lastStatus}" }, statusCode: 502);
