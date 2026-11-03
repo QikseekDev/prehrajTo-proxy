@@ -242,6 +242,19 @@ Upload `index.php` na český hosting přes FTP.
 
 ---
 
+## Právní upozornění (Disclaimer)
+
+Tento projekt je pouze technický proxy server a přehrávač. **Nehostuje, neukládá ani nenabízí žádný obsah.** Veškerá videa a IPTV kanály pocházejí od třetích stran (Prehraj.to a veřejné playlisty) a jejich dostupnost ani legalita nejsou pod kontrolou autora.
+
+- Projekt není nijak spojen s Prehraj.to ani s poskytovateli IPTV playlistů a není jimi schválen ani podporován.
+- Za dodržování zákonů a autorských práv platných ve tvé zemi odpovídá uživatel.
+- Veřejnou instanci provozuješ na vlastní odpovědnost.
+- Autor nenese odpovědnost za jakékoli použití ani zneužití tohoto softwaru.
+- Software je poskytován „tak, jak je", bez jakékoli záruky (viz [LICENSE](LICENSE)).
+
+*EN: This project is a technical proxy and player only. It does not host, store or distribute any content. All videos and IPTV streams come from third parties. It is not affiliated with Prehraj.to or any IPTV provider. Users are responsible for complying with the laws and copyright rules of their country. Provided "as is", without warranty.*
+
+---
 ## Kredit
 
 Tenhle fork spravuje **Vojtěch Vokoun** – [contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io).
