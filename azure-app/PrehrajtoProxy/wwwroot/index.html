@@ -397,6 +397,21 @@
         .live-title { font-size: clamp(22px, 2.6vw, 30px); font-weight: 800; letter-spacing: -0.3px; }
         .live-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .live-tools .set-select { max-width: 170px; padding: 6px 8px; font-size: 14px; }
+        /* Vlastní výběr zdroje kanálů (místo nativního <select>) */
+        .lsrc { position: relative; }
+        .lsrc-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 150px; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 6px 10px; font-size: 14px; text-align: left; }
+        .lsrc-btn:hover, .lsrc.open .lsrc-btn { border-color: #777; }
+        .lsrc-btn svg { width: 12px; height: 12px; flex: none; transition: transform 0.15s; }
+        .lsrc.open .lsrc-btn svg { transform: rotate(180deg); }
+        .lsrc-menu { display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 60; width: 260px; max-width: calc(100vw - 28px); background: #181818; border: 1px solid #333; border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.7); }
+        .lsrc.open .lsrc-menu { display: block; }
+        .lsrc-search { display: block; width: calc(100% - 16px); margin: 8px; padding: 6px 9px; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; font: inherit; font-size: 13px; outline: none; }
+        .lsrc-list { max-height: min(60vh, 340px); overflow-y: auto; padding-bottom: 6px; }
+        .lsrc-group { padding: 8px 12px 4px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .lsrc-item { display: block; width: 100%; text-align: left; padding: 7px 12px; font-size: 14px; color: var(--text); }
+        .lsrc-item:hover, .lsrc-item:focus-visible { background: #2a2a2a; outline: none; }
+        .lsrc-item.active { color: #fff; font-weight: 700; box-shadow: inset 3px 0 0 var(--red); }
+        .lsrc-note { padding: 8px 12px; font-size: 13px; color: var(--muted); }
         .live-filter {
             width: 210px; max-width: 60vw; padding: 7px 10px; border-radius: 4px; font: inherit;
             font-size: 14px; color: #fff; background: #000; border: 1px solid #444; outline: none;
@@ -555,6 +570,8 @@
             .live-head { gap: 10px; margin-bottom: 16px; }
             .live-tools { width: 100%; }
             .live-tools .set-select { flex: 1 1 auto; max-width: none; }
+            .lsrc { flex: 1 1 auto; }
+            .lsrc-menu { width: 100%; }
             .live-filter { width: 100%; max-width: none; }
             .live-tags { gap: 6px; margin-bottom: 12px; }
             .lchip { padding: 5px 11px; font-size: 12px; }
@@ -676,12 +693,17 @@
             <div class="live-head">
                 <h1 class="live-title">Živě</h1>
                 <div class="live-tools">
-                    <select class="set-select" id="liveSource" aria-label="Zdroj kanálů">
-                        <option value="cz">Česko</option>
-                        <option value="sk">Slovensko</option>
-                        <option value="us">USA</option>
-                        <option value="uk">Anglie (VB)</option>
-                    </select>
+                    <div class="lsrc" id="liveSrc">
+                        <input type="hidden" id="liveSource" value="cz">
+                        <button type="button" class="lsrc-btn" id="liveSrcBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Zdroj kanálů">
+                            <span id="liveSrcLabel">Česko</span>
+                            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                        <div class="lsrc-menu" id="liveSrcMenu">
+                            <input class="lsrc-search" id="liveSrcSearch" type="search" placeholder="Hledat zemi…" autocomplete="off" aria-label="Hledat zemi">
+                            <div class="lsrc-list" id="liveSrcList" role="listbox"></div>
+                        </div>
+                    </div>
                     <input class="live-filter" id="liveFilter" type="search" placeholder="Filtrovat kanály…" autocomplete="off" aria-label="Filtrovat kanály">
                 </div>
             </div>
@@ -2176,6 +2198,130 @@
         liveBtn.addEventListener('click', () => openLive());
         liveBackBtn.addEventListener('click', backToLive);
         liveSource.addEventListener('change', () => { liveChannels = []; loadLive(); });
+
+        // ===== Živé vysílání: vlastní výběr zdroje (Doporučené / Ostatní) =====
+        // Doporučené jsou napevno, Ostatní se samo dotáhne ze serveru (/api/live/countries) při
+        // prvním otevření a doporučené země z něj vynechá. #liveSource je skrytý input s kódem
+        // zdroje (cz, sk, ...), takže zbytek stránky s ním pracuje jako dřív.
+        const LIVE_RECOMMENDED = [
+            { v: 'cz', n: 'Česko' },
+            { v: 'sk', n: 'Slovensko' },
+            { v: 'us', n: 'USA' },
+            { v: 'uk', n: 'Anglie (VB)' },
+        ];
+        const liveSrc = document.getElementById('liveSrc');
+        const liveSrcBtn = document.getElementById('liveSrcBtn');
+        const liveSrcLabel = document.getElementById('liveSrcLabel');
+        const liveSrcSearch = document.getElementById('liveSrcSearch');
+        const liveSrcList = document.getElementById('liveSrcList');
+        let liveOthers = [];
+        let liveOthersState = 'idle'; // idle | loading | ready | error
+
+        function liveNorm(s) {
+            return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        }
+
+        function liveSourceName(v) {
+            const all = LIVE_RECOMMENDED.concat(liveOthers);
+            const hit = all.find(x => x.v === v);
+            return hit ? hit.n : String(v).toUpperCase();
+        }
+
+        function updateLiveSrcLabel() {
+            liveSrcLabel.textContent = liveSourceName(liveSource.value);
+        }
+
+        function renderLiveSrc() {
+            const q = liveNorm(liveSrcSearch.value.trim());
+            const cur = liveSource.value;
+            const match = it => !q || liveNorm(it.n).includes(q) || it.v === q;
+            const item = it => `<button type="button" class="lsrc-item${it.v === cur ? ' active' : ''}" role="option" aria-selected="${it.v === cur}" data-v="${escapeHtml(it.v)}">${escapeHtml(it.n)}</button>`;
+            let html = '';
+            const rec = LIVE_RECOMMENDED.filter(match);
+            if (rec.length) html += '<div class="lsrc-group">Doporučené</div>' + rec.map(item).join('');
+            html += '<div class="lsrc-group">Ostatní</div>';
+            if (liveOthersState === 'loading') {
+                html += '<div class="lsrc-note">Načítám seznam zemí…</div>';
+            } else if (liveOthersState === 'error') {
+                html += '<button type="button" class="lsrc-item" data-retry="1">Seznam se nepodařilo načíst – zkusit znovu</button>';
+            } else if (liveOthersState === 'ready') {
+                const oth = liveOthers.filter(match);
+                html += oth.length ? oth.map(item).join('') : '<div class="lsrc-note">Nic nenalezeno</div>';
+            }
+            liveSrcList.innerHTML = html;
+        }
+
+        async function loadLiveOthers() {
+            if (liveOthersState === 'loading' || liveOthersState === 'ready') return;
+            liveOthersState = 'loading';
+            renderLiveSrc();
+            try {
+                const r = await fetch('/api/live/countries');
+                const d = await r.json();
+                if (!d.success || !Array.isArray(d.countries)) throw new Error(d.error || 'Seznam zemí se nepodařilo načíst');
+                const skip = new Set(LIVE_RECOMMENDED.map(x => x.v));
+                let names = null;
+                try { names = new Intl.DisplayNames(['cs'], { type: 'region' }); } catch (e) { /* starší prohlížeč */ }
+                liveOthers = d.countries
+                    .filter(c => c && c.code && !skip.has(String(c.code).toLowerCase()))
+                    .map(c => {
+                        const code = String(c.code).toUpperCase();
+                        let n = c.name || code;
+                        try {
+                            const cs = names && names.of(code);
+                            if (cs && cs !== code) n = cs;
+                        } catch (e) { /* neplatný kód - zůstane anglický název */ }
+                        return { v: code.toLowerCase(), n };
+                    })
+                    .sort((a, b) => a.n.localeCompare(b.n, 'cs'));
+                liveOthersState = 'ready';
+            } catch (e) {
+                liveOthers = [];
+                liveOthersState = 'error';
+            }
+            renderLiveSrc();
+            updateLiveSrcLabel();
+        }
+
+        function toggleLiveSrc(open) {
+            const willOpen = open === undefined ? !liveSrc.classList.contains('open') : open;
+            liveSrc.classList.toggle('open', willOpen);
+            liveSrcBtn.setAttribute('aria-expanded', String(willOpen));
+            if (!willOpen) return;
+            liveSrcSearch.value = '';
+            renderLiveSrc();
+            loadLiveOthers();
+            if (window.matchMedia('(hover: hover)').matches) liveSrcSearch.focus();
+        }
+
+        function setLiveSource(v) {
+            toggleLiveSrc(false);
+            if (!v || v === liveSource.value) return;
+            liveSource.value = v;
+            updateLiveSrcLabel();
+            liveSource.dispatchEvent(new Event('change'));
+        }
+
+        liveSrcBtn.addEventListener('click', () => toggleLiveSrc());
+        liveSrcSearch.addEventListener('input', renderLiveSrc);
+        liveSrcList.addEventListener('click', e => {
+            if (e.target.closest('[data-retry]')) {
+                liveOthersState = 'idle';
+                loadLiveOthers();
+                return;
+            }
+            const it = e.target.closest('[data-v]');
+            if (it) setLiveSource(it.dataset.v);
+        });
+        document.addEventListener('click', e => {
+            if (liveSrc.classList.contains('open') && !liveSrc.contains(e.target)) toggleLiveSrc(false);
+        });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && liveSrc.classList.contains('open')) {
+                toggleLiveSrc(false);
+                liveSrcBtn.focus();
+            }
+        });
         liveFilter.addEventListener('input', () => { if (liveChannels.length) renderLive(true); });
         document.getElementById('liveTags').addEventListener('click', e => {
             const chip = e.target.closest('[data-flag]');
