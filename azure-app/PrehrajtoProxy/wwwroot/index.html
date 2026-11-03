@@ -80,30 +80,9 @@
         .set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .set-hint { color: var(--muted); font-size: 12px; margin-top: 6px; line-height: 1.4; }
         .set-select { background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; font: inherit; max-width: 150px; }
-        /* iTunes dává plakáty na výšku -> na kartách je ořízneme na 16/9 jako Netflix */
-        .src-itunes .hero-img { object-fit: contain; object-position: right center; }
         .set-sub { display: none; align-items: center; justify-content: space-between; margin-top: 10px; }
         .set-sub.show { display: flex; }
         .set-sub input { width: 64px; background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; font: inherit; }
-        .set-sub-url { display: none; margin-top: 10px; }
-        .set-sub-url.show { display: block; }
-        .proxy-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-        .proxy-row { display: flex; align-items: center; gap: 6px; }
-        .proxy-row input[type="text"] {
-            flex: 1; min-width: 0; background: #000; color: #fff; border: 1px solid #444;
-            border-radius: 4px; padding: 5px 7px; font: inherit; font-size: 12px;
-        }
-        .proxy-row input[type="checkbox"] { flex: none; width: 15px; height: 15px; accent-color: #e50914; }
-        .proxy-row button {
-            flex: none; background: transparent; border: none; color: var(--muted);
-            cursor: pointer; font-size: 15px; padding: 2px 5px; line-height: 1;
-        }
-        .proxy-row button:hover { color: #fff; }
-        .proxy-add {
-            display: block; width: 100%; background: transparent; border: 1px dashed #444; color: var(--muted);
-            border-radius: 4px; padding: 6px 8px; font-size: 12px; cursor: pointer;
-        }
-        .proxy-add:hover { color: #fff; border-color: #777; }
         .switch { position: relative; width: 42px; height: 24px; flex: none; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .switch span { position: absolute; inset: 0; background: #555; border-radius: 24px; cursor: pointer; transition: background 0.2s; }
@@ -422,19 +401,6 @@
             <div class="settings-panel" id="settingsPanel">
                 <h4>Nastavení</h4>
                 <div class="set-row">
-                    <label for="thumbsOffToggle">Vypnout načítání náhledů</label>
-                    <label class="switch"><input type="checkbox" id="thumbsOffToggle"><span></span></label>
-                </div>
-                <div class="set-hint" style="margin-bottom:14px">Vypnuto (výchozí): náhledy na úvodní stránce se načítají. Zapnuto: žádné dotazy ani obrázky, jen barevné placeholdery.</div>
-                <div class="set-row">
-                    <label for="srcSelect">Zdroj náhledů</label>
-                    <select class="set-select" id="srcSelect">
-                        <option value="prehraj">Prehraj.to</option>
-                        <option value="itunes">iTunes (bez klíče)</option>
-                    </select>
-                </div>
-                <div class="set-hint" style="margin-bottom:14px">iTunes Search API: oficiální plakáty filmů, bez API klíče; když film nenajde, použije se prehraj.to.</div>
-                <div class="set-row">
                     <label for="catLangSelect">Katalog úvodní stránky</label>
                     <select class="set-select" id="catLangSelect">
                         <option value="cz">iTunes CZ (výchozí)</option>
@@ -451,15 +417,6 @@
                     <input type="number" id="limitValue" min="1" max="20" step="1">
                 </div>
                 <div class="set-hint" style="margin-bottom:14px">Vypnuto (výchozí): náhledy se načítají všechny naráz. Zapni, pokud prehraj.to vrací chybu 429.</div>
-                <div class="set-row">
-                    <label for="proxyToggle">Použít PHP proxy (CZ hosting)</label>
-                    <label class="switch"><input type="checkbox" id="proxyToggle"><span></span></label>
-                </div>
-                <div class="set-sub-url" id="proxySub">
-                    <div class="proxy-list" id="proxyList"></div>
-                    <button type="button" class="proxy-add" id="proxyAddBtn">+ přidat server</button>
-                </div>
-                <div class="set-hint">Zapnuto (výchozí): dotaz jde na zaškrtnuté servery níže jeden po druhém, použije se první úspěšná odpověď (mrtvý nebo zaplněný server se přeskočí). Vypni úplně, aby appka volala prehraj.to přímo z Azure.</div>
             </div>
         </div>
     </header>
@@ -602,28 +559,20 @@
             // PROXY-SERVERS:END
         ];
         const SETTINGS_KEY = 'wtzi-settings';
-        let settings = {
-            thumbsOff: false, thumbSrc: 'prehraj', catLang: 'cz', limitOn: false, limit: 3,
-            proxyOn: true, proxyServers: DEFAULT_PROXY_SERVERS.map(url => ({ url, on: true })),
-        };
+        let settings = { catLang: 'cz', limitOn: false, limit: 3 };
         try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) {}
-        // Migrace ze starší verze nastavení (jedna proxyUrl místo seznamu).
-        if (!Array.isArray(settings.proxyServers) || settings.proxyServers.length === 0) {
-            settings.proxyServers = (settings.proxyUrl ? [settings.proxyUrl] : DEFAULT_PROXY_SERVERS)
-                .map(url => ({ url, on: true }));
-        }
-        delete settings.proxyUrl;
+        // Starší verze ukládaly volby, které už v panelu nejsou (vypnuté náhledy, zdroj
+        // náhledů, proxy). Zahodit, ať se v localStorage nevrátí zpátky do oběhu.
+        ['thumbsOff', 'thumbSrc', 'proxyOn', 'proxyServers', 'proxyUrl'].forEach(k => delete settings[k]);
         const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} };
         const thumbLimit = () => settings.limitOn ? Math.max(1, settings.limit | 0) : Infinity;
-        // Připojí ?proxy=url1&proxy=url2... k dotazu na backend za každý zapnutý server v Nastavení.
-        // Backend je pak hitne souběžně a vezme první, který odpoví bez chyby.
-        const proxyQS = () => {
-            if (!settings.proxyOn) return '';
-            return settings.proxyServers
-                .filter(s => s.on && s.url.trim())
-                .map(s => '&proxy=' + encodeURIComponent(s.url.trim()))
-                .join('');
-        };
+        // Proxy servery jsou vždy zapnuté - appka prehraj.to nikdy nevolá přímo. Seznam drží
+        // DEFAULT_PROXY_SERVERS (mění ho scripts/change-proxy-servers.sh); backend je zkusí
+        // jeden po druhém a vezme první, který odpoví bez chyby.
+        const proxyQS = () => DEFAULT_PROXY_SERVERS
+            .filter(u => u && u.trim())
+            .map(u => '&proxy=' + encodeURIComponent(u.trim()))
+            .join('');
         let thumbCache = {};
         try { thumbCache = JSON.parse(localStorage.getItem(THUMB_KEY) || '{}'); } catch (e) {}
         const thumbQueue = [];
@@ -683,7 +632,6 @@
         }
 
         function getThumb(q, cb) {
-            if (settings.thumbsOff) { cb(''); return; } // náhledy vypnuté v Nastavení
             // Plakát z iTunes katalogu: rovnou z obrázku, žádný dotaz na server ani na prehraj.to
             const fromCatalog = CATALOG.find(m => m.q === q);
             if (fromCatalog && fromCatalog.img) { cb(fromCatalog.img); return; }
@@ -706,7 +654,6 @@
                         const item = CATALOG.find(m => m.q === q) || { t: q, q };
                         const p = new URLSearchParams({ q: item.q, t: item.t });
                         if (item.y) p.set('y', item.y);
-                        if (settings.thumbSrc === 'itunes') p.set('src', 'itunes');
                         const r = await fetch('/api/thumb?' + p + proxyQS());
                         const d = await r.json();
                         if (d.success) {
@@ -1004,9 +951,9 @@
                     <h2>Chyba 429 (Too Many Requests)</h2>
                     <p>Prehraj.to limituje počet dotazů. Když se to objeví, dej appce minutu pauzu a v Nastavení (avatar vpravo nahoře) zapni „Omezit souběžné dotazy na náhledy“ – načítání náhledů je nejčastější příčina.</p>
                     <h2>Proxy servery</h2>
-                    <p>Appka nikdy nevolá prehraj.to přímo. Dotazy jdou na PHP proxy servery v seznamu (Nastavení – avatar vpravo nahoře) a používá se první, která odpoví. Když je jeden mrtvý, stačí ho v seznamu vypnout nebo přidat jiný.</p>
+                    <p>Appka nikdy nevolá prehraj.to přímo. Dotazy jdou přes PHP proxy servery, které má v sobě nastavené, a používá se první, která odpoví. Když je jeden mrtvý nebo zaplněný, appka ho přeskočí a zkusí další – uživatel se o tom nic nedozví.</p>
                     <h2>Náhledy a nastavení</h2>
-                    <p>V Nastavení (avatar vpravo nahoře) jde náhledy úplně vypnout, přepnout jejich zdroj na iTunes, změnit katalog na úvodní stránce a spravovat proxy servery. Vše se ukládá jen do tvého prohlížeče.</p>
+                    <p>V Nastavení (avatar vpravo nahoře) jde změnit katalog na úvodní stránce a omezit počet souběžných dotazů na náhledy. Vše se ukládá jen do tvého prohlížeče.</p>
                 `,
             },
             about: {
@@ -1082,7 +1029,7 @@
                 body: `
                     <p>WTZI nepoužívá cookies pro sledování ani reklamu a nemá žádnou přihlášenou relaci. Místo cookies si do prohlížeče ukládá dvě věci přes <code>localStorage</code>:</p>
                     <ul>
-                        <li><code>${SETTINGS_KEY}</code> – tvoje nastavení (náhledy, zdroj náhledů, katalog, proxy servery).</li>
+                        <li><code>${SETTINGS_KEY}</code> – tvoje nastavení (katalog na úvodní stránce, limit náhledů).</li>
                         <li><code>${THUMB_KEY}</code> – cache náhledů, aby se stejné obrázky nenačítaly pořád dokola.</li>
                     </ul>
                     <p>Obě položky zůstávají jen v tvém prohlížeči, na server se neposílají. Smazat je můžeš tlačítkem níž nebo v prohlížeči (Nastavení → Ochrana soukromí → Data stránek).</p>
@@ -1511,31 +1458,12 @@
             const tog = document.getElementById('limitToggle');
             const val = document.getElementById('limitValue');
             const sub = document.getElementById('limitSub');
-            const srcSel = document.getElementById('srcSelect');
-            srcSel.value = settings.thumbSrc;
-            document.body.classList.toggle('src-itunes', settings.thumbSrc === 'itunes');
-            srcSel.addEventListener('change', () => {
-                settings.thumbSrc = srcSel.value === 'itunes' ? 'itunes' : 'prehraj';
-                saveSettings();
-                document.body.classList.toggle('src-itunes', settings.thumbSrc === 'itunes');
-                thumbCache = {}; saveThumbs(); // jiný zdroj = jiné obrázky
-                renderHero();
-                renderCatalog();
-            });
             const catSel = document.getElementById('catLangSelect');
             catSel.value = settings.catLang === 'en' ? 'en' : 'cz';
             catSel.addEventListener('change', () => {
                 settings.catLang = catSel.value === 'en' ? 'en' : 'cz';
                 saveSettings();
                 loadCatalog(); // jiný žebříček = jiný seznam filmů (server má oba v cache)
-            });
-            const off = document.getElementById('thumbsOffToggle');
-            off.checked = !!settings.thumbsOff;
-            off.addEventListener('change', () => {
-                settings.thumbsOff = off.checked;
-                saveSettings();
-                renderHero();
-                renderCatalog(); // překreslí a znovu načte (nebo zruší) náhledy
             });
             tog.checked = !!settings.limitOn;
             val.value = settings.limit;
@@ -1557,46 +1485,6 @@
                 saveSettings();
             });
 
-            const pTog = document.getElementById('proxyToggle');
-            const pSub = document.getElementById('proxySub');
-            const pList = document.getElementById('proxyList');
-            const pAdd = document.getElementById('proxyAddBtn');
-
-            function renderProxyList(focusLast) {
-                pList.innerHTML = '';
-                settings.proxyServers.forEach((s, i) => {
-                    const row = document.createElement('div');
-                    row.className = 'proxy-row';
-                    row.innerHTML =
-                        '<input type="checkbox"' + (s.on ? ' checked' : '') + '>' +
-                        '<input type="text" placeholder="https://muj-hosting.cz/index.php" autocomplete="off" spellcheck="false">' +
-                        '<button type="button" title="Odebrat">✕</button>';
-                    const [cb, txt, rm] = row.children;
-                    txt.value = s.url;
-                    cb.addEventListener('change', () => { settings.proxyServers[i].on = cb.checked; saveSettings(); });
-                    txt.addEventListener('change', () => { settings.proxyServers[i].url = txt.value.trim(); saveSettings(); });
-                    rm.addEventListener('click', () => {
-                        settings.proxyServers.splice(i, 1);
-                        saveSettings();
-                        renderProxyList(false);
-                    });
-                    pList.appendChild(row);
-                    if (focusLast && i === settings.proxyServers.length - 1) txt.focus();
-                });
-            }
-            renderProxyList(false);
-
-            pTog.checked = !!settings.proxyOn;
-            pSub.classList.toggle('show', pTog.checked);
-            pTog.addEventListener('change', () => {
-                settings.proxyOn = pTog.checked;
-                pSub.classList.toggle('show', pTog.checked);
-                saveSettings();
-            });
-            pAdd.addEventListener('click', () => {
-                settings.proxyServers.push({ url: '', on: true });
-                renderProxyList(true);
-            });
         })();
     </script>
 </body>
