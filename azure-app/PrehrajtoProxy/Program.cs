@@ -369,7 +369,7 @@ async Task<(bool ok, string body, List<string> errors)> CachedFetch(
     if (cache.TryGetValue(key, out string? hit) && !string.IsNullOrEmpty(hit))
         return (true, hit, new List<string>());
 
-    var lazy = inflight.GetOrAdd(key, _ => new Lazy<Task<(bool ok, string body, List<string> errors)>>(async () =>
+    var lazy = inflight.GetOrAdd(key, k => new Lazy<Task<(bool ok, string body, List<string> errors)>>(async () =>
     {
         try
         {
