@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -354,6 +355,60 @@ static string[] EffectiveProxies(string[]? clientProxies, string[] serverProxies
 // nečekalo zbytečně na mrtvém serveru u každého dotazu.
 string? lastGoodProxy = null;
 
+// ------------------------------------------------------------------ cache výsledků hledání / ověření
+// Výsledek se drží v paměti serveru a sdílí se mezi všemi uživateli, takže stejný dotaz (a stejné
+// ověření videa) jde na prehraj.to jednou, ne pokaždé. Souběžné stejné dotazy se spojí do jednoho
+// (single-flight). Když zdroje selžou (429 apod.) a máme starší kopii, vrátí se ta - radši mírně
+// zastaralý výsledek než chyba.
+var inflight = new ConcurrentDictionary<string, Lazy<Task<(bool ok, string body, List<string> errors)>>>();
+
+async Task<(bool ok, string body, List<string> errors)> CachedFetch(
+    IMemoryCache cache, string key, Func<string, TimeSpan> ttlFor,
+    Func<Task<(bool ok, string body, List<string> errors)>> fetch)
+{
+    if (cache.TryGetValue(key, out string? hit) && !string.IsNullOrEmpty(hit))
+        return (true, hit, new List<string>());
+
+    var lazy = inflight.GetOrAdd(key, _ => new Lazy<Task<(bool ok, string body, List<string> errors)>>(async () =>
+    {
+        try
+        {
+            var r = await fetch();
+            if (r.ok)
+            {
+                cache.Set(key, r.body, ttlFor(r.body));
+                cache.Set("stale:" + key, r.body, TimeSpan.FromHours(6));
+                return r;
+            }
+            if (cache.TryGetValue("stale:" + key, out string? old) && !string.IsNullOrEmpty(old))
+                return (true, old, r.errors);
+            return r;
+        }
+        finally { inflight.TryRemove(key, out _); }
+    }));
+    return await lazy.Value;
+}
+
+// Výsledky hledání: s nálezy 10 min, prázdné jen 2 min (aby se nový obsah brzy objevil).
+static TimeSpan SearchTtl(string body)
+{
+    try
+    {
+        using var d = JsonDocument.Parse(body);
+        if (d.RootElement.ValueKind == JsonValueKind.Object
+            && d.RootElement.TryGetProperty("movies", out var m)
+            && m.ValueKind == JsonValueKind.Array && m.GetArrayLength() > 0)
+            return TimeSpan.FromMinutes(10);
+    }
+    catch (JsonException) { }
+    return TimeSpan.FromMinutes(2);
+}
+
+static TimeSpan ValidateTtl(string body) => TimeSpan.FromMinutes(15);
+
+// Klient může poslat vlastní ?proxy= - takový dotaz do sdílené cache nepatří (šlo by ji otrávit).
+static bool CanShareCache(string[]? proxy) => proxy == null || proxy.All(string.IsNullOrWhiteSpace);
+
 // Pořadí proxy serverů: naposledy funkční jde první, ostatní v pořadí z konfigurace/klienta.
 IEnumerable<string> OrderedProxies(IEnumerable<string> proxies)
 {
@@ -501,7 +556,7 @@ static bool IsPrivateHost(string host)
 }
 
 // ------------------------------------------------------------------ /api/search
-app.MapGet("/api/search", async (string q, string[]? proxy, IHttpClientFactory f) =>
+app.MapGet("/api/search", async (string q, string[]? proxy, IHttpClientFactory f, IMemoryCache cache) =>
 {
     q = (q ?? "").Trim();
     if (q.Length == 0)
@@ -514,7 +569,11 @@ app.MapGet("/api/search", async (string q, string[]? proxy, IHttpClientFactory f
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
 
-    var (ok, body, errors) = await FirstWorking(sources);
+    // Sdílená cache: normalizovaný dotaz (malá písmena, jedny mezery), jen bez vlastního ?proxy=.
+    var norm = Regex.Replace(q.ToLowerInvariant(), @"\s+", " ");
+    var (ok, body, errors) = CanShareCache(proxy) && norm.Length <= 100
+        ? await CachedFetch(cache, "search:" + norm, SearchTtl, () => FirstWorking(sources))
+        : await FirstWorking(sources);
     if (!ok) return AllFailed(errors);
     return Results.Content(body, "application/json");
 }).RequireRateLimiting("search");
@@ -879,7 +938,7 @@ app.MapGet("/api/proxy", async (string url, string[]? proxy, IHttpClientFactory 
 }).RequireRateLimiting("api");
 
 // ------------------------------------------------------------------ /api/validate
-app.MapGet("/api/validate", async (string url, string[]? proxy, IHttpClientFactory f) =>
+app.MapGet("/api/validate", async (string url, string[]? proxy, IHttpClientFactory f, IMemoryCache cache) =>
 {
     if (string.IsNullOrEmpty(url))
         return Results.Json(new { valid = false, error = "Missing url parameter" });
@@ -894,8 +953,21 @@ app.MapGet("/api/validate", async (string url, string[]? proxy, IHttpClientFacto
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
 
-    var (ok, body, errors) = await FirstWorking(sources);
-    if (!ok) return Results.Json(new { valid = false, error = "Všechny zdroje selhaly: " + string.Join(" | ", errors) });
+    var (ok, body, errors) = CanShareCache(proxy) && url.Length <= 300
+        ? await CachedFetch(cache, "validate:" + url, ValidateTtl, () => FirstWorking(sources))
+        : await FirstWorking(sources);
+    if (!ok)
+    {
+        var rl = errors.Any(e => e.Contains("429"));
+        return Results.Json(new
+        {
+            valid = false,
+            rateLimited = rl,
+            retryAfter = rl ? 4 : 0,
+            error = rl ? "Příliš mnoho požadavků na prehraj.to. Chvilku počkej a zkus to znovu."
+                       : "Všechny zdroje selhaly: " + string.Join(" | ", errors),
+        });
+    }
     return Results.Content(body, "application/json");
 }).RequireRateLimiting("api");
 
