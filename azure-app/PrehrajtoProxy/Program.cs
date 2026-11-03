@@ -3,6 +3,8 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Caching.Memory;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -48,8 +50,108 @@ builder.Services.AddHttpClient("prehraj-stream", c =>
 
 builder.Services.AddMemoryCache();
 
+// ------------------------------------------------------------------ veřejný provoz
+// App Service stojí před appkou jako reverzní proxy: bez tohohle by měly všechny
+// požadavky IP front-endu Azure a limit by platil pro celý internet dohromady.
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    o.KnownNetworks.Clear();
+    o.KnownProxies.Clear();
+});
+
+// Limity platí na IP a jen pro /api (statické soubory se nelimitují). Nastavené tak,
+// aby běžnému člověku nepřekážely, ale scrapeování bylo pomalé:
+//   search  - 3 dotazy/s, dávka 8: jeden search = jeden request, tohle je rychlé klikání
+//   api     - 6/s, dávka 20: přehrávač při seekování pošle víc Range dotazů naráz
+//   thumb   - 10/s, dávka 40: úvodní stránka posílá náhledy všech posterů najednou
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    o.OnRejected = async (ctx, ct) =>
+    {
+        ctx.HttpContext.Response.Headers.RetryAfter = "5";
+        ctx.HttpContext.Response.ContentType = "application/json; charset=utf-8";
+        await ctx.HttpContext.Response.WriteAsync(
+            "{\"success\":false,\"error\":\"Příliš mnoho požadavků. Chvilku počkej a zkus to znovu.\"}", ct);
+    };
+
+    o.AddPolicy("search", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
+    {
+        TokenLimit = 8,
+        TokensPerPeriod = 3,
+        ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+        QueueLimit = 0,
+        AutoReplenishment = true,
+    }));
+
+    o.AddPolicy("api", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
+    {
+        TokenLimit = 20,
+        TokensPerPeriod = 6,
+        ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+        QueueLimit = 0,
+        AutoReplenishment = true,
+    }));
+
+    o.AddPolicy("thumb", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
+    {
+        TokenLimit = 40,
+        TokensPerPeriod = 10,
+        ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+        QueueLimit = 0,
+        AutoReplenishment = true,
+    }));
+});
+
 var app = builder.Build();
 
+app.UseForwardedHeaders();
+
+// Zjevné nástroje (curl, wget, skriptovací knihovny, headless prohlížeče) na /api nepustíme.
+// Není to bezpečnostní hranice - hlavičky jde podstrčit - ale odradí to nejjednodušší
+// scraping a zbytek drží limity výš. Běžný prohlížeč vždy pošle Sec-Fetch-Site (novější)
+// nebo Referer na vlastní doménu (starší), takže normálnímu návštěvníkovi to nevadí.
+string[] blockedAgents =
+[
+    "curl", "wget", "python-requests", "python-urllib", "python-httpx", "httpx", "aiohttp",
+    "scrapy", "go-http-client", "java/", "okhttp", "node-fetch", "axios", "undici",
+    "libwww-perl", "httpie", "postmanruntime", "insomnia", "powershell", "winhttp",
+    "apache-httpclient", "guzzlehttp", "headlesschrome", "phantomjs", "puppeteer", "playwright",
+    "selenium", "webdriver", "zgrab", "masscan", "nmap", "nikto", "sqlmap",
+];
+
+app.Use(async (ctx, next) =>
+{
+    if (!ctx.Request.Path.StartsWithSegments("/api"))
+    {
+        await next();
+        return;
+    }
+
+    var ua = ctx.Request.Headers.UserAgent.ToString();
+    var uaLower = ua.ToLowerInvariant();
+    var botUa = string.IsNullOrWhiteSpace(ua) || blockedAgents.Any(b => uaLower.Contains(b));
+
+    var origin = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+    var fetchSite = ctx.Request.Headers["Sec-Fetch-Site"].ToString().ToLowerInvariant();
+    var referer = ctx.Request.Headers.Referer.ToString();
+    var sameOrigin = (fetchSite.Length > 0 && fetchSite != "cross-site")
+        || (referer.Length > 0 && referer.StartsWith(origin, StringComparison.OrdinalIgnoreCase));
+
+    if (botUa || !sameOrigin)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        ctx.Response.ContentType = "application/json; charset=utf-8";
+        await ctx.Response.WriteAsync(
+            "{\"success\":false,\"error\":\"Automatizované požadavky nejsou povolené. Otevři appku v prohlížeči.\"}");
+        return;
+    }
+
+    await next();
+});
+
+app.UseRateLimiter();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -65,6 +167,9 @@ var proxyUrl = app.Configuration["Prehraj:ProxyUrl"];
 if (!string.IsNullOrWhiteSpace(proxyUrl)) serverProxies = serverProxies.Append(proxyUrl).ToArray();
 
 const RegexOptions Ci = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+
+// Klíč limitu pro jednu IP (skutečnou IP klienta za App Service doplní UseForwardedHeaders).
+static string ClientKey(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
 // ------------------------------------------------------------------ helpers
 static bool IsPrehrajUrl(string u) =>
@@ -207,7 +312,7 @@ app.MapGet("/api/search", async (string q, string[]? proxy, IHttpClientFactory f
     var (ok, body, errors) = await FirstWorking(sources);
     if (!ok) return AllFailed(errors);
     return Results.Content(body, "application/json");
-});
+}).RequireRateLimiting("search");
 
 // ------------------------------------------------------------------ /api/thumb  (jen thumbnaily pro homepage)
 // GET /api/thumb?q=Matrix[&t=Titul][&y=1999][&re=regex]
@@ -345,7 +450,7 @@ app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string
 
     ctx.Response.Headers.CacheControl = res.Thumbnail.Length > 0 ? "public, max-age=86400" : "public, max-age=600";
     return Results.Json(new { success = true, q, thumbnail = res.Thumbnail, title = res.Title, url = res.Url });
-});
+}).RequireRateLimiting("thumb");
 
 // ------------------------------------------------------------------ /api/catalog  (filmy pro homepage)
 // GET /api/catalog[&lang=cz|en] - seznam filmů s plakáty z keyless iTunes RSS:
@@ -425,7 +530,7 @@ app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCac
     {
         return Results.Json(new { success = false, error = "iTunes feed parse error: " + ex.Message });
     }
-});
+}).RequireRateLimiting("api");
 
 // ------------------------------------------------------------------ /api/proxy  (extract video URL)
 app.MapGet("/api/proxy", async (string url, string[]? proxy, IHttpClientFactory f) =>
@@ -451,7 +556,7 @@ app.MapGet("/api/proxy", async (string url, string[]? proxy, IHttpClientFactory 
             hint = "Page might require JavaScript or different parsing"
         });
     return Results.Content(body, "application/json");
-});
+}).RequireRateLimiting("api");
 
 // ------------------------------------------------------------------ /api/validate
 app.MapGet("/api/validate", async (string url, string[]? proxy, IHttpClientFactory f) =>
@@ -472,7 +577,7 @@ app.MapGet("/api/validate", async (string url, string[]? proxy, IHttpClientFacto
     var (ok, body, errors) = await FirstWorking(sources);
     if (!ok) return Results.Json(new { valid = false, error = "Všechny zdroje selhaly: " + string.Join(" | ", errors) });
     return Results.Content(body, "application/json");
-});
+}).RequireRateLimiting("api");
 
 // ------------------------------------------------------------------ /api/stream  (relay videa + stahování)
 // GET /api/stream?url={prehraj.to stránka}[&download=1&name=Titul]
@@ -664,7 +769,7 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
     if (!started)
         return Results.Json(new { success = false, error = $"CDN returned HTTP {lastStatus}" }, statusCode: 502);
     return Results.Empty;
-});
+}).RequireRateLimiting("api");
 
 app.Run();
 
