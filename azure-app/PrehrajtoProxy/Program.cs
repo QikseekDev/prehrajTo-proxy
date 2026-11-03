@@ -56,9 +56,10 @@ app.UseStaticFiles();
 // Optional: set "Prehraj:ProxyUrls" in appsettings.json / Azure config (Prehraj__ProxyUrls__0,
 // Prehraj__ProxyUrls__1, ... in App Service) to a list of your own index.php hosts
 // (e.g. "https://wtzi.borec.cz/index.php") to route through them instead of calling prehraj.to
-// directly. With several entries they're raced concurrently, same as the client's own list from
-// ⚙️ Nastavení - whichever answers first wins, a dead one is simply skipped. This is the server-side
-// default used when the client sends none; "Prehraj:ProxyUrl" (singular) still works for a single URL.
+// directly. With several entries they're tried one after another in order - the first one that
+// answers correctly is used, a dead or rate-limited one is skipped and the next one is tried.
+// The last server that worked is tried first next time. This is the server-side default used
+// when the client sends none; "Prehraj:ProxyUrl" (singular) still works for a single URL.
 var serverProxies = app.Configuration.GetSection("Prehraj:ProxyUrls").Get<string[]>() ?? Array.Empty<string>();
 var proxyUrl = app.Configuration["Prehraj:ProxyUrl"];
 if (!string.IsNullOrWhiteSpace(proxyUrl)) serverProxies = serverProxies.Append(proxyUrl).ToArray();
@@ -120,40 +121,38 @@ static bool IsGoodBody(string body)
 
 // Jeden PHP proxy server jako kandidát do závodu (stejné hlavičky jako dřív přes ViaProxyRace).
 static Func<CancellationToken, Task<(int status, string body, string? err)>> ProxySource(
-    IHttpClientFactory f, string proxyBase, string query, int timeoutSeconds)
+    IHttpClientFactory f, string proxyBase, string query, int timeoutSeconds, Action<string>? onGood = null)
 {
     var sep = proxyBase.Contains('?') ? "&" : "?";
     var url = proxyBase + sep + query;
-    return ct => GetAsync(f, url, timeoutSeconds, null, ct);
+    return async ct =>
+    {
+        var r = await GetAsync(f, url, timeoutSeconds, null, ct);
+        // server, který odpověděl správně, se příště zkouší jako první
+        if (onGood != null && r.err == null && Is2xx(r.status) && r.body.Length > 0 && IsGoodBody(r.body))
+            onGood(proxyBase);
+        return r;
+    };
 }
 
-// Souběžně zkusí všechny zdroje (PHP proxy servery + prehraj.to přímo) a vrátí první odpověď,
-// která projde: 2xx + neprázdné tělo + není JSON chyba. Vítěz se bere, ostatní se zruší -
-// jeden padlý/limitovaný server (429 atd.) request nezbrzdí, dokud funguje aspoň jeden zdroj.
-static async Task<(bool ok, string body, List<string> errors)> RaceSources(
-    Func<CancellationToken, Task<(int status, string body, string? err)>>[] sources, int timeoutSeconds)
+// Zkusí zdroje jeden po druhém v pořadí a vrátí první odpověď, která projde:
+// 2xx + neprázdné tělo + není JSON chyba. Žádný závod - teprve když zdroj selže
+// (timeout, chyba, 429, ...), jde se na další. Výsledek je tak vždy z prvního funkčního
+// zdroje a funkční server se nezatěžuje souběžnými dotazy.
+static async Task<(bool ok, string body, List<string> errors)> FirstWorking(
+    Func<CancellationToken, Task<(int status, string body, string? err)>>[] sources,
+    CancellationToken ct = default)
 {
-    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
     var errors = new List<string>();
-    var tasks = new List<Task<(int status, string body, string? err)>>();
     foreach (var src in sources)
     {
-        var t = src(cts.Token);
-        _ = t.ContinueWith(_ => { }, TaskContinuationOptions.OnlyOnFaulted); // ať spadlý úkol nezůstane nepozorovaný
-        tasks.Add(t);
-    }
-    while (tasks.Count > 0)
-    {
-        var done = await Task.WhenAny(tasks);
-        tasks.Remove(done);
+        if (ct.IsCancellationRequested) return (false, "", errors);
         (int status, string body, string? err) r;
-        try { r = await done; }
+        try { r = await src(ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return (false, "", errors); }
         catch (Exception ex) { errors.Add(ex.Message); continue; }
         if (r.err == null && Is2xx(r.status) && r.body.Length > 0 && IsGoodBody(r.body))
-        {
-            cts.Cancel();
             return (true, r.body, errors);
-        }
         errors.Add(r.err ?? $"HTTP {r.status}");
     }
     return (false, "", errors);
@@ -177,6 +176,19 @@ static string[] EffectiveProxies(string[]? clientProxies, string[] serverProxies
         .Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     if (valid.Length > 0) return valid;
     return serverProxies.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+}
+
+// Poslední proxy server, který odpověděl správně - zkouší se první, aby se po výpadku
+// nečekalo zbytečně na mrtvém serveru u každého dotazu.
+string? lastGoodProxy = null;
+
+// Pořadí proxy serverů: naposledy funkční jde první, ostatní v pořadí z konfigurace/klienta.
+IEnumerable<string> OrderedProxies(IEnumerable<string> proxies)
+{
+    var arr = proxies.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    var good = lastGoodProxy;
+    if (good == null || arr.Count < 2) return arr;
+    return arr.OrderBy(p => string.Equals(p, good, StringComparison.OrdinalIgnoreCase) ? 0 : 1);
 }
 
 string? FindVideoUrl(string html, bool strict)
@@ -267,13 +279,14 @@ app.MapGet("/api/search", async (string q, string[]? proxy, IHttpClientFactory f
     if (q.Length == 0)
         return Results.BadRequest(new { success = false, error = "Missing search query (q parameter)" });
 
-    // Závod: jen PHP proxy servery - na prehraj.to přímo se nikdy nechodí (datacentrová IP
+    // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nikdy nechodí (datacentrová IP
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
     var query = $"action=search&q={Uri.EscapeDataString(q)}";
-    var sources = EffectiveProxies(proxy, serverProxies).Select(p => ProxySource(f, p, query, 30)).ToList();
+    var sources = OrderedProxies(EffectiveProxies(proxy, serverProxies))
+        .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
 
-    var (ok, body, errors) = await RaceSources(sources.ToArray(), 30);
+    var (ok, body, errors) = await FirstWorking(sources);
     if (!ok) return AllFailed(errors);
     return Results.Content(body, "application/json");
 });
@@ -384,10 +397,11 @@ app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string
     var key = $"thumb|{src}|{Norm(q)}|{Norm(t)}|{y}|{re}";
     if (!cache.TryGetValue(key, out ThumbResult? res) || res is null)
     {
-        // Závod: PHP proxy servery + vlastní pohled iTunes (na prehraj.to přímo se nechodí). Kdo vrátí 2xx
+        // Postupně PHP proxy servery, pak vlastní pohled iTunes (na prehraj.to přímo se nechodí). Kdo vrátí 2xx
         // s normální odpovědí, ten vyhrává; chyba (429 atd.) nebo {"success":false} = prohra
         // a bere se další zdroj. Když selže všechno, klient dostane chybu a zkusí to příště.
-        var sources = eff.Select(p => ProxySource(f, p, qs, 40)).ToList();
+        // Nejdřív PHP proxy servery jeden po druhém, iTunes až jako poslední záloha.
+        var sources = OrderedProxies(eff).Select(p => ProxySource(f, p, qs, 40, g => lastGoodProxy = g)).ToList();
         sources.Add(async ct =>
         {
             // Nikdy přímo na prehraj.to - jen přes PHP proxy servery; tahle cesta zůstává jen pro iTunes.
@@ -400,7 +414,7 @@ app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string
             return (200, json, (string?)null);
         });
 
-        var (won, body, errors) = await RaceSources(sources.ToArray(), 40);
+        var (won, body, errors) = await FirstWorking(sources.ToArray());
         if (!won) return AllFailed(errors);
 
         var thumb = "";
@@ -506,13 +520,14 @@ app.MapGet("/api/proxy", async (string url, string[]? proxy, IHttpClientFactory 
     if (!IsPrehrajUrl(url))
         return Results.BadRequest(new { success = false, error = "URL must be from prehraj.to" });
 
-    // Závod: jen PHP proxy servery - na prehraj.to přímo se nechodí. 2xx s normální odpovědí = vyhrává;
+    // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nechodí. 2xx s normální odpovědí = vyhrává;
     // 429/403/5xx nebo {"success":false} = prohra a bere se další zdroj.
     var query = $"url={Uri.EscapeDataString(url)}";
-    var sources = EffectiveProxies(proxy, serverProxies).Select(p => ProxySource(f, p, query, 30)).ToList();
+    var sources = OrderedProxies(EffectiveProxies(proxy, serverProxies))
+        .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
 
-    var (ok, body, errors) = await RaceSources(sources.ToArray(), 30);
+    var (ok, body, errors) = await FirstWorking(sources);
     if (!ok)
         return Results.Json(new
         {
@@ -532,13 +547,14 @@ app.MapGet("/api/validate", async (string url, string[]? proxy, IHttpClientFacto
     if (!IsPrehrajUrl(url))
         return Results.Json(new { valid = false, error = "URL must be from prehraj.to" });
 
-    // Závod: jen PHP proxy servery (na prehraj.to přímo se nechodí). "valid:false" bez error je platná odpověď
+    // Jen PHP proxy servery, zkoušené postupně (na prehraj.to přímo se nechodí). "valid:false" bez error je platná odpověď
     // (video neexistuje), {"valid":false,"error":...} a jakákoli ne-2xx jsou chyba -> další zdroj.
     var query = $"action=validate&url={Uri.EscapeDataString(url)}";
-    var sources = EffectiveProxies(proxy, serverProxies).Select(p => ProxySource(f, p, query, 30)).ToList();
+    var sources = OrderedProxies(EffectiveProxies(proxy, serverProxies))
+        .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
 
-    var (ok, body, errors) = await RaceSources(sources.ToArray(), 30);
+    var (ok, body, errors) = await FirstWorking(sources);
     if (!ok) return Results.Json(new { valid = false, error = "Všechny zdroje selhaly: " + string.Join(" | ", errors) });
     return Results.Content(body, "application/json");
 });
@@ -581,8 +597,9 @@ async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, stri
     }
 
     string? found = null;
-    // Nikdy přímo na prehraj.to - stránka videa chodí jen přes PHP proxy servery.
-    foreach (var p in serverProxies.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase))
+    // Nikdy přímo na prehraj.to - stránka videa chodí jen přes PHP proxy servery, jeden po druhém
+    // (naposledy funkční první).
+    foreach (var p in OrderedProxies(serverProxies))
     {
             var sep = p.Contains('?') ? "&" : "?";
             var (ps, pb, pe) = await GetAsync(f, p + sep + "url=" + Uri.EscapeDataString(page), 30);
