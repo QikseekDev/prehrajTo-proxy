@@ -108,10 +108,10 @@ builder.Services.AddRateLimiter(o =>
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.OnRejected = async (ctx, ct) =>
     {
-        ctx.HttpContext.Response.Headers.RetryAfter = "4";
+        ctx.HttpContext.Response.Headers.RetryAfter = "5";
         ctx.HttpContext.Response.ContentType = "application/json; charset=utf-8";
         await ctx.HttpContext.Response.WriteAsync(
-            "{\"success\":false,\"rateLimited\":true,\"retryAfter\":4,\"error\":\"Příliš mnoho požadavků. Chvilku počkej a zkus to znovu.\"}", ct);
+            "{\"success\":false,\"rateLimited\":true,\"retryAfter\":5,\"error\":\"Příliš mnoho požadavků. Chvilku počkej a zkus to znovu.\"}", ct);
     };
 
     o.AddPolicy("search", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
@@ -328,7 +328,7 @@ static IResult AllFailed(List<string> errors)
         success = false,
         valid = false,
         rateLimited = rl,
-        retryAfter = rl ? 4 : 0,
+        retryAfter = rl ? 5 : 0,
         error = rl
             ? "Příliš mnoho požadavků na prehraj.to. Chvilku počkej a zkus to znovu."
             : "Všechny zdroje selhaly: " + string.Join(" | ", errors),
@@ -389,7 +389,7 @@ async Task<(bool ok, string body, List<string> errors)> CachedFetch(
     return await lazy.Value;
 }
 
-// Výsledky hledání: s nálezy 10 min, prázdné jen 2 min (aby se nový obsah brzy objevil).
+// Výsledky hledání: s nálezy 30 min, prázdné jen 5 min (aby se nový obsah brzy objevil).
 static TimeSpan SearchTtl(string body)
 {
     try
@@ -398,10 +398,10 @@ static TimeSpan SearchTtl(string body)
         if (d.RootElement.ValueKind == JsonValueKind.Object
             && d.RootElement.TryGetProperty("movies", out var m)
             && m.ValueKind == JsonValueKind.Array && m.GetArrayLength() > 0)
-            return TimeSpan.FromMinutes(10);
+            return TimeSpan.FromMinutes(30);
     }
     catch (JsonException) { }
-    return TimeSpan.FromMinutes(2);
+    return TimeSpan.FromMinutes(5);
 }
 
 static TimeSpan ValidateTtl(string body) => TimeSpan.FromMinutes(15);
@@ -963,7 +963,7 @@ app.MapGet("/api/validate", async (string url, string[]? proxy, IHttpClientFacto
         {
             valid = false,
             rateLimited = rl,
-            retryAfter = rl ? 4 : 0,
+            retryAfter = rl ? 5 : 0,
             error = rl ? "Příliš mnoho požadavků na prehraj.to. Chvilku počkej a zkus to znovu."
                        : "Všechny zdroje selhaly: " + string.Join(" | ", errors),
         });
