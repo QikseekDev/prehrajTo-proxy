@@ -120,7 +120,7 @@ Appka je veřejná a bez přihlášení, takže `/api/*` má dvě vrstvy ochrany
 | Policy | Endpointy | Trvale | Dávka (burst) |
 |---|---|---|---|
 | `search` | `/api/search` | 3 dotazy/s | 8 |
-| `api` | `/api/proxy`, `/api/validate`, `/api/stream`, `/api/catalog` | 6/s | 20 |
+| `api` | `/api/proxy`, `/api/stream`, `/api/catalog` | 6/s | 20 |
 | `subs` | `/api/subtitles` | 20/s | 60 |
 | `thumb` | `/api/thumb` | 10/s | 40 |
 | `live` | `/api/live/hls` | 40/s | 120 |
@@ -152,11 +152,10 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
   z CDN – proxy pro prehraj.to jsou vždy zapnuté a zdroj náhledů je vždy prehraj.to.
 - **API Endpoints**:
   - `GET /api/search?q={query}[&p={stránka}]` - Vyhledávání filmů. Bez `p` je to první stránka; tlačítko
-    „Načíst další výsledky“ pod mřížkou si řekne o `p=2`, `p=3`, … a přidá je **bez ověřování** (ověřování
-    je pomalé a naráží na 429). Stránku posílá proxy jako `&p=N` do prehraj.to; pokud ji proxy neumí,
-    vrátí znovu první stránku a klient duplicity podle URL zahodí (tlačítko se pak schová).
+    „Načíst další výsledky“ pod mřížkou si řekne o `p=2`, `p=3`, … a přidá je bez dalšího ověřování.
+    Stránku posílá proxy jako `&p=N` do prehraj.to; pokud ji proxy neumí, vrátí znovu první stránku
+    a klient duplicity podle URL zahodí (tlačítko se pak schová).
   - `GET /api/proxy?url={prehrajto_url}` - Získání URL videa (a seznamu VTT titulků, pokud je stránka má)
-  - `GET /api/validate?url={prehrajto_url}` - Ověření, že video funguje
   - `GET /api/stream?url={prehrajto_url}[&download=1&name={titul}]` - Server video přeposílá z CDN (podporuje Range/seeking)
     a sám obnovuje vypršelý odkaz, takže se přehrávání ani stahování nezasekne po pár minutách. Používá se pro
     stahování, ruční přehrání přes server a jako záložní cesta, když přímé přehrávání z CDN neprojde. S `download=1` se
@@ -209,9 +208,8 @@ HOST=0.0.0.0 ./start-termux.sh    # dostupné i z jiných zařízení ve Wi-Fi
 PORT=9000 ./start-termux.sh       # jiný port
 ```
 
-Běží to přes `router.php` (vestavěný PHP server): `/` je WTZI, `/api/search`, `/api/proxy`
-a `/api/validate` používají logiku z `index.php`. Server startuje s více workery, aby se
-ověřování videí neprovádělo po jednom.
+Běží to přes `router.php` (vestavěný PHP server): `/` je WTZI a `/api/search`, `/api/proxy`,
+`/api/thumb`, `/api/stream` i `/api/subtitles` používají logiku z `index.php`.
 
 `router.php` obsluhuje i `/api/subtitles` (relay VTT), takže titulky fungují i v self-hostu: seznam, který prohlížeč posílá
 (`&proxy=...` z `DEFAULT_PROXY_SERVERS`), přebije lokální seznam `$SERVER_PROXIES` na začátku

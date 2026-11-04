@@ -452,8 +452,6 @@ static TimeSpan SearchTtl(string body)
     return TimeSpan.FromMinutes(5);
 }
 
-static TimeSpan ValidateTtl(string body) => TimeSpan.FromMinutes(15);
-
 // Klient může poslat vlastní ?proxy= - takový dotaz do sdílené cache nepatří (šlo by ji otrávit).
 static bool CanShareCache(string[]? proxy) => proxy == null || proxy.All(string.IsNullOrWhiteSpace);
 
@@ -1131,40 +1129,6 @@ app.MapGet("/api/proxy", async (string url, string[]? proxy, IHttpClientFactory 
             error = "Všechny zdroje selhaly: " + string.Join(" | ", errors),
             hint = "Page might require JavaScript or different parsing"
         });
-    return Results.Content(body, "application/json");
-}).RequireRateLimiting("api");
-
-// ------------------------------------------------------------------ /api/validate
-app.MapGet("/api/validate", async (string url, string[]? proxy, IHttpClientFactory f, IMemoryCache cache) =>
-{
-    if (string.IsNullOrEmpty(url))
-        return Results.Json(new { valid = false, error = "Missing url parameter" });
-
-    if (!IsPrehrajUrl(url))
-        return Results.Json(new { valid = false, error = "URL must be from prehraj.to" });
-
-    // Jen PHP proxy servery, zkoušené postupně (na prehraj.to přímo se nechodí). "valid:false" bez error je platná odpověď
-    // (video neexistuje), {"valid":false,"error":...} a jakákoli ne-2xx jsou chyba -> další zdroj.
-    var query = $"action=validate&url={Uri.EscapeDataString(url)}";
-    var sources = OrderedProxies(EffectiveProxies(proxy, serverProxies))
-        .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
-
-
-    var (ok, body, errors) = CanShareCache(proxy) && url.Length <= 300
-        ? await CachedFetch(cache, "validate:" + url, ValidateTtl, () => FirstWorking(sources))
-        : await FirstWorking(sources);
-    if (!ok)
-    {
-        var rl = errors.Any(e => e.Contains("429"));
-        return Results.Json(new
-        {
-            valid = false,
-            rateLimited = rl,
-            retryAfter = rl ? 5 : 0,
-            error = rl ? "Příliš mnoho požadavků na prehraj.to. Chvilku počkej a zkus to znovu."
-                       : "Všechny zdroje selhaly: " + string.Join(" | ", errors),
-        });
-    }
     return Results.Content(body, "application/json");
 }).RequireRateLimiting("api");
 

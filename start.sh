@@ -22,7 +22,7 @@ if ! php -m | grep -qi '^curl$'; then
   exit 1
 fi
 
-# víc workerů, aby ověřování videí (5 paralelních dotazů) nebylo sériové
+# víc workerů, aby náhledy, hledání a titulky nešly po jednom (a stream neblokoval zbytek)
 export PHP_CLI_SERVER_WORKERS="${PHP_CLI_SERVER_WORKERS:-6}"
 
 echo "🎬 WTZI běží na http://$HOST:$PORT   (Ctrl+C = konec)"
