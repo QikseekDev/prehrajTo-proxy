@@ -1948,14 +1948,17 @@
                     tone({ freq: 176, endFreq: 96, type: 'triangle', dur: 0.14, gain: 0.05, at: 0.02 });
                     return;
                 }
-                // štětce kreslí W
-                tone({ freq: 58, endFreq: 32, dur: 0.8, gain: 0.34, filter: 160, at: 0.2 });
-                tone({ freq: 176, endFreq: 88, type: 'triangle', dur: 0.16, gain: 0.055, at: 0.22 });
-                noise({ at: 0.24, dur: 0.9, gain: 0.02, from: 180, to: 1600 });
+                // čtyři tahy za sebou: 0.2 / 0.75 / 1.3 / 1.85 s (stejné doby jako v intro.css)
+                tone({ freq: 58, endFreq: 32, dur: 0.7, gain: 0.3, filter: 160, at: 0.2 });
+                tone({ freq: 176, endFreq: 88, type: 'triangle', dur: 0.14, gain: 0.05, at: 0.22 });
+                noise({ at: 0.2, dur: 0.5, gain: 0.018, from: 190, to: 1200 });
+                noise({ at: 0.75, dur: 0.5, gain: 0.014, from: 240, to: 950 });
+                noise({ at: 1.3, dur: 0.5, gain: 0.014, from: 210, to: 1100 });
+                noise({ at: 1.85, dur: 0.55, gain: 0.017, from: 230, to: 1300 });
                 // lampy naskočí a kamera dojede
-                tone({ freq: 92, endFreq: 64, dur: 0.5, gain: 0.12, filter: 300, at: 1.1 });
-                tone({ freq: 210, endFreq: 104, type: 'triangle', dur: 0.2, gain: 0.035, at: 1.13 });
-                tone({ freq: 138, dur: 0.25, gain: 0.04, at: 1.15 });
+                tone({ freq: 92, endFreq: 64, dur: 0.5, gain: 0.12, filter: 300, at: 2.15 });
+                tone({ freq: 210, endFreq: 104, type: 'triangle', dur: 0.2, gain: 0.035, at: 2.18 });
+                tone({ freq: 138, dur: 0.25, gain: 0.04, at: 2.2 });
             }
 
             if (AudioCtor) {
