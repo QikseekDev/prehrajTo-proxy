@@ -332,6 +332,18 @@
             });
         }
 
+        // Intro overlay nemá zmizet nad prázdnou stránkou: záložní katalog se vykreslí hned,
+        // ale skutečný (iTunes) dorazí až z /api/catalog. Intro proto čeká na tenhle signál.
+        const firstPaint = { done: false, waiters: [] };
+        function markFirstPaint() {
+            if (firstPaint.done) return;
+            firstPaint.done = true;
+            firstPaint.waiters.splice(0).forEach(fn => { try { fn(); } catch (e) {} });
+        }
+        function whenFirstPaint(fn) {
+            if (firstPaint.done) fn(); else firstPaint.waiters.push(fn);
+        }
+
         function renderCatalog() {
             document.getElementById('chips').innerHTML = CHIPS.map(c =>
                 `<button class="chip ${c === activeChip ? 'active' : ''}" data-chip="${c}">${c}</button>`).join('');
@@ -390,6 +402,7 @@
                 renderHero();
                 renderCatalog();
             } catch (e) { /* zůstane záložní katalog */ }
+            finally { markFirstPaint(); }
         }
         loadCatalog();
 
@@ -1962,6 +1975,17 @@
                 }, reduceMotion ? 60 : 380);
             }
 
+            // Zavírá se až ve chvíli, kdy je pod overlayem co vidět: čeká na první vykreslení
+            // katalogu, ale animace vždy dohraje (min. `duration`) a když katalog nedorazí,
+            // overlay se zavře po stropu, aby stránku neblokoval.
+            const now = () => ((window.performance && performance.now) ? performance.now() : Date.now());
+            const startedAt = now();
+
             document.body.classList.add('intro-lock');
-            setTimeout(finish, duration);
+            whenFirstPaint(() => {
+                const held = now() - startedAt;
+                if (held >= duration) finish();
+                else setTimeout(finish, duration - held);
+            });
+            setTimeout(finish, duration + 2300);
         })();
