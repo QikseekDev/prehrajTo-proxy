@@ -40,9 +40,14 @@
 .intro .nf {
   width: min(300px, 62vw);
   height: min(300px, 62vw);
-  animation-name: zoom-in-w;
-  animation-delay: 0.3s;
-  animation-duration: 2.7s;
+  /* Zoom (0.3-3.0 s) + kamera, ktera od ~1.5 s sjizdi na vrchol obracene V (spoj tahu 2 a 3),
+     + zaverecne rozplynuti W. Tri animace bezi paralelne, kazda na svem property. */
+  --nf-size: min(300px, 62vw);
+  animation-name: zoom-in-w, nf-pan, nf-dissolve;
+  animation-delay: 0.3s, 1.5s, 2.55s;
+  animation-duration: 2.7s, 1.5s, 0.45s;
+  animation-timing-function: ease-in, ease-in-out, ease-in;
+  animation-fill-mode: forwards, forwards, forwards;
   /* Vlastni vrstva: zoom pak skaluje hotovy obrazek misto aby kazdy frame
      prekresloval ctyri stetce s rozostrenymi stiny. Na telefonu je to velky rozdil. */
   will-change: transform;
@@ -56,6 +61,28 @@
   100% { transform: translateZ(0) scale(6); }
 }
 
+/* Cerne pozadi intra se behem zoomu postupne ztraci, takze se pod W objevuje stranka
+   a prechod z intra do webu je plynuly (bez tvrdeho rezu). Konci spolu se zoomem (3.0 s). */
+.intro {
+  animation: intro-bg-reveal 1.3s ease-in 1.7s forwards;
+}
+@keyframes intro-bg-reveal {
+  0%   { background-color: rgba(0, 0, 0, 1); }
+  100% { background-color: rgba(0, 0, 0, 0); }
+}
+/* Kamera: vrchol obracene V (stred nahore, ~4 % vysky ctverce) putuje do stredu obrazovky.
+   Zoom bezi kolem stredu W, takze vrchol je po zoomu 6x o 0.46 * 6 vysky ctverce vyse
+   a posun o presne tolik ho dostane doprostred. Individualni property `translate`
+   se nepere s `transform` v zoom-in-w. */
+@keyframes nf-pan {
+  0%   { translate: 0 0; }
+  100% { translate: 0 calc(var(--nf-size) * 2.76); }
+}
+/* Posledni chvile: cervena se rozplyne a odkryje stranku pod intrem. */
+@keyframes nf-dissolve {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
 .intro .nf [class*=helper-] {
   position: absolute;
 }
@@ -753,7 +780,8 @@
 @media (prefers-reduced-motion: reduce) {
   .intro, .intro * { transition-duration: 0.01ms !important; }
   .intro .nf, .intro .nf *, .intro .nf *::before { animation: none !important; }
-  .intro .nf { transform: none; }
+  .intro { animation: none !important; }
+  .intro .nf { transform: none; translate: none; opacity: 1; }
   .intro .nf::before { display: none; }
   .intro .effect-lumieres { opacity: 1; }
 }
