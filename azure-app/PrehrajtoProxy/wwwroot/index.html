@@ -7,8 +7,39 @@
     <title>WTZI – filmy a seriály</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%23141414'/><text x='50' y='72' font-size='64' font-weight='900' text-anchor='middle' fill='%23e50914' font-family='Arial'>W</text></svg>">
     <link rel="stylesheet" href="styles.css">
+    <noscript><style>.intro { display: none !important; }</style></noscript>
 </head>
 <body>
+    <!-- Filmový úvodní loader -->
+    <div class="intro" id="intro" role="dialog" aria-modal="true" aria-label="Spouštím WTZI" tabindex="-1">
+        <div class="intro-light intro-light-a" aria-hidden="true"></div>
+        <div class="intro-light intro-light-b" aria-hidden="true"></div>
+        <div class="intro-grain" aria-hidden="true"></div>
+        <div class="intro-vignette" aria-hidden="true"></div>
+        <div class="intro-stage">
+            <div class="intro-eyebrow" aria-hidden="true"><span class="intro-dot"></span>Originál WTZI</div>
+            <div class="intro-wordmark" aria-hidden="true">
+                <span>W</span><span>T</span><span>Z</span><span>I</span>
+                <i class="intro-shine"></i>
+            </div>
+            <div class="intro-kicker" aria-hidden="true">Filmy · Seriály · Živě</div>
+            <div class="intro-tagline" aria-hidden="true">Příběhy začínají tady.</div>
+            <div class="intro-meter" aria-hidden="true"><span id="introProgress"></span></div>
+            <div class="intro-status" id="introStatus" aria-live="polite">Spouštím WTZI…</div>
+            <div class="intro-actions">
+                <button class="intro-action intro-sound" id="introSound" type="button" aria-pressed="true">
+                    <span class="intro-sound-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path class="sound-wave" d="M16 9.2a4 4 0 0 1 0 5.6M18.6 6.6a7.5 7.5 0 0 1 0 10.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="sound-slash" d="M16.5 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    </span>
+                    <span id="introSoundLabel">Zvuk zapnut</span>
+                </button>
+                <button class="intro-action intro-skip" id="introSkip" type="button">Přeskočit <span aria-hidden="true">→</span></button>
+            </div>
+            <div class="intro-hint" id="introHint" hidden>Klepnutím zapnete zvuk</div>
+        </div>
+        <div class="intro-footer" aria-hidden="true"><span>WTZI</span><span>Prehraj.to</span></div>
+    </div>
+
     <!-- Top bar -->
     <header class="nav" id="nav">
         <div class="logo" onclick="goHome()" title="Domů">WTZI</div>

@@ -610,3 +610,189 @@
                 .nav.solid { padding-top: calc(8px + env(safe-area-inset-top)); }
             }
         }
+
+        /* ---------- Filmový úvodní loader ---------- */
+        body.intro-lock { overflow: hidden; }
+
+        .intro {
+            --intro-duration: 3.3s;
+            position: fixed; inset: 0; z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; background: #050505; color: #fff;
+            opacity: 1; visibility: visible;
+            transition: opacity 0.65s ease, visibility 0.65s ease;
+            isolation: isolate;
+        }
+        .intro[hidden] { display: none; }
+        .intro:focus { outline: none; }
+        .intro.is-leaving { opacity: 0; visibility: hidden; pointer-events: none; }
+        .intro::before {
+            content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+            background:
+                radial-gradient(circle at 50% 42%, rgba(229,9,20,0.16), transparent 34%),
+                linear-gradient(135deg, #050505 0%, #0c0506 48%, #050505 100%);
+        }
+        .intro::after {
+            content: ''; position: absolute; inset: 0; z-index: 5; pointer-events: none;
+            background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, transparent 22%, transparent 72%, rgba(0,0,0,0.78) 100%);
+        }
+        .intro-light { position: absolute; z-index: 0; border-radius: 50%; pointer-events: none; filter: blur(80px); opacity: 0.55; }
+        .intro-light-a {
+            width: min(78vw, 900px); aspect-ratio: 1; left: -20%; top: 15%;
+            background: radial-gradient(circle, rgba(229,9,20,0.5) 0%, rgba(229,9,20,0.1) 40%, transparent 70%);
+            animation: intro-drift-a 5s ease-in-out infinite alternate;
+        }
+        .intro-light-b {
+            width: min(60vw, 700px); aspect-ratio: 1; right: -16%; bottom: 2%;
+            background: radial-gradient(circle, rgba(120,0,8,0.45), transparent 70%);
+            animation: intro-drift-b 6s ease-in-out infinite alternate;
+        }
+        .intro-grain {
+            position: absolute; inset: -50%; z-index: 7; pointer-events: none; opacity: 0.045;
+            background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.8) 0, rgba(255,255,255,0.8) 1px, transparent 1px, transparent 3px);
+            background-size: 100% 3px;
+            animation: intro-grain 0.35s steps(2) infinite;
+        }
+        .intro-vignette {
+            position: absolute; inset: 0; z-index: 6; pointer-events: none;
+            box-shadow: inset 0 0 min(22vw, 260px) rgba(0,0,0,0.9);
+            background: radial-gradient(ellipse at center, transparent 36%, rgba(0,0,0,0.55) 100%);
+        }
+        .intro-stage {
+            position: relative; z-index: 8; width: 100%; max-width: 900px; padding: 0 24px;
+            display: flex; flex-direction: column; align-items: center; text-align: center;
+        }
+        .intro-eyebrow {
+            display: flex; align-items: center; gap: 10px; margin-bottom: clamp(14px, 3vh, 30px);
+            color: rgba(255,255,255,0.65); font-size: 11px; font-weight: 700;
+            letter-spacing: 0.35em; text-transform: uppercase;
+            opacity: 0; animation: intro-rise 0.8s 0.15s ease forwards;
+        }
+        .intro-dot {
+            width: 6px; height: 6px; border-radius: 50%; background: var(--red);
+            box-shadow: 0 0 12px var(--red); animation: intro-pulse 1.6s ease-in-out infinite;
+        }
+        .intro-wordmark {
+            position: relative; display: flex; justify-content: center; align-items: baseline;
+            margin: 0; color: var(--red); font-size: clamp(5rem, 17vw, 12rem);
+            font-weight: 900; line-height: 0.82; letter-spacing: -0.085em;
+            text-shadow: 0 0 50px rgba(229,9,20,0.28), 0 8px 40px rgba(0,0,0,0.8);
+        }
+        .intro-wordmark span {
+            display: block; opacity: 0; transform: translateY(0.4em) scale(0.94);
+            filter: blur(14px); animation: intro-letter 0.95s cubic-bezier(0.16, 0.8, 0.22, 1) forwards;
+        }
+        .intro-wordmark span:nth-child(1) { animation-delay: 0.12s; }
+        .intro-wordmark span:nth-child(2) { animation-delay: 0.22s; }
+        .intro-wordmark span:nth-child(3) { animation-delay: 0.34s; }
+        .intro-wordmark span:nth-child(4) { animation-delay: 0.44s; }
+        .intro-wordmark i {
+            position: absolute; inset: -8% -6%; z-index: 2; display: block;
+            overflow: hidden; pointer-events: none;
+        }
+        .intro-wordmark i::before {
+            content: ''; position: absolute; top: -30%; bottom: -30%; left: -45%; width: 22%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.78), transparent);
+            transform: skewX(-18deg); mix-blend-mode: screen;
+            animation: intro-shine 2.3s 1.05s cubic-bezier(0.3, 0.7, 0.2, 1) forwards;
+        }
+        .intro-kicker {
+            margin-top: clamp(16px, 2.5vh, 26px); color: rgba(255,255,255,0.9);
+            font-size: clamp(10px, 1.4vw, 13px); font-weight: 700; letter-spacing: 0.32em;
+            text-transform: uppercase; opacity: 0; animation: intro-rise 0.8s 0.85s ease forwards;
+        }
+        .intro-tagline {
+            margin-top: 10px; color: rgba(255,255,255,0.58); font-size: clamp(12px, 1.6vw, 15px);
+            letter-spacing: 0.04em; opacity: 0; animation: intro-rise 0.8s 1.05s ease forwards;
+        }
+        .intro-meter {
+            position: relative; width: min(320px, 72vw); height: 2px; margin-top: clamp(24px, 4.5vh, 42px);
+            overflow: hidden; border-radius: 2px; background: rgba(255,255,255,0.14);
+            opacity: 0; animation: intro-rise 0.7s 0.75s ease forwards;
+        }
+        .intro-meter span {
+            display: block; width: 0; height: 100%;
+            background: linear-gradient(90deg, var(--red-dark), var(--red), #ff4d55);
+            box-shadow: 0 0 14px rgba(229,9,20,0.8);
+            animation: intro-progress var(--intro-duration) cubic-bezier(0.18, 0.72, 0.2, 1) 0.1s forwards;
+        }
+        .intro-status {
+            min-height: 1.4em; margin-top: 14px; color: rgba(255,255,255,0.62);
+            font-size: 12px; letter-spacing: 0.04em; opacity: 0;
+            animation: intro-rise 0.7s 1.35s ease forwards;
+        }
+        .intro-actions {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            flex-wrap: wrap; margin-top: 18px; opacity: 0;
+            animation: intro-rise 0.7s 1.52s ease forwards;
+        }
+        .intro-action {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            min-height: 40px; padding: 0 16px; border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 4px; color: #fff; background: rgba(255,255,255,0.08);
+            font-size: 13px; font-weight: 600; backdrop-filter: blur(8px);
+            transition: background 0.2s, border-color 0.2s, transform 0.2s;
+        }
+        .intro-action:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.5); }
+        .intro-action:active { transform: scale(0.97); }
+        .intro-action:disabled { opacity: 0.45; cursor: default; }
+        .intro-sound { min-width: 145px; justify-content: flex-start; }
+        .intro-sound-icon, .intro-sound-icon svg { width: 17px; height: 17px; display: block; flex: none; }
+        .intro-sound .sound-wave { display: block; }
+        .intro-sound .sound-slash { display: none; }
+        .intro-sound.muted .sound-wave { display: none; }
+        .intro-sound.muted .sound-slash { display: block; }
+        .intro-skip span { transition: transform 0.2s; }
+        .intro-skip:hover span { transform: translateX(3px); }
+        .intro-hint {
+            margin-top: 12px; color: rgba(255,255,255,0.58);
+            font-size: 12px; letter-spacing: 0.03em;
+        }
+        .intro-hint[hidden] { display: none; }
+        .intro-footer {
+            position: absolute; z-index: 9; left: 4%; right: 4%;
+            bottom: max(18px, env(safe-area-inset-bottom));
+            display: flex; justify-content: space-between; gap: 16px;
+            color: rgba(255,255,255,0.28); font-size: 10px; font-weight: 700;
+            letter-spacing: 0.28em; text-transform: uppercase; pointer-events: none;
+        }
+        @keyframes intro-letter {
+            to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+        @keyframes intro-rise {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes intro-progress { from { width: 0; } to { width: 100%; } }
+        @keyframes intro-shine { from { left: -45%; } to { left: 125%; } }
+        @keyframes intro-pulse {
+            0%, 100% { opacity: 0.45; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+        @keyframes intro-drift-a { to { transform: translate(8%, -5%) scale(1.1); } }
+        @keyframes intro-drift-b { to { transform: translate(-7%, 4%) scale(1.08); } }
+        @keyframes intro-grain {
+            0% { transform: translate(0, 0); }
+            50% { transform: translate(-1%, 1%); }
+            100% { transform: translate(1%, -1%); }
+        }
+        @media (max-width: 700px) {
+            .intro-stage { padding: 0 18px; }
+            .intro-wordmark { font-size: clamp(4.2rem, 22vw, 7rem); }
+            .intro-eyebrow { font-size: 10px; letter-spacing: 0.25em; }
+            .intro-actions { flex-direction: column; width: min(280px, 100%); }
+            .intro-action { width: 100%; }
+            .intro-sound { justify-content: center; }
+            .intro-footer { font-size: 9px; letter-spacing: 0.2em; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .intro { --intro-duration: 0.9s; transition-duration: 0.01ms; }
+            .intro *, .intro *::before, .intro *::after {
+                animation-duration: 0.01ms !important;
+                animation-delay: 0ms !important;
+                animation-iteration-count: 1 !important;
+            }
+            .intro-wordmark span { opacity: 1; transform: none; filter: none; }
+            .intro-eyebrow, .intro-meter, .intro-status, .intro-actions { opacity: 1; }
+            .intro-meter span { width: 100%; }
+        }
