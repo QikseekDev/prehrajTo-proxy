@@ -611,113 +611,15 @@
             }
         }
 
-        /* ---------- Wflix intro: jeden tah, jeden akcent ---------- */
+        /* ---------- Wflix intro: overlay nad stránkou (animace je v intro.css) ---------- */
         body.intro-lock { overflow: hidden; }
 
         .intro {
             position: fixed; inset: 0; z-index: 9999;
             display: flex; align-items: center; justify-content: center;
-            overflow: hidden; background: #070707; color: #fff;
+            overflow: hidden; background: #000; color: #fff;
             opacity: 1; visibility: visible;
-            perspective: 1000px; perspective-origin: 50% 56%;
             transition: opacity 0.32s ease, visibility 0.32s ease;
         }
         .intro[hidden] { display: none; }
         .intro.is-leaving { opacity: 0; visibility: hidden; pointer-events: none; }
-        .intro::before {
-            content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-            background:
-                radial-gradient(ellipse at 8% 38%, rgba(60,92,170,0.14), transparent 32%),
-                radial-gradient(ellipse at 94% 60%, rgba(190,32,24,0.16), transparent 34%),
-                radial-gradient(ellipse at 50% 64%, rgba(229,9,20,0.10), transparent 38%),
-                linear-gradient(180deg, #0b0b0b 0%, #070707 55%, #050505 100%);
-        }
-        .intro::after {
-            content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-            background: linear-gradient(180deg, rgba(0,0,0,0.35), transparent 20%, transparent 80%, rgba(0,0,0,0.55));
-        }
-        .intro-stage {
-            position: relative; z-index: 2; width: min(620px, 84vw);
-            display: flex; flex-direction: column; align-items: stretch;
-            transform-origin: 50% 56%;
-            animation: intro-camera 2.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-        }
-        .intro-mark {
-            position: relative; overflow: hidden;
-            padding: 0.06em 0 0.14em; text-align: center;
-            perspective: 820px; perspective-origin: 50% 100%;
-        }
-        .intro-wordmark {
-            position: relative; display: inline-block;
-            color: #f2f2f2; font-size: clamp(4.6rem, 16vw, 9.5rem);
-            font-weight: 800; line-height: 0.78; letter-spacing: -0.055em;
-            transform-origin: 50% 100%;
-            transform: translateY(115%) rotateX(56deg) rotateY(-7deg) translateZ(-50px);
-            text-shadow:
-                0.012em 0.012em 0 #8c080e,
-                0.024em 0.024em 0 #70060b,
-                0.036em 0.036em 0 #540408,
-                0.048em 0.048em 0 #3b0305,
-                0 0.12em 0.18em rgba(0,0,0,0.55);
-            animation: intro-wordmark-rise 1.15s cubic-bezier(0.16, 0.84, 0.24, 1) 0.3s forwards;
-        }
-        .intro-wordmark::after {
-            content: ''; position: absolute; inset: 0; pointer-events: none;
-            background: linear-gradient(105deg, transparent 32%, rgba(255,255,255,0.42) 50%, transparent 68%);
-            transform: translateX(-125%); mix-blend-mode: screen;
-            animation: intro-wordmark-shine 0.7s 1.12s ease-in-out forwards;
-        }
-        .intro-horizon {
-            display: block; width: 100%; height: clamp(30px, 5vw, 48px);
-            overflow: visible; margin-top: 2px;
-            filter: drop-shadow(0 12px 28px rgba(229,9,20,0.18));
-        }
-        .intro-horizon-line {
-            fill: none; stroke: url(#wflix-horizon-gradient);
-            stroke-width: 2; stroke-linecap: round;
-            vector-effect: non-scaling-stroke;
-            stroke-dasharray: 1; stroke-dashoffset: 1;
-            animation: intro-horizon-draw 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.16s forwards;
-        }
-        .intro-horizon-glow {
-            fill: none; stroke: url(#wflix-horizon-gradient);
-            stroke-width: 8; stroke-linecap: round;
-            vector-effect: non-scaling-stroke;
-            stroke-dasharray: 1; stroke-dashoffset: 1;
-            opacity: 0; filter: blur(6px);
-            animation:
-                intro-horizon-draw 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.16s forwards,
-                intro-horizon-glow 1.1s ease-out 0.3s forwards;
-        }
-        .intro-stage::after {
-            content: ''; position: absolute; left: 0; right: 0; top: calc(100% - 16px);
-            height: 90px; z-index: -1; pointer-events: none;
-            background: radial-gradient(ellipse at 50% 24%, rgba(255,150,76,0.18), transparent 68%);
-            filter: blur(18px);
-        }
-        @keyframes intro-wordmark-rise {
-            0% { transform: translateY(115%) rotateX(56deg) rotateY(-7deg) translateZ(-50px); }
-            70% { transform: translateY(-1.5%) rotateX(-3deg) rotateY(1deg) translateZ(0); }
-            100% { transform: translateY(0) rotateX(0) rotateY(0) translateZ(0); }
-        }
-        @keyframes intro-wordmark-shine { to { transform: translateX(125%); } }
-        @keyframes intro-horizon-draw { to { stroke-dashoffset: 0; } }
-        @keyframes intro-horizon-glow { 45% { opacity: 0.5; } 100% { opacity: 0.32; } }
-        @keyframes intro-camera {
-            0% { transform: scale(1.035) rotateX(1.2deg); }
-            60% { transform: scale(1) rotateX(0deg); }
-            100% { transform: scale(1.006) rotateX(0deg); }
-        }
-        @media (max-width: 700px) {
-            .intro-stage { width: 84vw; }
-            .intro-mark { perspective: 660px; }
-            .intro-wordmark { font-size: clamp(4rem, 19vw, 7rem); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-            .intro, .intro * { transition-duration: 0.01ms !important; }
-            .intro *, .intro *::before, .intro *::after { animation: none !important; }
-            .intro-stage { transform: none; }
-            .intro-wordmark { transform: none; }
-            .intro-horizon-line, .intro-horizon-glow { animation: none; stroke-dashoffset: 0; }
-            .intro-horizon-glow { opacity: 0.32; }
-        }

@@ -1845,7 +1845,8 @@
             if (!intro) return;
 
             const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-            const duration = reduceMotion ? 1000 : 2700;
+            // Animace intra (intro.css): stetce 0.2-1.0 s, zoom 0.3-3.0 s.
+            const duration = reduceMotion ? 1000 : 3000;
             const AudioCtor = window.AudioContext || window.webkitAudioContext;
             const state = { active: true, finishing: false, audioStarted: false };
 
@@ -1947,14 +1948,14 @@
                     tone({ freq: 176, endFreq: 96, type: 'triangle', dur: 0.14, gain: 0.05, at: 0.02 });
                     return;
                 }
-                // linka se kreslí
-                tone({ freq: 58, endFreq: 32, dur: 0.8, gain: 0.34, filter: 160, at: 0.16 });
-                tone({ freq: 176, endFreq: 88, type: 'triangle', dur: 0.16, gain: 0.055, at: 0.16 });
-                noise({ at: 0.18, dur: 0.9, gain: 0.02, from: 180, to: 1600 });
-                // wordmark se usadí
-                tone({ freq: 92, endFreq: 64, dur: 0.5, gain: 0.12, filter: 300, at: 1.3 });
-                tone({ freq: 210, endFreq: 104, type: 'triangle', dur: 0.2, gain: 0.035, at: 1.33 });
-                tone({ freq: 138, dur: 0.25, gain: 0.04, at: 1.35 });
+                // štětce kreslí W
+                tone({ freq: 58, endFreq: 32, dur: 0.8, gain: 0.34, filter: 160, at: 0.2 });
+                tone({ freq: 176, endFreq: 88, type: 'triangle', dur: 0.16, gain: 0.055, at: 0.22 });
+                noise({ at: 0.24, dur: 0.9, gain: 0.02, from: 180, to: 1600 });
+                // lampy naskočí a kamera dojede
+                tone({ freq: 92, endFreq: 64, dur: 0.5, gain: 0.12, filter: 300, at: 1.1 });
+                tone({ freq: 210, endFreq: 104, type: 'triangle', dur: 0.2, gain: 0.035, at: 1.13 });
+                tone({ freq: 138, dur: 0.25, gain: 0.04, at: 1.15 });
             }
 
             if (AudioCtor) {

@@ -6,6 +6,9 @@ target: both
 output_file: wflix-intro.html
 ---
 
+> Poznámka: tenhle brief popisuje první verzi intra (wordmark + horizont).
+> Aktuální intro je červené W ze čtyř štětců s lampami a zoomem - viz `wflix-intro.html`.
+
 # Design Language
 
 - Background: `#070707`

@@ -286,6 +286,8 @@ Tenhle fork spravuje **Vojtěch Vokoun** – [contact@qikseek.qzz.io](mailto:con
 
 Původní projekt napsal **Jiřík**; od něj je základ aplikace.
 
+Úvodní animace (`wwwroot/intro.css`) vychází z ukázky [codevkn/netflix-intro_html_css](https://github.com/codevkn/netflix-intro_html_css), převedené z N na W.
+
 ---
 
 ## Licence
