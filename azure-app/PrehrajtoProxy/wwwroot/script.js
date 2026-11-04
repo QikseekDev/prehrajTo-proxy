@@ -583,7 +583,7 @@
             about: {
                 title: 'O projektu',
                 body: `
-                    <p>WTZI je malý hobby projekt: webové rozhraní ve stylu streamovacích služeb pro filmy, které jsou veřejně dostupné na prehraj.to. Bez registrace, bez reklam, zdarma.</p>
+                    <p>Wflix je malý hobby projekt: webové rozhraní ve stylu streamovacích služeb pro filmy, které jsou veřejně dostupné na prehraj.to. Bez registrace, bez reklam, zdarma.</p>
                     <h2>Jak to funguje</h2>
                     <ul>
                         <li>Server je ASP.NET Core (.NET 9) běžící na Azure App Service.</li>
@@ -618,12 +618,12 @@
             terms: {
                 title: 'Podmínky užití',
                 body: `
-                    <p>WTZI je nekomerční hobby služba dostupná tak, jak je, bez jakékoli záruky dostupnosti nebo funkčnosti.</p>
+                    <p>Wflix je nekomerční hobby služba dostupná tak, jak je, bez jakékoli záruky dostupnosti nebo funkčnosti.</p>
                     <h2>Co appka dělá</h2>
                     <p>Jen zprostředkovává vyhledání a přehrání obsahu, který je veřejně dostupný na prehraj.to. Videa nehostujeme, neukládáme je a nevlastníme. Za obsah odpovídají jeho původní autoři a provozovatel prehraj.to.</p>
                     <h2>Odpovědnost uživatele</h2>
                     <ul>
-                        <li>Za legálnost sledování v tvé zemi odpovídáš ty; WTZI není právní ani hostingová služba.</li>
+                        <li>Za legálnost sledování v tvé zemi odpovídáš ty; Wflix není právní ani hostingová služba.</li>
                         <li>Nepoužívej appku k hromadnému automatizovanému stahování ani k přetěžování proxy serverů.</li>
                         <li>Nepokoušej se službu zneužít k šíření obsahu dál pod vlastní hlavičkou.</li>
                     </ul>
@@ -635,7 +635,7 @@
             privacy: {
                 title: 'Ochrana soukromí',
                 body: `
-                    <p>WTZI nemá registraci, přihlášení ani uživatelské účty. Žádná analytika, reklamní skripty ani sledovací cookies.</p>
+                    <p>Wflix nemá registraci, přihlášení ani uživatelské účty. Žádná analytika, reklamní skripty ani sledovací cookies.</p>
                     <h2>Co se ukládá u tebe v prohlížeči</h2>
                     <p>Jen nastavení a cache náhledů (localStorage) – podrobnosti a tlačítko na smazání najdeš v <button type="button" class="f-link" onclick="openPage('cookies')" style="color:#fff;text-decoration:underline">Předvolbách cookies</button>.</p>
                     <h2>Co projde serverem</h2>
@@ -652,7 +652,7 @@
             cookies: {
                 title: 'Předvolby cookies',
                 body: `
-                    <p>WTZI nepoužívá cookies pro sledování ani reklamu a nemá žádnou přihlášenou relaci. Místo cookies si do prohlížeče ukládá dvě věci přes <code>localStorage</code>:</p>
+                    <p>Wflix nepoužívá cookies pro sledování ani reklamu a nemá žádnou přihlášenou relaci. Místo cookies si do prohlížeče ukládá dvě věci přes <code>localStorage</code>:</p>
                     <ul>
                         <li><code>${SETTINGS_KEY}</code> – tvoje nastavení (katalog na úvodní stránce, limit náhledů, přímé přehrávání).</li>
                         <li><code>${THUMB_KEY}</code> – cache náhledů, aby se stejné obrázky nenačítaly pořád dokola.</li>
@@ -664,7 +664,7 @@
             contact: {
                 title: 'Kontakt',
                 body: `
-                    <p>WTZI je hobby projekt, takže odpověď může chvíli trvat – ale každý mail si přečtu.</p>
+                    <p>Wflix je hobby projekt, takže odpověď může chvíli trvat – ale každý mail si přečtu.</p>
                     <p>Piš na <a href="mailto:${CONTACT_MAIL}">${CONTACT_MAIL}</a>.</p>
                     <h2>Ať to můžu vyřešit rychle</h2>
                     <ul>
@@ -1397,7 +1397,7 @@
                     art = [{ src, sizes: '512x512' }];
                 }
                 navigator.mediaSession.metadata = new MediaMetadata({
-                    title: title || '', artist: artist || '', album: 'WTZI', artwork: art,
+                    title: title || '', artist: artist || '', album: 'Wflix', artwork: art,
                 });
             } catch (e) {}
             msPosition();
@@ -1458,7 +1458,7 @@
             player.title = title || 'video';
             if (poster) videoPlayer.poster = poster;
             else videoPlayer.removeAttribute('poster');
-            msSetMetadata(videoPlayer, false, title ? cleanTitle(title) : '', 'WTZI', poster);
+            msSetMetadata(videoPlayer, false, title ? cleanTitle(title) : '', 'Wflix', poster);
         }
 
         // Živý kanál: název kanálu + logo, posuvník podle okna, které kanál nabízí.
@@ -1824,7 +1824,7 @@
 
         })();
 
-        // ===== WTZI intro: krátký filmový podpis =====
+        // ===== Wflix intro: krátký filmový podpis =====
         // Bez tlačítek a bez interakce: overlay se sám zavře.
         // Zvuk hraje jen tehdy, když ho prohlížeč povolí bez gesta.
         (() => {

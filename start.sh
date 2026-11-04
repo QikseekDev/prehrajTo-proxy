@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# WTZI self-host pro Termux (funguje i na běžném Linuxu/macOS s PHP 7.4+)
+# Wflix self-host pro Termux (funguje i na běžném Linuxu/macOS s PHP 7.4+)
 #
 #   ./start-termux.sh              -> http://127.0.0.1:8080  (jen tenhle telefon)
 #   HOST=0.0.0.0 ./start-termux.sh -> dostupné i z jiných zařízení v Wi-Fi
@@ -25,7 +25,7 @@ fi
 # víc workerů, aby náhledy, hledání a titulky nešly po jednom (a stream neblokoval zbytek)
 export PHP_CLI_SERVER_WORKERS="${PHP_CLI_SERVER_WORKERS:-6}"
 
-echo "🎬 WTZI běží na http://$HOST:$PORT   (Ctrl+C = konec)"
+echo "🎬 Wflix běží na http://$HOST:$PORT   (Ctrl+C = konec)"
 if [ "$HOST" = "0.0.0.0" ]; then
   IP=$(ifconfig 2>/dev/null | grep -Eo 'inet (addr:)?192\.168\.[0-9.]+|inet (addr:)?10\.[0-9.]+' | grep -Eo '[0-9.]+$' | head -1)
   [ -n "$IP" ] && echo "   z jiného zařízení: http://$IP:$PORT"

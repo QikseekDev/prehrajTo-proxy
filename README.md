@@ -1,4 +1,4 @@
-# WTZI 🎬
+# Wflix 🎬
 
 [![Uptime Status](https://img.shields.io/uptimerobot/status/m801943371-78c6e4351b1a34cc26858090?label=Azure%20App&style=flat-square)](https://stats.uptimerobot.com/oMZ6zgtbxR)
 
@@ -146,7 +146,7 @@ neblokují ani nelimitují, aby fungoval uptime monitoring.
 ### `/azure-app/PrehrajtoProxy/`
 ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
 
-- **Frontend** (`wwwroot/index.html`, `wwwroot/styles.css`, `wwwroot/script.js`) - WTZI, UI ve stylu
+- **Frontend** (`wwwroot/index.html`, `wwwroot/styles.css`, `wwwroot/script.js`) - Wflix, UI ve stylu
   streamovací služby: katalog doporučených filmů, vyhledávání, přehrávač s volbou titulků. `index.html`
   obsahuje značku, `styles.css` vzhled a `script.js` logiku. Nastavení
   (avatar vpravo nahoře) nabízí katalog úvodní stránky, limit souběžných náhledů a Přímé přehrávání
@@ -208,7 +208,7 @@ HOST=0.0.0.0 ./start-termux.sh    # dostupné i z jiných zařízení ve Wi-Fi
 PORT=9000 ./start-termux.sh       # jiný port
 ```
 
-Běží to přes `router.php` (vestavěný PHP server): `/` je WTZI a `/api/search`, `/api/proxy`,
+Běží to přes `router.php` (vestavěný PHP server): `/` je Wflix a `/api/search`, `/api/proxy`,
 `/api/thumb`, `/api/stream` i `/api/subtitles` používají logiku z `index.php`.
 
 `router.php` obsluhuje i `/api/subtitles` (relay VTT), takže titulky fungují i v self-hostu: seznam, který prohlížeč posílá

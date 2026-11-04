@@ -1,12 +1,12 @@
 <?php
 /**
- * WTZI - self-host router (Termux / jakýkoli server s PHP, bez Azure a bez .NET)
+ * Wflix - self-host router (Termux / jakýkoli server s PHP, bez Azure a bez .NET)
  *
  * Spouští se přes vestavěný PHP server:
  *   php -S 127.0.0.1:8080 -t azure-app/PrehrajtoProxy/wwwroot router.php
  * (nebo jednodušeji: ./start-termux.sh)
  *
- *  - /            -> wwwroot/index.html (WTZI)
+ *  - /            -> wwwroot/index.html (Wflix)
  *  - /api/search  -> index.php?action=search (nebo souběžně přes $SERVER_PROXIES / ?proxy=, viz níže)
  *  - /api/proxy   -> index.php (získání URL videa)
  *  - /api/thumb   -> index.php?action=thumb (thumbnail pro homepage)
