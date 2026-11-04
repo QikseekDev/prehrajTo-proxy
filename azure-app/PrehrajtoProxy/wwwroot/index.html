@@ -369,6 +369,7 @@
         .sub-pick { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
         .sub-pick[hidden] { display: none; }
         .sub-pick .set-select { max-width: 220px; }
+        .sub-note { font-size: 13px; color: #f08a80; }
         video::cue { background: rgba(0,0,0,0.78); color: #fff; text-shadow: 0 1px 2px #000; }
         /* Po skončení videa: co dál. Leží přes video, takže neposouvá stránku. */
         .player-end {
@@ -716,6 +717,7 @@
                 <span class="sub-pick" id="subtitleBar" hidden>
                     <label for="subtitleSelect">Titulky</label>
                     <select id="subtitleSelect" class="set-select" aria-label="Titulky"></select>
+                    <span class="sub-note" id="subNote" hidden>Titulky se nepodařilo načíst</span>
                 </span>
             </div>
         </div>
@@ -818,6 +820,7 @@
         const proxyBtn = document.getElementById('proxyBtn');
         const subtitleBar = document.getElementById('subtitleBar');
         const subtitleSelect = document.getElementById('subtitleSelect');
+        const subNote = document.getElementById('subNote');
         const playerEnd = document.getElementById('playerEnd');
         const playerEndTitle = document.getElementById('playerEndTitle');
         const placeholder = document.getElementById('placeholder');
@@ -1668,7 +1671,7 @@
         //     sám obnovuje). To platí i pro přímé přehrávání: po opakovaných chybách se pro
         //     tohle přehrávání dočasně použije server, nastavení se nemění,
         //  3) tlačítko Stáhnout jde vždy přes /api/stream (CDN odkaz napřímo se stáhnout nedá).
-        const player = { page: '', cdn: '', title: '', mode: 'direct', lastTime: 0, resumeAt: 0, fixes: 0, busy: false, stallTimer: null, subs: [], subSig: '', subLang: null, subOff: false, subIndex: -1 };
+        const player = { page: '', cdn: '', title: '', mode: 'direct', lastTime: 0, resumeAt: 0, fixes: 0, busy: false, stallTimer: null, subs: [], subSig: '', subLang: null, subOff: false, subIndex: -1, subEls: [] };
 
         // ===== Titulky (WebVTT z prehraj.to) =====
         // PHP proxy vytáhne stopy z inicializace přehrávače do "subtitles". Prohlížeč je
@@ -1690,17 +1693,26 @@
             return label;
         }
 
+        // Stopu zapínáme na objektu z konkrétního <track> elementu, ne podle pořadí v
+        // videoPlayer.textTracks: prohlížeč tam staré stopy po přepnutí filmu chvíli
+        // nechává, takže indexy přestanou sedět a titulky se pak nevykreslí vůbec.
         function applySubtitle(index, force = false) {
             player.subIndex = index;
-            const tracks = videoPlayer.textTracks;
-            for (let i = 0; i < tracks.length; i++) {
-                tracks[i].mode = i === index ? 'showing' : 'disabled';
+            const own = player.subEls;
+            const chosen = index >= 0 && own[index] ? own[index].track : null;
+            own.forEach((el, i) => {
+                const track = el.track;
+                if (track) track.mode = i === index ? 'showing' : 'disabled';
+            });
+            const live = videoPlayer.textTracks;
+            for (let i = 0; i < live.length; i++) {
+                if (live[i] !== chosen) live[i].mode = 'disabled';
             }
             // Fullscreen někdy stopu nechá jako "showing", ale přestane vykreslovat cue.
             // Přepnutí hidden -> showing ji donutí znovu načíst/vykreslit.
-            if (force && index >= 0 && tracks[index]) {
-                tracks[index].mode = 'hidden';
-                tracks[index].mode = 'showing';
+            if (force && chosen) {
+                chosen.mode = 'hidden';
+                chosen.mode = 'showing';
             }
             subtitleSelect.value = index >= 0 ? String(index) : '';
         }
@@ -1711,8 +1723,10 @@
             player.subLang = null;
             player.subOff = false;
             player.subIndex = -1;
+            player.subEls = [];
             videoPlayer.querySelectorAll('track[data-wtzi-sub]').forEach(t => t.remove());
             subtitleSelect.innerHTML = '';
+            subNote.hidden = true;
             subtitleBar.hidden = true;
         }
 
@@ -1723,8 +1737,10 @@
 
             player.subSig = sig;
             player.subs = subs;
+            player.subEls = [];
             videoPlayer.querySelectorAll('track[data-wtzi-sub]').forEach(t => t.remove());
             subtitleSelect.innerHTML = '';
+            subNote.hidden = true;
             subtitleBar.hidden = subs.length === 0;
             if (!subs.length) {
                 player.subLang = null;
@@ -1734,6 +1750,7 @@
             }
 
             subtitleSelect.appendChild(new Option('Vypnuto', ''));
+            const els = [];
             let defaultIndex = -1;
             subs.forEach((s, i) => {
                 const track = document.createElement('track');
@@ -1742,23 +1759,32 @@
                 track.srclang = s.lang || 'und';
                 track.src = '/api/subtitles?url=' + encodeURIComponent(s.url);
                 track.setAttribute('data-wtzi-sub', '1');
+                // Když relay VTT nevydá, ať je to vidět - jinak titulky chybí bez vysvětlení.
+                track.addEventListener('error', () => {
+                    if (player.subEls[i] === track && player.subIndex === i) subNote.hidden = false;
+                });
                 if (s.default) {
                     track.default = true;
                     defaultIndex = i;
                 }
                 videoPlayer.appendChild(track);
+                els.push(track);
                 subtitleSelect.appendChild(new Option(track.label, String(i)));
             });
+            player.subEls = els;
 
-            // Zachovat volbu diváka; jinak použít výchozí stopu označenou přehrávačem.
+            // Zachovat volbu diváka; jinak výchozí stopa z přehrávače, a když ji web
+            // neoznačí, vzít první českou (jinak by titulky zůstaly rovnou vypnuté).
             let index = -1;
             if (!player.subOff) {
                 if (player.subLang) index = subs.findIndex(s => (s.lang || '') === player.subLang);
                 if (index < 0) index = defaultIndex;
+                if (index < 0) index = subs.findIndex(s => /^(cs|ces|cze)$/i.test(s.lang || '') || /^cze/i.test(s.label || ''));
             }
-            // TextTrack objekty vznikají až po vložení <track>; doladíme hned i po chvíli.
+            // Stopu zapneme hned a ještě jednou po chvíli, až prohlížeč <track> zařadí.
             applySubtitle(index);
             setTimeout(() => { if (player.subSig === sig) applySubtitle(index); }, 0);
+            setTimeout(() => { if (player.subSig === sig) applySubtitle(index, true); }, 700);
         }
 
         function selectSubtitle(index) {
