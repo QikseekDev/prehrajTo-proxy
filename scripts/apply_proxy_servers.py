@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Pushne seznam proxy serverů do index.html, appsettings.json a router.php najednou.
+"""Pushne seznam proxy serverů do script.js, appsettings.json a router.php najednou.
 
 Volá se ze scripts/change-proxy-servers.sh, není potřeba spouštět ručně.
-Použití: apply_proxy_servers.py <index.html> <appsettings.json> <router.php> <url1> [url2 ...]
+Použití: apply_proxy_servers.py <script.js> <appsettings.json> <router.php> <url1> [url2 ...]
 """
 import json
 import sys
@@ -40,13 +40,13 @@ def update_json(path, servers):
 def main():
     if len(sys.argv) < 5:
         raise SystemExit(__doc__)
-    html_path, json_path, php_path, *servers = sys.argv[1:]
+    js_path, json_path, php_path, *servers = sys.argv[1:]
 
-    update_marker_block(html_path, servers, quote="'")
+    update_marker_block(js_path, servers, quote="'")
     update_marker_block(php_path, servers, quote="'")
     update_json(json_path, servers)
 
-    print(f"✅ Promítnuto do {html_path}, {json_path} a {php_path}.")
+    print(f"✅ Promítnuto do {js_path}, {json_path} a {php_path}.")
 
 
 if __name__ == "__main__":

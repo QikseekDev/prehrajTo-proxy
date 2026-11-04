@@ -53,7 +53,7 @@ function isGoodBody($body) {
 
 // --------------------------------------------------------------------------
 // Seznam PHP proxy serverů - stejná myšlenka jako appsettings.json
-// "Prehraj:ProxyUrls" / DEFAULT_PROXY_SERVERS v index.html. Udržuje to
+// "Prehraj:ProxyUrls" / DEFAULT_PROXY_SERVERS v script.js. Udržuje to
 // scripts/change-proxy-servers.sh, needituj ručně mezi markery. Je to jen
 // fallback pro případ, že tenhle self-host sám běží odjinud (zahraniční VPS
 // apod.) - když Termux/self-host běží z české IP, appka si v ⚙️ Nastavení

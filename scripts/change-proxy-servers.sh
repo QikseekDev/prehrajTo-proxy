@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Otevře proxy-servers.txt v nano (nebo $EDITOR), a po uložení ten seznam
 # promítne do:
-#   - azure-app/PrehrajtoProxy/wwwroot/index.html  (DEFAULT_PROXY_SERVERS)
+#   - azure-app/PrehrajtoProxy/wwwroot/script.js   (DEFAULT_PROXY_SERVERS)
 #   - azure-app/PrehrajtoProxy/appsettings.json     (Prehraj.ProxyUrls)
 #   - router.php                                    ($SERVER_PROXIES)
 #
@@ -14,7 +14,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."   # repo root, ať skript jde spustit odkudkoli
 
 LIST_FILE="proxy-servers.txt"
-HTML_FILE="azure-app/PrehrajtoProxy/wwwroot/index.html"
+JS_FILE="azure-app/PrehrajtoProxy/wwwroot/script.js"
 JSON_FILE="azure-app/PrehrajtoProxy/appsettings.json"
 PHP_FILE="router.php"
 
@@ -51,10 +51,10 @@ fi
 echo "📋 Servery k nahrání:"
 printf '   - %s\n' "${SERVERS[@]}"
 
-python3 "scripts/apply_proxy_servers.py" "$HTML_FILE" "$JSON_FILE" "$PHP_FILE" "${SERVERS[@]}"
+python3 "scripts/apply_proxy_servers.py" "$JS_FILE" "$JSON_FILE" "$PHP_FILE" "${SERVERS[@]}"
 
 if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo
   echo "📝 git diff:"
-  git --no-pager diff --stat -- "$LIST_FILE" "$HTML_FILE" "$JSON_FILE" "$PHP_FILE" || true
+  git --no-pager diff --stat -- "$LIST_FILE" "$JS_FILE" "$JSON_FILE" "$PHP_FILE" || true
 fi

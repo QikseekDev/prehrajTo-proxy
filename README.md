@@ -28,7 +28,7 @@ volání prehraj.to v .NET appce není, protože z datacentrové IP vrací captc
 
 Seznam serverů jsou dvě vrstvy, které se doplňují:
 
-**1. Prohlížeč (`DEFAULT_PROXY_SERVERS` v `index.html`)** – appka pošle `&proxy=<url>` pro každý
+**1. Prohlížeč (`DEFAULT_PROXY_SERVERS` v `wwwroot/script.js`)** – appka pošle `&proxy=<url>` pro každý
 server v seznamu a tenhle seznam **přebije** serverový. Je to výchozí chování pro všechny
 návštěvníky a v Nastavení se needituje (tam jsou jen katalog úvodní stránky a limit náhledů).
 
@@ -61,7 +61,7 @@ timeout. Neplatné (ne-http/https) hodnoty backend tiše ignoruje.
 ./scripts/change-proxy-servers.sh
 ```
 Otevře `proxy-servers.txt` v `nano` (jiný editor přes `EDITOR=vim ...`), po uložení a zavření
-seznam ověří (musí to být `http://`/`https://` URL) a promítne ho najednou do `index.html`
+seznam ověří (musí to být `http://`/`https://` URL) a promítne ho najednou do `script.js`
 (`DEFAULT_PROXY_SERVERS`), `appsettings.json` (`Prehraj.ProxyUrls`) i `router.php`
 (`$SERVER_PROXIES`) - needituj ty tři bloky ručně zvlášť. `./scripts/change-proxy-servers.sh
 --no-edit` jen pushne aktuální obsah `proxy-servers.txt` bez otevření editoru (hodí se ze
@@ -134,7 +134,7 @@ jinak by všechny požadavky měly IP front-endu Azure a limit by platil pro cel
 **2. Blokace nástrojů** – požadavek na `/api` dostane `403`, když má User-Agent z deny-listu
 (curl, wget, python-requests, httpx, aiohttp, scrapy, go-http-client, okhttp, axios, httpie,
 Postman, PowerShell, headless Chrome, Puppeteer, Playwright, Selenium…), prázdný UA, nebo nemá
-ani `Sec-Fetch-Site` ani `Referer` na vlastní doménu. Statické soubory (`/`, `index.html`) se
+ani `Sec-Fetch-Site` ani `Referer` na vlastní doménu. Statické soubory (`/`, `index.html`, `script.js`, `styles.css`) se
 neblokují ani nelimitují, aby fungoval uptime monitoring.
 
 > Hlavičky jde podstrčit, takže blokace UA není bezpečnostní hranice – scraping reálně brzdí až
@@ -146,8 +146,9 @@ neblokují ani nelimitují, aby fungoval uptime monitoring.
 ### `/azure-app/PrehrajtoProxy/`
 ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
 
-- **Frontend** (`wwwroot/index.html`) - WTZI, UI ve stylu streamovací služby: katalog doporučených
-  filmů, vyhledávání, přehrávač s volbou titulků. Jediný statický soubor (CSS i JS uvnitř). Nastavení
+- **Frontend** (`wwwroot/index.html`, `wwwroot/styles.css`, `wwwroot/script.js`) - WTZI, UI ve stylu
+  streamovací služby: katalog doporučených filmů, vyhledávání, přehrávač s volbou titulků. `index.html`
+  obsahuje značku, `styles.css` vzhled a `script.js` logiku. Nastavení
   (avatar vpravo nahoře) nabízí katalog úvodní stránky, limit souběžných náhledů a Přímé přehrávání
   z CDN – proxy pro prehraj.to jsou vždy zapnuté a zdroj náhledů je vždy prehraj.to.
 - **API Endpoints**:
@@ -175,7 +176,7 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
     plakát přes keyless iTunes Search API (záloha: prehraj.to); UI tuhle volbu nenabízí, katalog si plakáty
     z iTunes tahá sám.
 
-**Přehrávání** (`index.html`): video se napřed pustí napřímo z CDN. Když se zasekne / vyhodí chybu / skončí
+**Přehrávání** (`wwwroot/script.js`): video se napřed pustí napřímo z CDN. Když se zasekne / vyhodí chybu / skončí
 předčasně (odkaz z CDN vyprší), appka si vezme čerstvý odkaz a naváže od stejného místa; po dvou neúspěšných
 pokusech přepne na `/api/stream`.
 
@@ -211,7 +212,7 @@ Běží to přes `router.php` (vestavěný PHP server): `/` je WTZI a `/api/sear
 `/api/thumb`, `/api/stream` i `/api/subtitles` používají logiku z `index.php`.
 
 `router.php` obsluhuje i `/api/subtitles` (relay VTT), takže titulky fungují i v self-hostu: seznam, který prohlížeč posílá
-(`&proxy=...` z `DEFAULT_PROXY_SERVERS`), přebije lokální seznam `$SERVER_PROXIES` na začátku
+(`&proxy=...` z `DEFAULT_PROXY_SERVERS` v `script.js`), přebije lokální seznam `$SERVER_PROXIES` na začátku
 souboru. Ten je záměrně prázdný: self-host typicky běží na české IP, takže v tuhle chvíli volá
 prehraj.to přímo z daného zařízení a proxy nepotřebuje. Když zařízení českou IP nemá, doplň sem
 seznam serverů.
