@@ -24,14 +24,13 @@
             background: var(--bg); box-shadow: 0 2px 12px rgba(0,0,0,0.6);
             padding-top: 8px; padding-bottom: 8px;
         }
-        /* logo po vzoru netflixovského wordmarku - vysoké, těsné, červené */
+        /* logo: červený wordmark; dřív se roztahovalo přes scaleY a Wflix pak vypadal stlačeně */
         .logo {
-            font-weight: 900; font-size: 28px; line-height: 1; letter-spacing: -0.5px; color: var(--red);
-            transform: scaleY(1.18); transform-origin: center;
+            font-weight: 900; font-size: 27px; line-height: 1; letter-spacing: -0.3px; color: var(--red);
             cursor: pointer; text-shadow: 0 3px 8px rgba(0,0,0,0.6); user-select: none;
             transition: font-size 0.3s;
         }
-        .nav.solid .logo { font-size: 24px; }
+        .nav.solid .logo { font-size: 23px; }
         .nav-links { display: flex; gap: 22px; font-size: 14px; }
         .nav-links a { color: rgba(255,255,255,0.9); text-decoration: none; cursor: pointer; transition: color 0.15s; }
         .nav-links a:first-child { color: #fff; font-weight: 700; }
@@ -90,10 +89,10 @@
         .search-box button.busy .search-spinner { display: block; }
         @keyframes search-spin { to { transform: rotate(360deg); } }
         .search-box input {
-            width: 196px; padding: 7px 6px 7px 0; border: none; outline: none; background: transparent;
+            width: 160px; padding: 7px 6px 7px 0; border: none; outline: none; background: transparent;
             color: #fff; font-size: 14px; transition: width 0.25s;
         }
-        .search-box:focus-within input { width: 240px; }
+        .search-box:focus-within input { width: 200px; }
         .search-box input::placeholder { color: #9a9a9a; }
 
         .container { max-width: none; }

@@ -47,14 +47,28 @@
 .intro .nf {
   width: min(300px, 62vw);
   height: min(300px, 62vw);
+  animation-name: zoom-in-w;
   animation-delay: 0.3s;
   animation-duration: 2.7s;
+  /* Vlastni vrstva: zoom pak skaluje hotovy obrazek misto aby kazdy frame
+     prekresloval ctyri stetce s rozostrenymi stiny. Na telefonu je to velky rozdil. */
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+/* 6x staci, aby W vyplnilo obrazovku; 15x znamenalo 20 megapixelu na frame. */
+@keyframes zoom-in-w {
+  0% { transform: translateZ(0) scale(1); }
+  100% { transform: translateZ(0) scale(6); }
 }
 
 .intro .nf [class*=helper-] {
   position: absolute;
 }
 .intro .nf [class*=helper-] .effect-brush {
+  /* stetec se posouva po sve vrstve, takze se pri tom neprekresluje jeho stin */
+  will-change: transform;
   position: absolute;
   width: 100%;
   height: 300%;
@@ -68,7 +82,7 @@
   background-color: #e40913;
   width: 100%;
   height: 70%;
-  box-shadow: 0px 0px 29px 24px #e40913;
+  box-shadow: 0px 0px 16px 10px #e40913;
 }
 .intro .nf [class*=helper-] .effect-brush [class*=fur-] {
   display: block;
@@ -245,7 +259,7 @@
   position: absolute;
   display: block;
   height: 100%;
-  box-shadow: 0px 0px 10px 0px rgba(228, 9, 19, 0.75);
+  box-shadow: 0px 0px 6px 0px rgba(228, 9, 19, 0.75);
   background: var(--color);
 }
 .intro .nf [class*=helper-] .effect-lumieres [class*=lamp-]::before {
@@ -255,7 +269,7 @@
   width: 100%;
   height: 100%;
   background: var(--color);
-  box-shadow: 0px 0px 10px 0px rgba(228, 9, 19, 0.75);
+  box-shadow: 0px 0px 6px 0px rgba(228, 9, 19, 0.75);
 }
 .intro .nf [class*=helper-] .effect-lumieres .lamp-1 {
   --color: #ff0100;
@@ -744,6 +758,7 @@
 }
 
 
+        /* jen pro tuhle nahledovou stranku: overlay pres celou obrazovku */
         body { margin: 0; background: #000; min-height: 100vh; }
         .intro {
             position: relative; inset: auto; width: 100vw; height: 100vh;
@@ -753,7 +768,6 @@
             transition: opacity 0.32s ease, visibility 0.32s ease;
         }
         .intro.is-leaving { opacity: 0; visibility: hidden; }
-
 </style>
 </head>
 <body>
