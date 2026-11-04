@@ -151,7 +151,10 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
   (avatar vpravo nahoře) nabízí katalog úvodní stránky, limit souběžných náhledů a Přímé přehrávání
   z CDN – proxy pro prehraj.to jsou vždy zapnuté a zdroj náhledů je vždy prehraj.to.
 - **API Endpoints**:
-  - `GET /api/search?q={query}` - Vyhledávání filmů
+  - `GET /api/search?q={query}[&p={stránka}]` - Vyhledávání filmů. Bez `p` je to první stránka; tlačítko
+    „Načíst další výsledky“ pod mřížkou si řekne o `p=2`, `p=3`, … a přidá je **bez ověřování** (ověřování
+    je pomalé a naráží na 429). Stránku posílá proxy jako `&p=N` do prehraj.to; pokud ji proxy neumí,
+    vrátí znovu první stránku a klient duplicity podle URL zahodí (tlačítko se pak schová).
   - `GET /api/proxy?url={prehrajto_url}` - Získání URL videa (a seznamu VTT titulků, pokud je stránka má)
   - `GET /api/validate?url={prehrajto_url}` - Ověření, že video funguje
   - `GET /api/stream?url={prehrajto_url}[&download=1&name={titul}]` - Server video přeposílá z CDN (podporuje Range/seeking)

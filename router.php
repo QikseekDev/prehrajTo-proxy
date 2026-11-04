@@ -544,7 +544,9 @@ function subtitleRelay() {
 switch ($path) {
     case '/api/search':
         $q = $_GET['q'] ?? '';
-        if ($proxies) sendRaceWinner(viaProxyRace($proxies, 'action=search&q=' . rawurlencode($q), 30));
+        $p = isset($_GET['p']) ? (int) $_GET['p'] : 1;
+        $qs = 'action=search&q=' . rawurlencode($q) . ($p > 1 ? '&p=' . $p : '');
+        if ($proxies) sendRaceWinner(viaProxyRace($proxies, $qs, 30));
         // proxy selhaly (429 atd.) -> jedeme přímo přes index.php na tomhle serveru
         $_GET['action'] = 'search';
         require __DIR__ . '/index.php';

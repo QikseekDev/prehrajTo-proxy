@@ -59,7 +59,9 @@ function handleSearch() {
         exit;
     }
     
-    $r = searchPrehraj($query);
+    $page = isset($_GET['p']) ? (int) $_GET['p'] : 1;
+    if ($page < 1) $page = 1;
+    $r = searchPrehraj($query, $page);
     if ($r['error']) {
         wtziFail(['success' => false, 'error' => $r['error']], $r['status'] ?? 0);
     }
@@ -76,9 +78,9 @@ function handleSearch() {
  * Search prehraj.to (shared by search and thumb).
  * Returns ['error' => string|null, 'movies' => [...]]
  */
-function searchPrehraj($query) {
-    // URL encode the query
-    $searchUrl = 'https://prehraj.to/hledej/' . rawurlencode($query);
+function searchPrehraj($query, $page = 1) {
+    // URL encode the query. &p= je stránka výsledků ("Načíst další" v appce).
+    $searchUrl = 'https://prehraj.to/hledej/' . rawurlencode($query) . ($page > 1 ? '?p=' . (int) $page : '');
 
     // Fetch search results
     $ch = curl_init();
