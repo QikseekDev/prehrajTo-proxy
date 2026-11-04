@@ -25,8 +25,8 @@ output_file: wtzi-intro.html
 - Preview stage: `960x620px`
 - Intro stage: `min(620px, 84vw)`, centered
 - Wordmark: `clamp(4.6rem, 16vw, 9.5rem)`, white, tight tracking
-- Red rule: full intro-stage width, `2px` high, directly under the wordmark
-- Floor glow: `54px` soft red ellipse below the rule
+- Horizon: full-width SVG arc, `800x130` viewBox, red at the edges and warm amber at the center
+- Horizon glow: blurred duplicate arc plus a warm floor pool below the wordmark
 - No buttons, labels, progress meters, controls, or cursor.
 
 # Layout (Mobile)
@@ -44,12 +44,12 @@ output_file: wtzi-intro.html
 ### Before State
 
 - Fully black field with a barely visible red pool at the lower center.
-- Red rule track is present but empty.
+- The curved horizon is hidden.
 - WTZI is below the mask line, tilted back and pushed away from the viewer.
 
 ### Action
 
-- **0.18s:** the red rule draws left to right.
+- **0.16s:** the curved horizon draws from left to right, with a blurred warm glow following it.
 - **0.30s:** WTZI unfolds from behind the rule using `rotateX`, a small `rotateY`, and negative Z depth.
 - **1.12s:** one narrow white light pass crosses the wordmark.
 - **1.45s:** the wordmark settles with a slight overshoot.
@@ -57,7 +57,7 @@ output_file: wtzi-intro.html
 
 ### Payoff
 
-The white WTZI mark and red rule become a physical, dimensional title frame. The dark-red extruded edge and floor glow sell the depth without particles, gradients, or extra copy.
+The white WTZI mark above the warm curved horizon becomes a physical, dimensional title frame. The dark-red extruded edge and floor glow sell the depth without particles, gradients, or extra copy.
 
 ### After State
 
