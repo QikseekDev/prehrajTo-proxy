@@ -1939,9 +1939,9 @@
                 tone({ freq: 176, endFreq: 88, type: 'triangle', dur: 0.16, gain: 0.055, at: 0.16 });
                 noise({ at: 0.18, dur: 0.9, gain: 0.02, from: 180, to: 1600 });
                 // wordmark se usadí
-                tone({ freq: 92, endFreq: 64, dur: 0.5, gain: 0.12, filter: 300, at: 1.18 });
-                tone({ freq: 210, endFreq: 104, type: 'triangle', dur: 0.2, gain: 0.035, at: 1.2 });
-                tone({ freq: 138, dur: 0.25, gain: 0.04, at: 1.22 });
+                tone({ freq: 92, endFreq: 64, dur: 0.5, gain: 0.12, filter: 300, at: 1.3 });
+                tone({ freq: 210, endFreq: 104, type: 'triangle', dur: 0.2, gain: 0.035, at: 1.33 });
+                tone({ freq: 138, dur: 0.25, gain: 0.04, at: 1.35 });
             }
 
             if (AudioCtor) {

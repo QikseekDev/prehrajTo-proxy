@@ -640,34 +640,54 @@
         .intro-mark {
             position: relative; overflow: hidden;
             padding: 0.06em 0 0.14em; text-align: center;
+            perspective: 820px; perspective-origin: 50% 100%;
         }
         .intro-wordmark {
             position: relative; display: inline-block;
             color: #f2f2f2; font-size: clamp(4.6rem, 16vw, 9.5rem);
             font-weight: 800; line-height: 0.78; letter-spacing: -0.055em;
-            transform: translateY(115%);
-            animation: intro-wordmark-rise 1s cubic-bezier(0.16, 0.84, 0.24, 1) 0.32s forwards;
+            transform-origin: 50% 100%;
+            transform: translateY(115%) rotateX(56deg) rotateY(-7deg) translateZ(-50px);
+            text-shadow:
+                0.012em 0.012em 0 #8c080e,
+                0.024em 0.024em 0 #70060b,
+                0.036em 0.036em 0 #540408,
+                0.048em 0.048em 0 #3b0305,
+                0 0.12em 0.18em rgba(0,0,0,0.55);
+            animation: intro-wordmark-rise 1.15s cubic-bezier(0.16, 0.84, 0.24, 1) 0.3s forwards;
         }
         .intro-wordmark::after {
             content: ''; position: absolute; inset: 0; pointer-events: none;
             background: linear-gradient(105deg, transparent 32%, rgba(255,255,255,0.42) 50%, transparent 68%);
             transform: translateX(-125%); mix-blend-mode: screen;
-            animation: intro-wordmark-shine 0.7s 1.02s ease-in-out forwards;
+            animation: intro-wordmark-shine 0.7s 1.12s ease-in-out forwards;
         }
         .intro-rule {
             position: relative; height: 2px; overflow: hidden;
             background: rgba(255,255,255,0.08);
+            box-shadow: 0 14px 38px rgba(229,9,20,0.16);
+        }
+        .intro-stage::after {
+            content: ''; position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+            height: 54px; z-index: -1; pointer-events: none;
+            background: radial-gradient(ellipse at 50% 0%, rgba(229,9,20,0.14), transparent 68%);
+            filter: blur(14px);
         }
         .intro-rule span {
             display: block; width: 0; height: 100%;
             background: var(--red);
             animation: intro-rule-draw 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.18s forwards;
         }
-        @keyframes intro-wordmark-rise { to { transform: translateY(0); } }
+        @keyframes intro-wordmark-rise {
+            0% { transform: translateY(115%) rotateX(56deg) rotateY(-7deg) translateZ(-50px); }
+            70% { transform: translateY(-1.5%) rotateX(-3deg) rotateY(1deg) translateZ(0); }
+            100% { transform: translateY(0) rotateX(0) rotateY(0) translateZ(0); }
+        }
         @keyframes intro-wordmark-shine { to { transform: translateX(125%); } }
         @keyframes intro-rule-draw { to { width: 100%; } }
         @media (max-width: 700px) {
             .intro-stage { width: 84vw; }
+            .intro-mark { perspective: 660px; }
             .intro-wordmark { font-size: clamp(4rem, 19vw, 7rem); }
         }
         @media (prefers-reduced-motion: reduce) {
