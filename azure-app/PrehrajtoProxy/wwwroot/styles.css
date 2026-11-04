@@ -619,6 +619,7 @@
             display: flex; align-items: center; justify-content: center;
             overflow: hidden; background: #070707; color: #fff;
             opacity: 1; visibility: visible;
+            perspective: 1000px; perspective-origin: 50% 56%;
             transition: opacity 0.32s ease, visibility 0.32s ease;
         }
         .intro[hidden] { display: none; }
@@ -636,6 +637,8 @@
         .intro-stage {
             position: relative; z-index: 2; width: min(620px, 84vw);
             display: flex; flex-direction: column; align-items: stretch;
+            transform-origin: 50% 56%;
+            animation: intro-camera 2.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
         }
         .intro-mark {
             position: relative; overflow: hidden;
@@ -685,6 +688,11 @@
         }
         @keyframes intro-wordmark-shine { to { transform: translateX(125%); } }
         @keyframes intro-rule-draw { to { width: 100%; } }
+        @keyframes intro-camera {
+            0% { transform: scale(1.035) rotateX(1.2deg); }
+            60% { transform: scale(1) rotateX(0deg); }
+            100% { transform: scale(1.006) rotateX(0deg); }
+        }
         @media (max-width: 700px) {
             .intro-stage { width: 84vw; }
             .intro-mark { perspective: 660px; }
@@ -693,6 +701,7 @@
         @media (prefers-reduced-motion: reduce) {
             .intro, .intro * { transition-duration: 0.01ms !important; }
             .intro *, .intro *::before, .intro *::after { animation: none !important; }
+            .intro-stage { transform: none; }
             .intro-wordmark { transform: none; }
             .intro-rule span { width: 100%; }
         }

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WTZI — Intro title card</title>
+<style>
+    :root {
+        --bg: #070707;
+        --deep: #050505;
+        --surface: #141414;
+        --red: #e50914;
+        --text: #f2f2f2;
+        --muted: #8c8c8c;
+        --font: 'Netflix Sans', 'Helvetica Neue', Helvetica, Arial, -apple-system, 'Segoe UI', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0b0b0b;
+        font-family: var(--font);
+        overflow: auto;
+    }
+
+    .stage {
+        position: relative;
+        width: 960px;
+        height: 620px;
+        overflow: hidden;
+        border-radius: 12px;
+        background: var(--bg);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65);
+    }
+
+    .intro {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background: var(--bg);
+        color: #fff;
+        perspective: 1000px;
+        perspective-origin: 50% 56%;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.32s ease, visibility 0.32s ease;
+    }
+    .stage.playing .intro { opacity: 1; visibility: visible; }
+    .stage.playing.leaving .intro { opacity: 0; visibility: hidden; }
+
+    .intro::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background:
+            radial-gradient(ellipse at 50% 64%, rgba(229, 9, 20, 0.10), transparent 38%),
+            linear-gradient(180deg, #0b0b0b 0%, #070707 55%, var(--deep) 100%);
+    }
+    .intro::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.35), transparent 20%, transparent 80%, rgba(0, 0, 0, 0.55));
+    }
+
+    .intro-stage {
+        position: relative;
+        z-index: 2;
+        width: min(620px, 84%);
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        transform-origin: 50% 56%;
+    }
+    .stage.playing .intro-stage {
+        animation: intro-camera 2.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    }
+
+    .intro-mark {
+        position: relative;
+        overflow: hidden;
+        padding: 0.06em 0 0.14em;
+        text-align: center;
+        perspective: 820px;
+        perspective-origin: 50% 100%;
+    }
+
+    .intro-wordmark {
+        position: relative;
+        display: inline-block;
+        color: var(--text);
+        font-size: clamp(4.6rem, 16vw, 9.5rem);
+        font-weight: 800;
+        line-height: 0.78;
+        letter-spacing: -0.055em;
+        transform-origin: 50% 100%;
+        transform: translateY(115%) rotateX(56deg) rotateY(-7deg) translateZ(-50px);
+        text-shadow:
+            0.012em 0.012em 0 #8c080e,
+            0.024em 0.024em 0 #70060b,
+            0.036em 0.036em 0 #540408,
+            0.048em 0.048em 0 #3b0305,
+            0 0.12em 0.18em rgba(0, 0, 0, 0.55);
+    }
+    .stage.playing .intro-wordmark {
+        animation: intro-wordmark-rise 1.15s cubic-bezier(0.16, 0.84, 0.24, 1) 0.3s both;
+    }
+
+    .intro-wordmark::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(105deg, transparent 32%, rgba(255, 255, 255, 0.42) 50%, transparent 68%);
+        transform: translateX(-125%);
+        mix-blend-mode: screen;
+    }
+    .stage.playing .intro-wordmark::after {
+        animation: intro-wordmark-shine 0.7s 1.12s ease-in-out both;
+    }
+
+    .intro-rule {
+        position: relative;
+        height: 2px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.08);
+        box-shadow: 0 14px 38px rgba(229, 9, 20, 0.16);
+    }
+    .intro-rule span {
+        display: block;
+        width: 0;
+        height: 100%;
+        background: var(--red);
+    }
+    .stage.playing .intro-rule span {
+        animation: intro-rule-draw 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.18s both;
+    }
+
+    .intro-stage::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(100% + 4px);
+        height: 54px;
+        z-index: -1;
+        pointer-events: none;
+        background: radial-gradient(ellipse at 50% 0%, rgba(229, 9, 20, 0.14), transparent 68%);
+        filter: blur(14px);
+    }
+
+    @keyframes intro-wordmark-rise {
+        0% { transform: translateY(115%) rotateX(56deg) rotateY(-7deg) translateZ(-50px); }
+        70% { transform: translateY(-1.5%) rotateX(-3deg) rotateY(1deg) translateZ(0); }
+        100% { transform: translateY(0) rotateX(0) rotateY(0) translateZ(0); }
+    }
+    @keyframes intro-wordmark-shine {
+        to { transform: translateX(125%); }
+    }
+    @keyframes intro-rule-draw {
+        to { width: 100%; }
+    }
+    @keyframes intro-camera {
+        0% { transform: scale(1.035) rotateX(1.2deg); }
+        60% { transform: scale(1) rotateX(0deg); }
+        100% { transform: scale(1.006) rotateX(0deg); }
+    }
+
+    @media (max-width: 700px) {
+        .stage {
+            width: 360px;
+            height: 640px;
+            border-radius: 16px;
+        }
+        .intro-stage { width: 84%; }
+        .intro-mark { perspective: 660px; }
+        .intro-wordmark { font-size: clamp(4rem, 19vw, 7rem); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .stage.playing .intro * { animation: none !important; }
+        .stage.playing .intro-stage { transform: none; }
+        .stage.playing .intro-wordmark { transform: none; }
+        .stage.playing .intro-wordmark::after { display: none; }
+        .stage.playing .intro-rule span { width: 100%; }
+    }
+</style>
+</head>
+<body>
+    <div class="stage" id="stage">
+        <div class="intro" aria-hidden="true">
+            <div class="intro-stage">
+                <div class="intro-mark" aria-hidden="true">
+                    <div class="intro-wordmark">WTZI</div>
+                </div>
+                <div class="intro-rule" aria-hidden="true"><span></span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (() => {
+            const stage = document.getElementById('stage');
+            const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+            if (reduceMotion) {
+                stage.classList.add('playing');
+                return;
+            }
+
+            function play() {
+                stage.classList.remove('playing', 'leaving');
+                void stage.offsetWidth;
+                stage.classList.add('playing');
+                window.setTimeout(() => stage.classList.add('leaving'), 2600);
+                window.setTimeout(() => stage.classList.remove('playing', 'leaving'), 3050);
+            }
+
+            play();
+            window.setInterval(play, 4400);
+        })();
+    </script>
+</body>
+</html>
