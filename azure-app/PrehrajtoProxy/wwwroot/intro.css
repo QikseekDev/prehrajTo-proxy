@@ -757,7 +757,6 @@
   width: 16%; height: 92.5%; left: 52.8%; top: 3.75%;
   transform: rotate(-13.5deg);
   overflow: hidden;
-  box-shadow: 0 0 35px -12px rgba(0, 0, 0, 0.4);
 }
 .intro .nf[data-letter=W] .helper-3 .effect-brush {
   animation-name: brush-paint; animation-duration: 0.6s;
@@ -776,12 +775,27 @@
 
 .intro .nf[data-letter=W] .effect-lumieres { animation-delay: 2.15s; }
 
+/* Vrchol obracene V: ploche konce tahu 2 a 3 jsou na sebe skosene, takze nahore zustava
+   zubek a pri velkem zoomu je videt jen prekryv car. Vypln (cervena, za tahy) ho zacelí:
+   rovny horni okraj mezi rohy obou tahu (42.2 % / 57.8 %, 3.2 %) a zasah dolu do prekryvu,
+   aby mezi vyplni a tahy nebyl sev. Objevi se, az je dokresleny tah 3 (1.3 + 0.6 s). */
+.intro .nf[data-letter=W]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: #e40913;
+  clip-path: polygon(42.2% 3.2%, 57.8% 3.2%, 52% 7.5%, 48% 7.5%);
+  opacity: 0;
+  animation: showing-lumieres 0.2s ease-out 1.75s forwards;
+}
 /* Kdo si vypnul animace, dostane staticky obrazek: cervene W bez zoomu a bez masky. */
 @media (prefers-reduced-motion: reduce) {
   .intro, .intro * { transition-duration: 0.01ms !important; }
   .intro .nf, .intro .nf *, .intro .nf *::before { animation: none !important; }
   .intro { animation: none !important; }
   .intro .nf { transform: none; translate: none; opacity: 1; }
+  .intro .nf[data-letter=W]::after { opacity: 1; }
   .intro .nf::before { display: none; }
   .intro .effect-lumieres { opacity: 1; }
 }
