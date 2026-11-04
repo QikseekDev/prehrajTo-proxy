@@ -29,7 +29,7 @@ function wtziFail($payload, $upstream = 0) {
     exit;
 }
 
-// Determine action: search, stream, validate or get video
+// Determine action: search, stream or get video
 $action = isset($_GET['action']) ? $_GET['action'] : 'video';
 
 if ($action === 'search') {
@@ -38,8 +38,6 @@ if ($action === 'search') {
     handleThumb();
 } elseif ($action === 'stream') {
     handleStream();
-} elseif ($action === 'validate') {
-    handleValidate();
 } else {
     handleVideo();
 }
@@ -59,9 +57,7 @@ function handleSearch() {
         exit;
     }
     
-    $page = isset($_GET['p']) ? (int) $_GET['p'] : 1;
-    if ($page < 1) $page = 1;
-    $r = searchPrehraj($query, $page);
+    $r = searchPrehraj($query);
     if ($r['error']) {
         wtziFail(['success' => false, 'error' => $r['error']], $r['status'] ?? 0);
     }
@@ -78,9 +74,9 @@ function handleSearch() {
  * Search prehraj.to (shared by search and thumb).
  * Returns ['error' => string|null, 'movies' => [...]]
  */
-function searchPrehraj($query, $page = 1) {
-    // URL encode the query. &p= je stránka výsledků ("Načíst další" v appce).
-    $searchUrl = 'https://prehraj.to/hledej/' . rawurlencode($query) . ($page > 1 ? '?p=' . (int) $page : '');
+function searchPrehraj($query) {
+    // URL encode the query.
+    $searchUrl = 'https://prehraj.to/hledej/' . rawurlencode($query);
 
     // Fetch search results
     $ch = curl_init();
@@ -411,96 +407,6 @@ function handleStream() {
     
     curl_exec($ch);
     curl_close($ch);
-    exit;
-}
-
-/**
- * Handle video validation - check if video URL works (HEAD request)
- * Returns: { "valid": true/false, "status": httpCode }
- */
-function handleValidate() {
-    $url = isset($_GET['url']) ? $_GET['url'] : '';
-    
-    if (empty($url)) {
-        echo json_encode([
-            'valid' => false,
-            'error' => 'Missing url parameter'
-        ]);
-        exit;
-    }
-    
-    // First get video URL from prehraj.to page
-    if (strpos($url, 'prehraj.to') !== false) {
-        // Fetch the page and extract video URL
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-        
-        $html = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
-        if ($httpCode < 200 || $httpCode >= 300 || empty($html)) {
-            // chyba (429/403/...) musí mít ne-2xx kód, jinak závod zdrojů myslí, že je všechno OK
-            wtziFail([
-                'valid' => false,
-                'status' => $httpCode,
-                'error' => 'Cannot fetch prehraj.to page'
-            ], $httpCode);
-        }
-        
-        // Extract video URL
-        $videoUrl = null;
-        $patterns = [
-            '/["\']?(https?:\/\/[^"\']*premiumcdn\.net[^"\']*\.m3u8[^"\']*)["\']?/i',
-            '/["\']?(https?:\/\/[^"\']*premiumcdn\.net[^"\']*\.mp4[^"\']*)["\']?/i',
-        ];
-        
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $html, $matches)) {
-                $videoUrl = str_replace('\/', '/', $matches[1]);
-                break;
-            }
-        }
-        
-        if (!$videoUrl) {
-            echo json_encode([
-                'valid' => false,
-                'error' => 'Video URL not found in page'
-            ]);
-            exit;
-        }
-        
-        $url = $videoUrl;
-    }
-    
-    // Do partial GET request instead of HEAD (HLS streams don't respond to HEAD)
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_NOBODY, false);  // GET instead of HEAD
-    curl_setopt($ch, CURLOPT_RANGE, '0-1024'); // Only first 1KB
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-    curl_setopt($ch, CURLOPT_REFERER, 'https://prehraj.to/');  // Required by some CDNs
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 20);  // Increased from 10
-
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    // 206 = Partial Content (success for Range request), 200 = OK
-    $valid = ($httpCode >= 200 && $httpCode < 400);
-    
-    echo json_encode([
-        'valid' => $valid,
-        'status' => $httpCode
-    ]);
     exit;
 }
 

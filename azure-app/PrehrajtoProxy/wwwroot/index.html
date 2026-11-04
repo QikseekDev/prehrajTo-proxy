@@ -287,15 +287,6 @@
         .results-section, .player-section { display: none; }
         .results-section { padding: 100px 4% 0; }
         .results-info { color: var(--muted); font-size: 16px; margin-bottom: 18px; }
-        .results-more { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 26px 0 8px; }
-        .btn-more {
-            padding: 11px 22px; border-radius: 6px; font: inherit; font-size: 15px; font-weight: 600;
-            color: #fff; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.22);
-            cursor: pointer;
-        }
-        .btn-more:hover { background: rgba(255,255,255,0.18); }
-        .btn-more:disabled { opacity: 0.6; cursor: default; }
-        .more-hint { font-size: 13px; color: var(--muted); }
         .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 40px 8px; }
 
         /* Stav hledání je součástí stránky s výsledky - žádná plovoucí hláška v rohu. */
@@ -690,10 +681,6 @@
             <div id="resultsState" class="results-state"></div>
             <div id="resultsInfo" class="results-info"></div>
             <div id="resultsGrid" class="results-grid"></div>
-            <div class="results-more">
-                <button type="button" class="btn-more" id="moreResultsBtn" hidden>Načíst další výsledky</button>
-                <span class="more-hint" id="moreResultsHint"></span>
-            </div>
         </div>
 
         <!-- Player -->
@@ -798,8 +785,6 @@
         const resultsSection = document.getElementById('resultsSection');
         const resultsGrid = document.getElementById('resultsGrid');
         const resultsInfo = document.getElementById('resultsInfo');
-        const moreResultsBtn = document.getElementById('moreResultsBtn');
-        const moreResultsHint = document.getElementById('moreResultsHint');
         const playerSection = document.getElementById('playerSection');
         const videoPlayer = document.getElementById('videoPlayer');
         const pageSection = document.getElementById('pageSection');
@@ -828,9 +813,6 @@
         let currentResults = [];
         // Stránkování hledání: první stránka se ověřuje (mrtvé kusy zmizí), další se jen
         // přidají - ověřování je to pomalé a naráží na 429, a videa většinou fungují i bez něj.
-        let searchPage = 1;
-        let searchQuery = '';
-        let moreBusy = false;
 
         // Záložní katalog - použije se jen když se nepovede stáhnout /api/catalog (iTunes).
         // Filmy pro homepage jinak chodí ze serveru (iTunes RSS, cache na 1 den) včetně plakátů.
@@ -1535,9 +1517,6 @@
             searchBtn.disabled = true;
             searchBtn.classList.add('busy');
             currentResults = [];
-            searchPage = 1;
-            searchQuery = query;
-            showMoreResults(false);
             resultsLoading(`Hledám „${query}" …`);
 
             try {
@@ -1602,67 +1581,8 @@
             movies.forEach(movie => resultsGrid.appendChild(createResultCard(movie)));
 
             showSection('results');
-            showMoreResults(true);
         }
 
-        // Tlačítko "Načíst další" - jen viditelnost a popisek.
-        function showMoreResults(show) {
-            moreResultsBtn.hidden = !show;
-            moreResultsHint.textContent = '';
-            moreResultsBtn.disabled = false;
-            moreResultsBtn.textContent = 'Načíst další výsledky';
-        }
-
-        // Další stránka hledání. Výsledky se přidají BEZ ověřování - právě ověřování je pomalé
-        // a naráží na 429, kdežto videa obvykle fungují. Duplicity se zahodí podle URL, takže
-        // když proxy stránkování neumí a vrátí stejnou třicítku, tlačítko se schová.
-        async function loadMoreResults() {
-            if (moreBusy || !searchQuery) return;
-            moreBusy = true;
-            moreResultsBtn.disabled = true;
-            moreResultsBtn.textContent = 'Načítám…';
-            moreResultsHint.textContent = '';
-            try {
-                const page = searchPage + 1;
-                const { data, rateLimited } = await apiJson(
-                    `/api/search?q=${encodeURIComponent(searchQuery)}&p=${page}${proxyQS()}`,
-                    { retries: 1 });
-
-                if (rateLimited) {
-                    moreResultsHint.textContent = 'Server je zaneprázdněný, zkus to za chvíli.';
-                    return;
-                }
-
-                const movies = (data && data.success && Array.isArray(data.movies)) ? data.movies : [];
-                const known = new Set(currentResults.map(m => m.url));
-                const fresh = movies.filter(m => m.url && !known.has(m.url));
-
-                if (fresh.length === 0) {
-                    moreResultsBtn.hidden = true;
-                    moreResultsHint.textContent = 'Další výsledky už nejsou.';
-                    return;
-                }
-
-                searchPage = page;
-                fresh.forEach(m => {
-                    currentResults.push(m);
-                    resultsGrid.appendChild(createResultCard(m));
-                });
-                resultsInfo.textContent = `Nalezeno ${currentResults.length} výsledků pro „${searchQuery}" (další bez ověření)`;
-            } catch (err) {
-                console.error('Load more error:', err);
-                moreResultsHint.textContent = 'Další výsledky se nepodařilo načíst.';
-            } finally {
-                moreBusy = false;
-                if (!moreResultsBtn.hidden) {
-                    moreResultsBtn.disabled = false;
-                    moreResultsBtn.textContent = 'Načíst další výsledky';
-                }
-            }
-        }
-
-        moreResultsBtn.addEventListener('click', loadMoreResults);
-        
         // ===== Přehrávání =====
         // Odkaz na video z CDN je podepsaný a po pár minutách přestane fungovat - prohlížeč pak při
         // dalším dotahování (buffer dojde za ~3-5 min) dostane chybu a video se zasekne. Proto:

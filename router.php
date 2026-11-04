@@ -9,7 +9,6 @@
  *  - /            -> wwwroot/index.html (WTZI)
  *  - /api/search  -> index.php?action=search (nebo souběžně přes $SERVER_PROXIES / ?proxy=, viz níže)
  *  - /api/proxy   -> index.php (získání URL videa)
- *  - /api/validate-> index.php?action=validate
  *  - /api/thumb   -> index.php?action=thumb (thumbnail pro homepage)
  *  - /api/subtitles -> relay VTT titulků pro <track>
  *  - /api/stream  -> přeposílání videa z CDN (Range, obnova vypršelého odkazu) + stahování
@@ -544,8 +543,7 @@ function subtitleRelay() {
 switch ($path) {
     case '/api/search':
         $q = $_GET['q'] ?? '';
-        $p = isset($_GET['p']) ? (int) $_GET['p'] : 1;
-        $qs = 'action=search&q=' . rawurlencode($q) . ($p > 1 ? '&p=' . $p : '');
+        $qs = 'action=search&q=' . rawurlencode($q);
         if ($proxies) sendRaceWinner(viaProxyRace($proxies, $qs, 30));
         // proxy selhaly (429 atd.) -> jedeme přímo přes index.php na tomhle serveru
         $_GET['action'] = 'search';
@@ -583,15 +581,6 @@ switch ($path) {
         // PHP proxy servery se použijí jen jako záloha pro získání odkazu.
         streamRelay(array_values(array_unique(array_filter($SERVER_PROXIES, 'isValidProxyUrl'))));
         exit;
-
-    case '/api/validate':
-        $url = $_GET['url'] ?? '';
-        if ($url === '') jsonError(['valid' => false, 'error' => 'Missing url parameter'], 200);
-        if (!isPrehrajUrl($url)) jsonError(['valid' => false, 'error' => 'URL must be from prehraj.to'], 200);
-        if ($proxies) sendRaceWinner(viaProxyRace($proxies, 'action=validate&url=' . rawurlencode($url), 30));
-        $_GET['action'] = 'validate';
-        require __DIR__ . '/index.php';
-        return true;
 
     case '/api/catalog':
         catalogResponse((isset($_GET['lang']) && $_GET['lang'] === 'en') ? 'en' : 'cz');

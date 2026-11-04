@@ -602,7 +602,7 @@ static bool IsPrivateHost(string host)
 }
 
 // ------------------------------------------------------------------ /api/search
-app.MapGet("/api/search", async (string q, int? p, string[]? proxy, IHttpClientFactory f, IMemoryCache cache) =>
+app.MapGet("/api/search", async (string q, string[]? proxy, IHttpClientFactory f, IMemoryCache cache) =>
 {
     q = (q ?? "").Trim();
     if (q.Length == 0)
@@ -610,10 +610,7 @@ app.MapGet("/api/search", async (string q, int? p, string[]? proxy, IHttpClientF
 
     // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nikdy nechodí (datacentrová IP
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
-    // ?p= je stránka výsledků ("Načíst další" v UI). Proxy ji předá prehraj.to jako &p=N;
-    // když ji neumí, vrátí znovu první stránku a klient duplicity zahodí.
-    var page = (p is > 1 and <= 50) ? p.Value : 1;
-    var query = $"action=search&q={Uri.EscapeDataString(q)}" + (page > 1 ? $"&p={page}" : "");
+    var query = $"action=search&q={Uri.EscapeDataString(q)}";
     var sources = OrderedProxies(EffectiveProxies(proxy, serverProxies))
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
@@ -621,7 +618,7 @@ app.MapGet("/api/search", async (string q, int? p, string[]? proxy, IHttpClientF
     // Sdílená cache: normalizovaný dotaz (malá písmena, jedny mezery), jen bez vlastního ?proxy=.
     var norm = Regex.Replace(q.ToLowerInvariant(), @"\s+", " ");
     var (ok, body, errors) = CanShareCache(proxy) && norm.Length <= 100
-        ? await CachedFetch(cache, $"search:{page}:" + norm, SearchTtl, () => FirstWorking(sources))
+        ? await CachedFetch(cache, "search:" + norm, SearchTtl, () => FirstWorking(sources))
         : await FirstWorking(sources);
     if (!ok) return AllFailed(errors);
     return Results.Content(body, "application/json");
