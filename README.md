@@ -231,7 +231,7 @@ vyptej se provozovatele ([contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)
 - 📱 Responzivní design (mobil, tablet, desktop)
 - 📺 Živé vysílání – IPTV kanály (Česko, čeština, Slovensko)
 - 📝 Titulky (WebVTT) u filmů, které je mají
-- 🎬 Filmový úvodní loader s volitelným zvukem
+- 🎬 Filmový úvodní podpis se zvukem
 - 🔗 Sdílení odkazů na konkrétní videa
 - ⬅️ Navigace zpět/vpřed v prohlížeči
 

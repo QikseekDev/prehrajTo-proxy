@@ -103,11 +103,11 @@
             // PROXY-SERVERS:END
         ];
         const SETTINGS_KEY = 'wtzi-settings';
-        let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: true, introSound: true };
+        let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: true };
         try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) {}
         // Starší verze ukládaly volby, které už v panelu nejsou (vypnuté náhledy, zdroj
         // náhledů, proxy). Zahodit, ať se v localStorage nevrátí zpátky do oběhu.
-        ['thumbsOff', 'thumbSrc', 'proxyOn', 'proxyServers', 'proxyUrl'].forEach(k => delete settings[k]);
+        ['thumbsOff', 'thumbSrc', 'proxyOn', 'proxyServers', 'proxyUrl', 'introSound'].forEach(k => delete settings[k]);
         const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} };
         const thumbLimit = () => settings.limitOn ? Math.max(1, settings.limit | 0) : Infinity;
         // Přímé přehrávání z CDN (Nastavení, výchozí: zapnuto). Zapnuto = video i HLS jdou
@@ -654,7 +654,7 @@
                 body: `
                     <p>WTZI nepoužívá cookies pro sledování ani reklamu a nemá žádnou přihlášenou relaci. Místo cookies si do prohlížeče ukládá dvě věci přes <code>localStorage</code>:</p>
                     <ul>
-                        <li><code>${SETTINGS_KEY}</code> – tvoje nastavení (katalog na úvodní stránce, limit náhledů, přímé přehrávání, zvuk úvodu).</li>
+                        <li><code>${SETTINGS_KEY}</code> – tvoje nastavení (katalog na úvodní stránce, limit náhledů, přímé přehrávání).</li>
                         <li><code>${THUMB_KEY}</code> – cache náhledů, aby se stejné obrázky nenačítaly pořád dokola.</li>
                     </ul>
                     <p>Obě položky zůstávají jen v tvém prohlížeči, na server se neposílají. Smazat je můžeš tlačítkem níž nebo v prohlížeči (Nastavení → Ochrana soukromí → Data stránek).</p>
@@ -1824,32 +1824,17 @@
 
         })();
 
-        // ===== Filmový úvodní loader: obraz i zvuk =====
-        // Zvuk se skládá přes Web Audio (žádný externí soubor). Prohlížeče blokují
-        // zvuk bez gesta, proto loader nabídne „Klepnutím zapnete zvuk“ a první
-        // klik/klávesa jej spustí. Volba se ukládá do existujícího wtzi-settings.
+        // ===== WTZI intro: krátký filmový podpis =====
+        // Bez tlačítek a bez interakce: overlay se sám zavře.
+        // Zvuk hraje jen tehdy, když ho prohlížeč povolí bez gesta.
         (() => {
             const intro = document.getElementById('intro');
             if (!intro) return;
 
-            const soundBtn = document.getElementById('introSound');
-            const soundLabel = document.getElementById('introSoundLabel');
-            const skipBtn = document.getElementById('introSkip');
-            const hint = document.getElementById('introHint');
-            const statusEl = document.getElementById('introStatus');
             const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-            const duration = reduceMotion ? 900 : 3300;
+            const duration = reduceMotion ? 1000 : 2700;
             const AudioCtor = window.AudioContext || window.webkitAudioContext;
-            const state = {
-                active: true,
-                finishing: false,
-                soundOn: settings.introSound !== false,
-                timer: 0,
-                messageTimers: [],
-                audioStarted: false,
-                audioBlocked: false,
-                lastFocus: document.activeElement,
-            };
+            const state = { active: true, finishing: false, audioStarted: false };
 
             const audio = {
                 ctx: null,
@@ -1860,7 +1845,7 @@
                     try {
                         this.ctx = new AudioCtor();
                         this.master = this.ctx.createGain();
-                        this.master.gain.value = state.soundOn ? 0.62 : 0.0001;
+                        this.master.gain.value = 0.55;
                         this.master.connect(this.ctx.destination);
                     } catch (e) {
                         this.ctx = null;
@@ -1868,26 +1853,7 @@
                     }
                 },
                 running() { return !!(this.ctx && this.ctx.state === 'running'); },
-                resume() {
-                    this.init();
-                    if (!this.ctx) return Promise.resolve(false);
-                    if (this.ctx.state === 'running') return Promise.resolve(true);
-                    try {
-                        return this.ctx.resume().then(() => this.ctx.state === 'running').catch(() => false);
-                    } catch (e) {
-                        return Promise.resolve(false);
-                    }
-                },
-                setMuted(muted) {
-                    if (!this.ctx || !this.master) return;
-                    const now = this.ctx.currentTime;
-                    try {
-                        this.master.gain.cancelScheduledValues(now);
-                        this.master.gain.setValueAtTime(Math.max(0.0001, this.master.gain.value), now);
-                        this.master.gain.linearRampToValueAtTime(muted ? 0.0001 : 0.62, now + 0.18);
-                    } catch (e) {}
-                },
-                stop(fade = 0.35) {
+                stop(fade = 0.4) {
                     if (!this.ctx || !this.master) return;
                     const now = this.ctx.currentTime;
                     try {
@@ -1906,7 +1872,7 @@
                 },
             };
 
-            function tone({ freq, endFreq, type = 'sine', at = 0, dur = 1, gain = 0.15, attack = 0.012, filter = 0, filterEnd, pan = 0 }) {
+            function tone({ freq, endFreq, type = 'sine', at = 0, dur = 1, gain = 0.15, attack = 0.012, filter = 0 }) {
                 if (!audio.running() || !audio.master) return;
                 const ctx = audio.ctx;
                 const t0 = ctx.currentTime + at;
@@ -1925,16 +1891,8 @@
                     f.type = 'lowpass';
                     f.Q.value = 0.8;
                     f.frequency.setValueAtTime(filter, t0);
-                    if (filterEnd) f.frequency.exponentialRampToValueAtTime(filterEnd, t0 + dur);
                     node.connect(f);
                     node = f;
-                }
-                if (pan && ctx.createStereoPanner) {
-                    const p = ctx.createStereoPanner();
-                    p.pan.setValueAtTime(-pan, t0);
-                    p.pan.linearRampToValueAtTime(pan, t0 + dur);
-                    node.connect(p);
-                    node = p;
                 }
                 node.connect(g);
                 g.connect(audio.master);
@@ -1942,7 +1900,7 @@
                 try { osc.start(t0); osc.stop(t0 + dur + 0.05); } catch (e) {}
             }
 
-            function noise({ at = 0, dur = 1.2, gain = 0.06, from = 180, to = 2800 } = {}) {
+            function noise({ at = 0, dur = 1.0, gain = 0.02, from = 180, to = 1600 } = {}) {
                 if (!audio.running() || !audio.master) return;
                 const ctx = audio.ctx;
                 const t0 = ctx.currentTime + at;
@@ -1969,180 +1927,41 @@
             }
 
             function playScore() {
-                if (state.audioStarted || !state.soundOn || !state.active) return;
+                if (state.audioStarted || !state.active) return;
                 state.audioStarted = true;
-                audio.setMuted(false);
-                tone({ freq: 72, endFreq: 31, dur: 1.9, gain: 0.42, filter: 210 });
-                tone({ freq: 144, endFreq: 62, dur: 1.4, gain: 0.1, type: 'triangle', at: 0.02, pan: 0.15 });
-                tone({ freq: 82, endFreq: 300, dur: 2.35, gain: 0.045, type: 'sawtooth', filter: 260, filterEnd: 2600, at: 0.08, pan: 0.55 });
-                noise({ at: 0.12, dur: 2.5, gain: 0.055, from: 160, to: 4000 });
-                tone({ freq: 1046.5, dur: 0.55, gain: 0.028, at: 2.35 });
-                tone({ freq: 1568, dur: 0.7, gain: 0.022, at: 2.38 });
-                tone({ freq: 2093, dur: 0.9, gain: 0.012, at: 2.42 });
-            }
-
-            function playLateAccent() {
-                if (!state.soundOn || !state.active) return;
-                noise({ dur: 0.9, gain: 0.04, from: 240, to: 1800 });
-                tone({ freq: 392, endFreq: 784, dur: 0.7, gain: 0.08 });
-                tone({ freq: 588, dur: 0.5, gain: 0.035, at: 0.06 });
-            }
-
-            function playToggle(on) {
-                if (!state.soundOn || !audio.running()) return;
-                tone({ freq: on ? 620 : 320, endFreq: on ? 880 : 240, dur: 0.16, gain: 0.055 });
-            }
-
-            function renderSound() {
-                if (!soundBtn || !soundLabel) return;
-                if (!AudioCtor) {
-                    soundBtn.disabled = true;
-                    soundBtn.classList.add('muted');
-                    soundBtn.setAttribute('aria-pressed', 'false');
-                    soundBtn.title = 'Zvuk není v tomto prohlížeči dostupný';
-                    soundLabel.textContent = 'Zvuk nedostupný';
+                if (reduceMotion) {
+                    tone({ freq: 64, endFreq: 32, dur: 0.4, gain: 0.32, filter: 180, at: 0.02 });
+                    tone({ freq: 176, endFreq: 96, type: 'triangle', dur: 0.14, gain: 0.05, at: 0.02 });
                     return;
                 }
-                soundBtn.classList.toggle('muted', !state.soundOn);
-                soundBtn.setAttribute('aria-pressed', String(state.soundOn));
-                soundBtn.title = state.soundOn ? 'Vypnout zvuk úvodu' : 'Zapnout zvuk úvodu';
-                soundLabel.textContent = state.soundOn ? 'Zvuk zapnut' : 'Zvuk vypnut';
+                // linka se kreslí
+                tone({ freq: 58, endFreq: 32, dur: 0.8, gain: 0.34, filter: 160, at: 0.16 });
+                tone({ freq: 176, endFreq: 88, type: 'triangle', dur: 0.16, gain: 0.055, at: 0.16 });
+                noise({ at: 0.18, dur: 0.9, gain: 0.02, from: 180, to: 1600 });
+                // wordmark se usadí
+                tone({ freq: 92, endFreq: 64, dur: 0.5, gain: 0.12, filter: 300, at: 1.18 });
+                tone({ freq: 210, endFreq: 104, type: 'triangle', dur: 0.2, gain: 0.035, at: 1.2 });
+                tone({ freq: 138, dur: 0.25, gain: 0.04, at: 1.22 });
             }
 
-            function showHint(text) {
-                if (!hint || !state.soundOn || !state.active) return;
-                if (text) hint.textContent = text;
-                hint.hidden = false;
+            if (AudioCtor) {
+                audio.init();
+                if (audio.running()) playScore();
             }
 
-            function hideHint() { if (hint) hint.hidden = true; }
-
-            function finish(reason) {
+            function finish() {
                 if (!state.active || state.finishing) return;
                 state.finishing = true;
                 state.active = false;
-                clearTimeout(state.timer);
-                state.messageTimers.forEach(clearTimeout);
-                state.messageTimers.length = 0;
                 document.body.classList.remove('intro-lock');
                 intro.classList.add('is-leaving');
-                intro.setAttribute('aria-hidden', 'true');
-                hideHint();
-                if (statusEl) statusEl.textContent = 'Vítej.';
-                audio.stop(reason === 'skip' ? 0.16 : 0.6);
-                const cleanupDelay = reduceMotion ? 80 : 720;
+                audio.stop(0.4);
                 setTimeout(() => {
                     intro.hidden = true;
                     audio.dispose();
-                    const target = state.lastFocus;
-                    if (target && target !== document.body && target.isConnected && typeof target.focus === 'function') {
-                        try { target.focus({ preventScroll: true }); } catch (e) {}
-                    }
-                }, cleanupDelay);
+                }, reduceMotion ? 60 : 380);
             }
-
-            async function unlockSound() {
-                if (!AudioCtor || !state.soundOn) return false;
-                const ok = await audio.resume();
-                if (!ok) {
-                    state.audioBlocked = true;
-                    if (state.active) showHint();
-                    return false;
-                }
-                state.audioBlocked = false;
-                audio.setMuted(false);
-                hideHint();
-                return true;
-            }
-
-            if (!AudioCtor) {
-                if (soundBtn) soundBtn.disabled = true;
-                if (soundLabel) soundLabel.textContent = 'Zvuk nedostupný';
-            } else {
-                audio.init();
-                if (state.soundOn && audio.running()) {
-                    playScore();
-                } else if (state.soundOn) {
-                    state.audioBlocked = true;
-                    showHint();
-                }
-            }
-
-            renderSound();
-
-            if (soundBtn) {
-                soundBtn.addEventListener('click', async () => {
-                    if (!state.soundOn) {
-                        state.soundOn = true;
-                        settings.introSound = true;
-                        saveSettings();
-                        renderSound();
-                        const ok = await unlockSound();
-                        if (ok) playToggle(true);
-                        return;
-                    }
-                    if (!audio.running()) {
-                        // První klik při zablokovaném autoplay zvuk zapne, nevypne.
-                        const ok = await unlockSound();
-                        if (ok) playToggle(true);
-                        return;
-                    }
-                    state.soundOn = false;
-                    settings.introSound = false;
-                    saveSettings();
-                    audio.stop(0.2);
-                    audio.setMuted(true);
-                    renderSound();
-                    hideHint();
-                });
-            }
-
-            if (skipBtn) skipBtn.addEventListener('click', () => finish('skip'));
-
-            const onFirstGesture = (event) => {
-                if (!AudioCtor || !state.active || !state.soundOn || audio.running()) return;
-                if (event.type === 'keydown' && event.key === 'Escape') return;
-                const target = event.target;
-                if (target && target.closest && target.closest('#introSound, #introSkip')) return;
-                unlockSound().then(ok => { if (ok) playLateAccent(); });
-            };
-            document.addEventListener('pointerdown', onFirstGesture, true);
-            document.addEventListener('keydown', onFirstGesture, true);
-
-            const onEscape = (event) => {
-                if (state.active && event.key === 'Escape') {
-                    event.preventDefault();
-                    finish('skip');
-                }
-            };
-            document.addEventListener('keydown', onEscape, true);
-
-            intro.addEventListener('keydown', (event) => {
-                if (event.key !== 'Tab') return;
-                const focusables = [soundBtn, skipBtn].filter(b => b && !b.disabled);
-                if (!focusables.length) return;
-                const first = focusables[0];
-                const last = focusables[focusables.length - 1];
-                if (event.shiftKey && (document.activeElement === first || document.activeElement === intro)) {
-                    event.preventDefault();
-                    last.focus();
-                } else if (!event.shiftKey && document.activeElement === last) {
-                    event.preventDefault();
-                    first.focus();
-                }
-            });
 
             document.body.classList.add('intro-lock');
-            try { intro.focus({ preventScroll: true }); } catch (e) { try { intro.focus(); } catch (e2) {} }
-
-            const messages = [[1200, 'Připravuji promítání…'], [2450, 'Vítej.']];
-            if (!reduceMotion) {
-                messages.forEach(([at, text]) => {
-                    state.messageTimers.push(setTimeout(() => {
-                        if (state.active && statusEl) statusEl.textContent = text;
-                    }, at));
-                });
-            }
-
-            state.timer = setTimeout(() => finish('auto'), duration);
+            setTimeout(finish, duration);
         })();
