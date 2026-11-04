@@ -91,7 +91,7 @@
 
 
         // ===== Thumbnails: server je hledá přes /api/thumb (regex "q*", cache na serveru) a zapamatujeme =====
-        const THUMB_KEY = 'wtzi-thumbs-v3';
+        const THUMB_KEY = 'wflix-thumbs-v3';
         // Volitelný limit souběžných dotazů na náhledy (Nastavení, výchozí: vypnuto)
         // Seznam PHP proxy serverů (Nastavení). Nemazat/needitovat ručně mezi markery -
         // udržuje to scripts/change-proxy-servers.sh (spusť ho, ať to nerozjede ve 3 souborech zvlášť).
@@ -102,7 +102,7 @@
             'http://wtzi.chytrak.cz/index.php',
             // PROXY-SERVERS:END
         ];
-        const SETTINGS_KEY = 'wtzi-settings';
+        const SETTINGS_KEY = 'wflix-settings';
         let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: true };
         try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) {}
         // Starší verze ukládaly volby, které už v panelu nejsou (vypnuté náhledy, zdroj
@@ -876,7 +876,7 @@
             player.subOff = false;
             player.subIndex = -1;
             player.subEls = [];
-            videoPlayer.querySelectorAll('track[data-wtzi-sub]').forEach(t => t.remove());
+            videoPlayer.querySelectorAll('track[data-wflix-sub]').forEach(t => t.remove());
             subtitleSelect.innerHTML = '';
             subNote.hidden = true;
             subtitleBar.hidden = true;
@@ -890,7 +890,7 @@
             player.subSig = sig;
             player.subs = subs;
             player.subEls = [];
-            videoPlayer.querySelectorAll('track[data-wtzi-sub]').forEach(t => t.remove());
+            videoPlayer.querySelectorAll('track[data-wflix-sub]').forEach(t => t.remove());
             subtitleSelect.innerHTML = '';
             subNote.hidden = true;
             subtitleBar.hidden = subs.length === 0;
@@ -910,7 +910,7 @@
                 track.label = subtitleLabel(s);
                 track.srclang = s.lang || 'und';
                 track.src = '/api/subtitles?url=' + encodeURIComponent(s.url);
-                track.setAttribute('data-wtzi-sub', '1');
+                track.setAttribute('data-wflix-sub', '1');
                 // Když relay VTT nevydá, ať je to vidět - jinak titulky chybí bez vysvětlení.
                 track.addEventListener('error', () => {
                     if (player.subEls[i] === track && player.subIndex === i) subNote.hidden = false;

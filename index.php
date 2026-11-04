@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
  * 429 by se nikdy nepřeskočila na další server. Kód z prehraj.to necháme plavat (429/403/...),
  * jinak dáme 502.
  */
-function wtziFail($payload, $upstream = 0) {
+function wflixFail($payload, $upstream = 0) {
     $code = ($upstream >= 400 && $upstream < 600) ? (int)$upstream : 502;
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
@@ -59,7 +59,7 @@ function handleSearch() {
     
     $r = searchPrehraj($query);
     if ($r['error']) {
-        wtziFail(['success' => false, 'error' => $r['error']], $r['status'] ?? 0);
+        wflixFail(['success' => false, 'error' => $r['error']], $r['status'] ?? 0);
     }
 
     echo json_encode([
@@ -165,7 +165,7 @@ function searchPrehraj($query) {
 /**
  * Thumbnail helpers (/api/thumb)
  */
-function wtziNorm($s) {
+function wflixNorm($s) {
     static $map = [
         'á'=>'a','ä'=>'a','à'=>'a','â'=>'a','ã'=>'a','å'=>'a','ć'=>'c','č'=>'c','ç'=>'c','ď'=>'d',
         'é'=>'e','ě'=>'e','ë'=>'e','è'=>'e','ê'=>'e','í'=>'i','î'=>'i','ì'=>'i','ï'=>'i',
@@ -180,23 +180,23 @@ function wtziNorm($s) {
 }
 
 // významná slova (bez předložek a pod.); když by nezbylo nic, vrátí všechna
-function wtziWords($s) {
+function wflixWords($s) {
     static $stop = ['a','i','z','ze','o','u','v','ve','na','do','se','si','k','s','the','of','and','to','in'];
-    $w = array_values(array_filter(explode(' ', wtziNorm($s)), 'strlen'));
+    $w = array_values(array_filter(explode(' ', wflixNorm($s)), 'strlen'));
     $sig = array_values(array_diff($w, $stop));
     return $sig ? $sig : $w;
 }
 
 // "query*": každé významné slovo jako začátek slova, pořadí je jedno
-function wtziAliasPattern($alias) {
-    $w = wtziWords($alias);
+function wflixAliasPattern($alias) {
+    $w = wflixWords($alias);
     if (!$w) return '';
     $p = '^';
     foreach ($w as $x) $p .= '(?=.*\b' . preg_quote($x, '~') . ')';
     return $p;
 }
 
-function wtziFixThumb($u) {
+function wflixFixThumb($u) {
     if ($u === '') return '';
     if (strpos($u, '//') === 0) return 'https:' . $u;
     if ($u[0] === '/') return 'https://prehraj.to' . $u;
@@ -204,7 +204,7 @@ function wtziFixThumb($u) {
 }
 
 // Keyless alternativa: iTunes Search API (plakáty filmů, bez API klíče), CZ obchod.
-function wtziItunesThumb($term, $pattern, $y) {
+function wflixItunesThumb($term, $pattern, $y) {
     $ch = curl_init('https://itunes.apple.com/search?media=movie&entity=movie&country=cz&limit=15&term=' . rawurlencode($term));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
@@ -224,7 +224,7 @@ function wtziItunesThumb($term, $pattern, $y) {
         $name = isset($it['trackName']) ? $it['trackName'] : '';
         $art = isset($it['artworkUrl100']) ? $it['artworkUrl100'] : '';
         if ($name === '' || $art === '') continue;
-        if (!@preg_match($pattern, wtziNorm($name))) continue;
+        if (!@preg_match($pattern, wflixNorm($name))) continue;
         $sc = 1.0;
         if ($y !== '' && isset($it['releaseDate']) && strpos($it['releaseDate'], $y) === 0) $sc += 0.5;
         if ($sc > $bestScore) {
@@ -239,7 +239,7 @@ function wtziItunesThumb($term, $pattern, $y) {
     return $best;
 }
 
-function wtziSendThumb($data) {
+function wflixSendThumb($data) {
     header('Cache-Control: public, max-age=' . (!empty($data['thumbnail']) ? 86400 : 600));
     echo json_encode($data);
     exit;
@@ -247,7 +247,7 @@ function wtziSendThumb($data) {
 
 /**
  * Handle thumbnail lookup - /api/thumb?q=Matrix[&t=Titul][&y=1999][&re=regex]
- * Výchozí regex je "q*" (viz wtziAliasPattern), &re= ho přepíše (aplikuje se na název+slug
+ * Výchozí regex je "q*" (viz wflixAliasPattern), &re= ho přepíše (aplikuje se na název+slug
  * bez diakritiky, malými písmeny). Výsledek se cachuje do temp adresáře.
  */
 function handleThumb() {
@@ -265,7 +265,7 @@ function handleThumb() {
     if ($re !== '') {
         $pattern = '~' . str_replace('~', '\~', $re) . '~iu';
     } else {
-        $pattern = '~' . implode('|', array_filter([wtziAliasPattern($q), wtziAliasPattern($t)])) . '~i';
+        $pattern = '~' . implode('|', array_filter([wflixAliasPattern($q), wflixAliasPattern($t)])) . '~i';
     }
     if (strlen($pattern) > 300 || $pattern === '~~i' || @preg_match($pattern, '') === false) {
         echo json_encode(['success' => false, 'error' => 'Invalid or too long regex']);
@@ -273,42 +273,42 @@ function handleThumb() {
     }
 
     // cache
-    $dir = sys_get_temp_dir() . '/wtzi-thumbs';
-    $file = $dir . '/' . md5($src . '|' . wtziNorm($q) . '|' . wtziNorm($t) . '|' . $y . '|' . $re) . '.json';
+    $dir = sys_get_temp_dir() . '/wflix-thumbs';
+    $file = $dir . '/' . md5($src . '|' . wflixNorm($q) . '|' . wflixNorm($t) . '|' . $y . '|' . $re) . '.json';
     if (is_file($file)) {
         $data = json_decode(@file_get_contents($file), true);
         $ttl = (is_array($data) && !empty($data['thumbnail'])) ? 7 * 86400 : 3600;
-        if (is_array($data) && time() - filemtime($file) < $ttl) wtziSendThumb($data);
+        if (is_array($data) && time() - filemtime($file) < $ttl) wflixSendThumb($data);
     }
 
     if ($src === 'itunes') {
-        $hit = wtziItunesThumb($t !== '' ? $t : $q, $pattern, $y);
+        $hit = wflixItunesThumb($t !== '' ? $t : $q, $pattern, $y);
         if ($hit) {
             $data = ['success' => true, 'q' => $q, 'thumbnail' => $hit['thumbnail'], 'title' => $hit['title'], 'url' => $hit['url']];
             @mkdir($dir, 0777, true);
             @file_put_contents($file, json_encode($data));
-            wtziSendThumb($data);
+            wflixSendThumb($data);
         }
         // nenalezeno na iTunes -> záloha přes prehraj.to
     }
 
     $r = searchPrehraj($q);
     if ($r['error']) {
-        wtziFail(['success' => false, 'error' => $r['error']], $r['status'] ?? 0);
+        wflixFail(['success' => false, 'error' => $r['error']], $r['status'] ?? 0);
     }
 
     $bad = ['trailer','teaser','ukazka','upoutavka','recenze','review','soundtrack','ost','making',
             'gameplay','hra','parodie','reaction','reakce','rozbor','sestrih','clip'];
-    $qLen = count(wtziWords($q));
+    $qLen = count(wflixWords($q));
     $best = null;
     $bestScore = 0.6; // pod tímhle se obrázek nepoužije
     foreach ($r['movies'] as $m) {
         if ($m['thumbnail'] === '') continue;
         $slug = preg_replace('~^https?://prehraj\.to/~', '', $m['url']);
-        $text = wtziNorm($m['title'] . ' ' . $slug);
+        $text = wflixNorm($m['title'] . ' ' . $slug);
         if (!@preg_match($pattern, $text)) continue;
 
-        $tw = array_values(array_filter(explode(' ', wtziNorm($m['title'])), 'strlen'));
+        $tw = array_values(array_filter(explode(' ', wflixNorm($m['title'])), 'strlen'));
         $sc = 1.0;
         if ($y !== '' && preg_match('/\b' . $y . '\b/', $text)) $sc += 0.5;
         if (array_intersect($tw, $bad)) $sc -= 0.7;
@@ -319,13 +319,13 @@ function handleThumb() {
     $data = [
         'success' => true,
         'q' => $q,
-        'thumbnail' => $best ? wtziFixThumb($best['thumbnail']) : '',
+        'thumbnail' => $best ? wflixFixThumb($best['thumbnail']) : '',
         'title' => $best ? $best['title'] : '',
         'url' => $best ? $best['url'] : ''
     ];
     @mkdir($dir, 0777, true);
     @file_put_contents($file, json_encode($data));
-    wtziSendThumb($data);
+    wflixSendThumb($data);
 }
 
 /**
@@ -418,7 +418,7 @@ function handleStream() {
  *   JWPlayer: { file: "...vtt...", label: "ENG - 8175377 - eng", kind: "captions", default: true }
  * Odkazy jsou podepsané na CDN (token + expires), takže se nikde dlouho necachují.
  */
-function wtziSubtitles($html) {
+function wflixSubtitles($html) {
     $out = [];
     $seen = [];
     if (preg_match_all('/\{[^{}]*\.vtt[^{}]*\}/i', $html, $blocks)) {
@@ -496,7 +496,7 @@ function handleVideo() {
     curl_close($ch);
     
     if ($error) {
-        wtziFail([
+        wflixFail([
             'success' => false,
             'error' => 'Curl error: ' . $error
         ]);
@@ -504,7 +504,7 @@ function handleVideo() {
     
     // 2xx = úspěch; 429/403/5xx atd. jde do fallbacku (další proxy / přímé volání)
     if ($httpCode < 200 || $httpCode >= 300) {
-        wtziFail([
+        wflixFail([
             'success' => false,
             'error' => 'HTTP error: ' . $httpCode
         ], $httpCode);
@@ -546,7 +546,7 @@ function handleVideo() {
         $allUrls = array_unique($allMatches[0]);
     }
     
-    $subtitles = wtziSubtitles($html);
+    $subtitles = wflixSubtitles($html);
 
     if ($videoUrl) {
         // Unescape if needed

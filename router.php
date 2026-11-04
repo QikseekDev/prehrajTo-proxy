@@ -246,7 +246,7 @@ function pickByHint($html, $hint) {
 // $hint = CDN odkaz, který klient právě přehrává (&v=). Přímo ho používáme jen pro premiumcdn.net
 // (jinak by šlo přes server stahovat cokoli); jinak slouží jen k nalezení správného souboru na stránce.
 function resolveCdnUrl($page, $fresh, $serverProxies, $hint = null) {
-    $cacheFile = sys_get_temp_dir() . '/wtzi_cdn_' . md5($page . '|' . ($hint ? cdnKey($hint) : '')) . '.txt';
+    $cacheFile = sys_get_temp_dir() . '/wflix_cdn_' . md5($page . '|' . ($hint ? cdnKey($hint) : '')) . '.txt';
     if (!$fresh) {
         if (is_file($cacheFile) && time() - filemtime($cacheFile) < 90) {
             $hit = @file_get_contents($cacheFile);
@@ -418,7 +418,7 @@ $proxies = effectiveProxies($SERVER_PROXIES);
 // /api/catalog - filmy pro homepage z keyless iTunes RSS (cz výchozí / en), cache na 1 den.
 // Stejná odpověď jako /api/catalog v Program.cs; frontend ji použije, když běží přes tenhle router.
 function catalogResponse($lang) {
-    $file = sys_get_temp_dir() . '/wtzi_catalog_' . $lang . '.json';
+    $file = sys_get_temp_dir() . '/wflix_catalog_' . $lang . '.json';
     if (is_file($file) && time() - filemtime($file) < 86400) {
         header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: public, max-age=3600');

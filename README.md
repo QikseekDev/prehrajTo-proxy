@@ -5,7 +5,7 @@
 Proxy pro přehrávání videí z Prehraj.to z libovolné lokace.
 
 **Autor:** Vojtěch Vokoun · [contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)
-(fork původního projektu WTZI, viz [Kredit](#kredit))
+(fork původního projektu, viz [Kredit](#kredit))
 
 ## Architektura
 
@@ -185,7 +185,7 @@ přímo ze zdroje; když přímé přehrávání opakovaně selže, appka pro **
 kanál) dočasně přejde na server a příště zkusí CDN znovu. Nastavení se přitom nemění, takže se server
 nepoužívá, dokud je přímá cesta funkční. Vypnutý přehrává rovnou přes server (užitečné pro zdroje,
 které přímé přehrávání nepodporují). Tlačítko Stáhnout jde vždy přes `/api/stream`, protože přímý CDN
-odkaz se stáhnout nedá. Volba se ukládá do `localStorage` (`wtzi-settings`).
+odkaz se stáhnout nedá. Volba se ukládá do `localStorage` (`wflix-settings`).
 
 Když má film titulky, PHP proxy je vytáhne z inicializace přehrávače (Video.js/JWPlayer `tracks`)
 do pole `subtitles` v odpovědi `/api/proxy`. Přehrávač je načte přes `/api/subtitles` a pod videem
@@ -284,7 +284,7 @@ Tento projekt je pouze technický proxy server a přehrávač. **Nehostuje, neuk
 
 Tenhle fork spravuje **Vojtěch Vokoun** – [contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io).
 
-Původní WTZI napsal **Jiřík**; od něj je základ aplikace.
+Původní projekt napsal **Jiřík**; od něj je základ aplikace.
 
 ---
 

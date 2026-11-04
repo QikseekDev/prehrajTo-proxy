@@ -1,9 +1,9 @@
 ---
-app: WTZI
+app: Wflix
 feature: Intro title card
 style: feature-demo
 target: both
-output_file: wtzi-intro.html
+output_file: wflix-intro.html
 ---
 
 # Design Language
@@ -11,7 +11,7 @@ output_file: wtzi-intro.html
 - Background: `#070707`
 - Deep background: `#050505`
 - Surface: `#141414`
-- Accent: `#e50914` (WTZI red)
+- Accent: `#e50914` (Wflix red)
 - Accent shadow: `#b20710`, `#8c080e`
 - Text: `#f2f2f2`
 - Muted: `#8c8c8c`
@@ -45,19 +45,19 @@ output_file: wtzi-intro.html
 
 - Fully black field with a barely visible red pool at the lower center.
 - The curved horizon is hidden.
-- WTZI is below the mask line, tilted back and pushed away from the viewer.
+- Wflix is below the mask line, tilted back and pushed away from the viewer.
 
 ### Action
 
 - **0.16s:** the curved horizon draws from left to right, with a blurred warm glow following it.
-- **0.30s:** WTZI unfolds from behind the rule using `rotateX`, a small `rotateY`, and negative Z depth.
+- **0.30s:** Wflix unfolds from behind the rule using `rotateX`, a small `rotateY`, and negative Z depth.
 - **1.12s:** one narrow white light pass crosses the wordmark.
 - **1.45s:** the wordmark settles with a slight overshoot.
 - The whole lockup receives a very small camera push-in during the settle.
 
 ### Payoff
 
-The white WTZI mark above the warm curved horizon becomes a physical, dimensional title frame. The dark-red extruded edge and floor glow sell the depth without particles, gradients, or extra copy.
+The white Wflix mark above the warm curved horizon becomes a physical, dimensional title frame. The dark-red extruded edge and floor glow sell the depth without particles, gradients, or extra copy.
 
 ### After State
 

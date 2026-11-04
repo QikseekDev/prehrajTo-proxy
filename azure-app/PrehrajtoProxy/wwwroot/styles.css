@@ -673,14 +673,14 @@
             filter: drop-shadow(0 12px 28px rgba(229,9,20,0.18));
         }
         .intro-horizon-line {
-            fill: none; stroke: url(#wtzi-horizon-gradient);
+            fill: none; stroke: url(#wflix-horizon-gradient);
             stroke-width: 2; stroke-linecap: round;
             vector-effect: non-scaling-stroke;
             stroke-dasharray: 1; stroke-dashoffset: 1;
             animation: intro-horizon-draw 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.16s forwards;
         }
         .intro-horizon-glow {
-            fill: none; stroke: url(#wtzi-horizon-gradient);
+            fill: none; stroke: url(#wflix-horizon-gradient);
             stroke-width: 8; stroke-linecap: round;
             vector-effect: non-scaling-stroke;
             stroke-dasharray: 1; stroke-dashoffset: 1;
