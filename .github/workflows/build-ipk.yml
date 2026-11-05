@@ -1,0 +1,35 @@
+name: webOS IPK build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install webOS CLI
+        run: npm install -g @webos-tools/cli
+
+      - name: Package IPK
+        working-directory: ipk
+        run: |
+          ares-package app -o .
+          ares-package -I *.ipk
+
+      - name: Upload IPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wflix-ipk
+          path: ipk/*.ipk
