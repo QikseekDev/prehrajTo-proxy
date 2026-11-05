@@ -1,0 +1,44 @@
+name: Android APK build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  JAVA_HOME: /usr/lib/jvm/default-java
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Assemble release
+        working-directory: apk
+        run: |
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk Wflix-1.0.0.apk
+
+      - name: Verify signature
+        working-directory: apk
+        run: |
+          $ANDROID_HOME/build-tools/34.0.0/apksigner verify Wflix-1.0.0.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wflix-1.0.0.apk
+          path: apk/Wflix-1.0.0.apk
