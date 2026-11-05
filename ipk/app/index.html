@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>Wflix</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050b16">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ===================== Připojení k serveru ===================== -->
+  <section id="setup" class="setup">
+    <div class="setup-card">
+      <div class="brand"><span class="brand-w">W</span><span class="brand-name">FLIX</span></div>
+      <h1>Připojení k serveru</h1>
+      <p class="muted">Zadej adresu svého Wflix backendu (ASP.NET na Azure, nebo PHP self-host). Klient pak používá jeho API <code>/api/*</code>.</p>
+      <div class="setup-row">
+        <button id="serverField" class="f field" type="button">http://192.168.1.10:5218</button>
+        <button id="connectBtn" class="f btn primary" type="button">Připojit</button>
+      </div>
+      <p id="setupMsg" class="msg"></p>
+      <p class="muted small">Tip: na TV jde adresa zadat přes obrazovkovou klávesnici. Port 5218 je výchozí u <code>dotnet run</code>, Azure App Service používá <code>https://…</code> bez portu.</p>
+    </div>
+  </section>
+
+  <!-- ===================== Aplikace ===================== -->
+  <div id="shell" class="shell" hidden>
+    <nav id="rail" class="rail" aria-label="Hlavní navigace">
+      <div class="rail-logo"><span>W</span></div>
+      <button class="navbtn f" data-nav="home" type="button"><span class="ico">⌂</span><span class="lbl">Domů</span></button>
+      <button class="navbtn f" data-nav="search" type="button"><span class="ico">⌕</span><span class="lbl">Hledat</span></button>
+      <button class="navbtn f" data-nav="live" type="button"><span class="ico">◉</span><span class="lbl">Živě</span></button>
+      <div class="rail-spacer"></div>
+      <button class="navbtn f" data-nav="settings" type="button"><span class="ico">⚙</span><span class="lbl">Nastavení</span></button>
+    </nav>
+
+    <main id="main" class="main">
+      <section id="view-home" class="view active">
+        <div id="hero" class="hero"></div>
+        <div id="rows" class="rows"></div>
+      </section>
+
+      <section id="view-search" class="view">
+        <div class="page-head">
+          <h1 class="page-title">Hledat</h1>
+          <div class="searchbar">
+            <span class="s-ico" aria-hidden="true">⌕</span>
+            <input id="searchInput" class="search-input f" type="text" autocomplete="off"
+                   spellcheck="false" placeholder="Název filmu nebo seriálu…">
+            <button id="searchGo" class="f btn" type="button">Hledat</button>
+          </div>
+        </div>
+        <div id="searchGrid" class="grid"></div>
+        <div id="searchState" class="state"></div>
+      </section>
+
+      <section id="view-live" class="view">
+        <div class="page-head">
+          <h1 class="page-title">Živé vysílání</h1>
+          <div id="liveChips" class="chips"></div>
+        </div>
+        <div id="liveGrid" class="channels"></div>
+        <div id="liveState" class="state"></div>
+      </section>
+
+      <section id="view-settings" class="view">
+        <div class="page-head"><h1 class="page-title">Nastavení</h1></div>
+        <div id="settingsList" class="settings"></div>
+        <p class="muted small pad">Wflix klient <span id="verLine"></span> · prehraj.to proxy, žádný obsah nehostuje.</p>
+      </section>
+    </main>
+  </div>
+
+  <!-- ===================== Detail ===================== -->
+  <div id="detail" class="overlay detail" hidden>
+    <div class="detail-bg" id="detailBg"></div>
+    <div class="detail-body">
+      <img id="detailPoster" class="detail-poster" alt="">
+      <div class="detail-info">
+        <h1 id="detailTitle"></h1>
+        <div id="detailMeta" class="meta"></div>
+        <p id="detailNote" class="muted detail-note"></p>
+        <div class="detail-actions">
+          <button id="detailPlay" class="f btn primary" type="button">▶ Přehrát</button>
+          <button id="detailDl" class="f btn ghost" type="button" hidden>⬇ Stáhnout</button>
+          <button id="detailClose" class="f btn ghost" type="button">Zavřít</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Přehrávač ===================== -->
+  <div id="player" class="overlay player" hidden>
+    <video id="video" playsinline webkit-playsinline preload="metadata"></video>
+    <div id="pTop" class="p-top">
+      <button id="pBack" class="f p-btn" type="button">‹ Zpět</button>
+      <div class="p-title" id="pTitle"></div>
+      <div class="p-live-badge" id="pLive" hidden>● ŽIVĚ</div>
+    </div>
+    <div id="pBottom" class="p-bottom">
+      <div id="pBar" class="p-bar" role="slider" tabindex="0" aria-label="Pozice přehrávání">
+        <div class="p-track"><div class="p-buf" id="pBuf"></div><div class="p-prog" id="pProg"></div></div>
+        <div class="p-knob" id="pKnob"></div>
+      </div>
+      <div class="p-row">
+        <button id="pPlay" class="f p-btn" type="button">Přehrát</button>
+        <div class="p-time" id="pTime">0:00 / 0:00</div>
+        <div class="p-spacer"></div>
+        <button id="pSub" class="f p-btn" type="button">Titulky</button>
+        <button id="pRelay" class="f p-btn" type="button">Přes server</button>
+      </div>
+    </div>
+    <div id="pState" class="p-state" hidden></div>
+  </div>
+
+  <!-- ===================== Obrazovková klávesnice ===================== -->
+  <div id="kbd" class="overlay kbd" hidden>
+    <div class="kbd-panel">
+      <div class="kbd-title" id="kbdTitle">Zadej text</div>
+      <div class="kbd-value" id="kbdValue"></div>
+      <div class="kbd-keys" id="kbdKeys"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <div id="loading" class="loading" hidden><span class="spinner"></span><span id="loadingText">Načítám…</span></div>
+</div>
+<script src="hls.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'cz.qikseek.wflix'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'cz.qikseek.wflix'
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+        // Klient mluví s tvým Wflix backendem (Azure nebo PHP self-host)
+        // a streamy tahá z CDN, takže potřebuje jen internet.
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Release podepisujeme debug klíčem, aby šel APK rovnou nainstalovat.
+            // Pro vlastní distribuci nahraď signingConfig vlastním keystorem (README).
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+    }
+}

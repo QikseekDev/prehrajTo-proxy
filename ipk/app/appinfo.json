@@ -1,0 +1,21 @@
+{
+  "id": "cz.qikseek.wflix",
+  "version": "1.0.0",
+  "vendor": "Qikseek",
+  "type": "web",
+  "main": "index.html",
+  "title": "Wflix",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "splashImage": "splash.png",
+  "resolution": "1920x1080",
+  "bgColor": "#050b16",
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": true,
+  "requiredMemory": 128,
+  "supportedOrientations": [
+    "landscape"
+  ],
+  "uiRevision": 2,
+  "requiredACG": []
+}
