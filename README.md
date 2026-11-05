@@ -56,6 +56,11 @@ chyba – přesně takhle PHP proxy předává 429 z prehraj.to, takže se přej
 Server, který naposledy fungoval, jde příště na začátek, takže výpadek jedné proxy stojí jen jeden
 timeout. Neplatné (ne-http/https) hodnoty backend tiše ignoruje.
 
+Který server dotaz zrovna obsloužil, posílá backend prohlížeči v hlavičce `X-Wflix-Proxy`
+(`router.php` posílá `direct`, když jede bez proxy). Appka podle ní v liště ukazuje malý odznak
+s hostname aktivního serveru a stejný údaj je i v Nastavení. Změna odznaku = failover: první
+dotaz po přepnutí může být pomalejší, protože se čeká na timeout mrtvého serveru.
+
 ### Přidání/úprava serverů jedním příkazem
 ```bash
 ./scripts/change-proxy-servers.sh
@@ -149,8 +154,11 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
 - **Frontend** (`wwwroot/index.html`, `wwwroot/styles.css`, `wwwroot/script.js`) - Wflix, UI ve stylu
   streamovací služby: katalog doporučených filmů, vyhledávání, přehrávač s volbou titulků. `index.html`
   obsahuje značku, `styles.css` vzhled a `script.js` logiku. Nastavení
-  (avatar vpravo nahoře) nabízí katalog úvodní stránky, limit souběžných náhledů a Přímé přehrávání
-  z CDN – proxy pro prehraj.to jsou vždy zapnuté a zdroj náhledů je vždy prehraj.to.
+  (avatar vpravo nahoře) nabízí katalog úvodní stránky, limit souběžných náhledů, Přímé přehrávání
+  z CDN, světlý režim a styl titulků – proxy pro prehraj.to jsou vždy zapnuté a zdroj náhledů je
+  vždy prehraj.to.
+  Knihovna diváka (rozehrané filmy, oblíbené) se ukládá jen do prohlížeče – `localStorage`
+  (`wflix-history`, `wflix-favs`), žádný účet ani server.
 - **API Endpoints**:
   - `GET /api/search?q={query}` - Vyhledávání filmů. Vrací třicítku, kterou prehraj.to na stránce
     hledání nabízí; jejich stránkování je čistě JavaScriptové, takže `?p=` nemá žádný efekt
@@ -228,9 +236,16 @@ vyptej se provozovatele ([contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)
 
 - 🔍 Vyhledávání filmů a seriálů
 - 🎥 Přehrávání videí přímo v prohlížeči
+- ⏱ Pokračovat ve sledování a Nedávno sledované (pozice v `localStorage`)
+- ⭐ Oblíbené (watchlist) se záložkou u každého titulu a vlastní filtrovatelnou řadou
+- ⌨️ Klávesové zkratky přehrávače (mezerník, šipky, F)
+- 🪟 Obrázek v obraze (Picture-in-Picture)
+- 💬 Volba velikosti a pozadí titulků
+- 🌗 Světlý a tmavý režim
+- 📡 Odznak aktivního proxy serveru (po failoveru je vidět, přes co to jede)
+- 📝 Titulky (WebVTT) u filmů, které je mají
 - 📱 Responzivní design (mobil, tablet, desktop)
 - 📺 Živé vysílání – IPTV kanály (Česko, čeština, Slovensko)
-- 📝 Titulky (WebVTT) u filmů, které je mají
 - 🎬 Filmový úvodní podpis se zvukem
 - 🔗 Sdílení odkazů na konkrétní videa
 - ⬅️ Navigace zpět/vpřed v prohlížeči

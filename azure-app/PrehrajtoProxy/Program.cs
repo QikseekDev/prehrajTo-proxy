@@ -403,6 +403,21 @@ static string[] EffectiveProxies(string[]? clientProxies, string[] serverProxies
 // nečekalo zbytečně na mrtvém serveru u každého dotazu.
 string? lastGoodProxy = null;
 
+// Který proxy server zrovna obsloužil dotaz, posíláme i do prohlížeče (odznak v liště).
+// Je to poslední server, který odpověděl správně - stejná hodnota, podle které se řídí
+// pořadí na další dotaz. Když se servery přepnou, prohlížeč to pozná podle změny hlavičky
+// a může dát vědět, že první načtení po přepnutí může být pomalejší (timeout mrtvého serveru).
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.OnStarting(() =>
+    {
+        if (ctx.Request.Path.StartsWithSegments("/api") && !string.IsNullOrEmpty(lastGoodProxy))
+            ctx.Response.Headers["X-Wflix-Proxy"] = lastGoodProxy;
+        return Task.CompletedTask;
+    });
+    await next();
+});
+
 // ------------------------------------------------------------------ cache výsledků hledání / ověření
 // Výsledek se drží v paměti serveru a sdílí se mezi všemi uživateli, takže stejný dotaz (a stejné
 // ověření videa) jde na prehraj.to jednou, ne pokaždé. Souběžné stejné dotazy se spojí do jednoho

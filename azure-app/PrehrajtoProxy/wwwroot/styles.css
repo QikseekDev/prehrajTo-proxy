@@ -1,6 +1,10 @@
-        :root { --red: #e50914; --red-dark: #b20710; --bg: #141414; --panel: #181818; --text: #e5e5e5; --muted: #8c8c8c; --green: #46d369; }
+        :root {
+            --red: #e50914; --red-dark: #b20710; --bg: #141414; --panel: #181818; --text: #e5e5e5; --muted: #8c8c8c; --green: #46d369;
+            /* Vzhled titulků (Nastavení → Velikost / Pozadí titulků). Hodnoty přepisuje script.js. */
+            --cue-size: 1.05em; --cue-bg: rgba(0,0,0,0.78); --cue-fg: #fff; --cue-shadow: 0 1px 2px #000;
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        html { scroll-behavior: smooth; }
+        html { scroll-behavior: smooth; color-scheme: dark; }
         body {
             font-family: 'Netflix Sans', 'Helvetica Neue', Helvetica, Arial, -apple-system, 'Segoe UI', sans-serif;
             background: var(--bg);
@@ -253,6 +257,35 @@
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .poster .p-meta b { color: #46d369; }
+        /* Ukazatel rozehranosti u "Pokračovat ve sledování" */
+        .poster .progress {
+            position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+            background: rgba(255,255,255,0.28);
+        }
+        .poster .progress > i { display: block; height: 100%; background: var(--red); }
+        /* Záložka (oblíbené) v rohu karty. Je to <span>, protože karta je <button>/<a> -
+           vnořené tlačítko by bylo neplatné HTML. */
+        .fav-btn {
+            position: absolute; top: 6px; right: 6px; z-index: 4;
+            width: 28px; height: 28px; border-radius: 50%; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 15px; line-height: 1; color: #fff; cursor: pointer;
+            background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.4);
+            opacity: 0; transition: opacity 0.18s, background 0.18s, transform 0.15s;
+        }
+        .poster:hover .fav-btn, .movie-card:hover .fav-btn,
+        .fav-btn.on, .fav-btn:focus-visible { opacity: 1; }
+        .fav-btn:hover { background: rgba(0,0,0,0.82); transform: scale(1.08); }
+        .fav-btn.on { color: #ffd15c; border-color: rgba(255,209,92,0.8); }
+        @media (hover: none) { .fav-btn { opacity: 0.92; } }
+        /* Filtr přímo v řadě oblíbených (aby se dala prohledat i dlouhá knihovna) */
+        .row-filter {
+            width: 180px; max-width: 46vw; padding: 5px 9px; border-radius: 4px; font: inherit;
+            font-size: 13px; color: #fff; background: rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.25); outline: none;
+        }
+        .row-filter:focus { border-color: #fff; }
+        .row-filter::placeholder { color: #9a9a9a; }
 
         /* Top 10 ranked - portrétní plakát vedle obřího čísla jako na Netflixu */
         .poster.ranked { width: auto; aspect-ratio: auto; height: clamp(150px, 19vw, 230px); display: flex; align-items: stretch; }
@@ -351,7 +384,18 @@
         .sub-pick[hidden] { display: none; }
         .sub-pick .set-select { max-width: 220px; }
         .sub-note { font-size: 13px; color: #f08a80; }
-        video::cue { background: rgba(0,0,0,0.78); color: #fff; text-shadow: 0 1px 2px #000; }
+        video::cue {
+            background: var(--cue-bg); color: var(--cue-fg); text-shadow: var(--cue-shadow);
+            font-size: var(--cue-size);
+        }
+        .player-keys { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+        .player-keys b { color: #cfcfcf; font-weight: 600; }
+        /* Zdroj, ze kterého zrovna hraje: CDN (přímo) nebo server (relay po chybách). */
+        .src-mode { font-size: 12px; color: var(--muted); white-space: nowrap; }
+        .src-mode[hidden] { display: none; }
+        .src-mode.relay { color: #f5c518; }
+        .set-val { color: #cfcfcf; font-size: 13px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dl-btn.on { color: #ffd15c; }
         /* Po skončení videa: co dál. Leží přes video, takže neposouvá stránku. */
         .player-end {
             position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -387,6 +431,22 @@
         }
         .nav-live.active { color: #fff; }
         .nav-live.active .live-ico { color: var(--red); }
+        /* Odznak aktivního proxy serveru - malý, aby nerušil, ale bylo vidět, přes co to jde. */
+        .src-badge {
+            display: inline-flex; align-items: center; gap: 6px; flex: none;
+            padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.4;
+            color: #cfcfcf; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16);
+            white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .src-badge[hidden] { display: none; }
+        .src-badge i {
+            width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--green);
+            box-shadow: 0 0 6px rgba(70,211,105,0.85);
+        }
+        /* Po přepnutí na jiný server je odznak chvíli jantarový - "tady se něco stalo". */
+        .src-badge.changed { color: #f5c518; border-color: rgba(245,197,24,0.45); }
+        .src-badge.changed i { background: #f5c518; box-shadow: 0 0 6px rgba(245,197,24,0.9); }
         .live-section { display: none; padding: 100px 4% 0; }
         .live-head {
             display: flex; align-items: center; justify-content: space-between;
@@ -564,6 +624,7 @@
             .f-links { grid-template-columns: repeat(2, 1fr); gap: 12px 16px; }
             .nav-live { padding: 8px 2px; font-size: 13px; }
             .nav-live .live-ico { width: 16px; height: 16px; margin-right: 6px; }
+            .player-keys { display: none; }
             .live-section { padding: 86px 14px 0; }
             .live-head { gap: 10px; margin-bottom: 16px; }
             .live-tools { width: 100%; }
@@ -622,3 +683,100 @@
         }
         .intro[hidden] { display: none; }
         .intro.is-leaving { opacity: 0; visibility: hidden; pointer-events: none; }
+
+        /* ---------- Světlý režim ---------- */
+        /* Tmavý režim zůstává výchozí. Přepínač je jen přebarvení povrchu - billboard,
+           plakáty a přehrávač mají pod sebou obrázek/video, takže zůstávají tmavé. */
+        [data-theme="light"] {
+            color-scheme: light;
+            --bg: #f5f5f5; --panel: #ffffff; --text: #141414; --muted: #5c5c5c;
+        }
+        [data-theme="light"] .nav { background: linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(255,255,255,0.72) 70%, rgba(255,255,255,0) 100%); }
+        [data-theme="light"] .nav.solid { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.14); }
+        [data-theme="light"] .nav-links a { color: rgba(20,20,20,0.75); }
+        [data-theme="light"] .nav-links a:first-child { color: #141414; }
+        [data-theme="light"] .nav-links a:hover { color: #000; }
+        [data-theme="light"] .nav-live { color: rgba(20,20,20,0.8); }
+        [data-theme="light"] .nav-live:hover, [data-theme="light"] .nav-live.active { color: #000; }
+        [data-theme="light"] .search-box { background: #fff; border-color: rgba(0,0,0,0.22); }
+        [data-theme="light"] .search-box:focus-within, [data-theme="light"] .search-box.has-text { background: #fff; border-color: #141414; }
+        [data-theme="light"] .search-box button { color: #141414; }
+        [data-theme="light"] .search-box input { color: #141414; }
+        [data-theme="light"] .search-box input::placeholder { color: #6f6f6f; }
+        [data-theme="light"] .search-spinner { border-color: rgba(0,0,0,0.2); border-top-color: #141414; }
+        /* billboard si drží tmavý přechod, aby bílý text zůstal čitelný i nad světlou stránkou */
+        /* Nad billboardem zůstává bílý text (pod ním je obrázek s tmavým přechodem). */
+        [data-theme="light"] .hero { color: #fff; }
+        [data-theme="light"] .hero::after {
+            background:
+                linear-gradient(77deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 40%, rgba(0,0,0,0) 72%),
+                linear-gradient(0deg, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.2) 42%),
+                linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 24%);
+        }
+        [data-theme="light"] .chip { background: rgba(255,255,255,0.92); color: #141414; border-color: rgba(0,0,0,0.18); }
+        [data-theme="light"] .chip:hover { background: #e9e9e9; }
+        [data-theme="light"] .chip.active { background: #141414; color: #fff; border-color: #141414; }
+        [data-theme="light"] .cat-row h3 { color: #141414; }
+        [data-theme="light"] .row-more { color: #0d6572; }
+        [data-theme="light"] .arrow { color: #141414; }
+        [data-theme="light"] .arrow.left { background: linear-gradient(90deg, rgba(245,245,245,0.96) 0%, rgba(245,245,245,0.6) 55%, rgba(245,245,245,0) 100%); }
+        [data-theme="light"] .arrow.right { background: linear-gradient(270deg, rgba(245,245,245,0.96) 0%, rgba(245,245,245,0.6) 55%, rgba(245,245,245,0) 100%); }
+        [data-theme="light"] .row-filter { background: #fff; color: #141414; border-color: rgba(0,0,0,0.2); }
+        [data-theme="light"] .row-filter:focus { border-color: #141414; }
+        [data-theme="light"] .row-filter::placeholder { color: #767676; }
+        [data-theme="light"] .movie-card { background: #fff; }
+        [data-theme="light"] .movie-card img { background: #e3e3e3; }
+        [data-theme="light"] .movie-card .year { color: #1f8a3b; }
+        [data-theme="light"] .skel-card { background: rgba(0,0,0,0.07); }
+        [data-theme="light"] .results-info { color: #5c5c5c; }
+        [data-theme="light"] .results-state { background: rgba(0,0,0,0.05); color: #1c1c1c; border-left-color: rgba(0,0,0,0.35); }
+        [data-theme="light"] .results-state.error { background: rgba(229,9,20,0.1); border-left-color: var(--red); }
+        [data-theme="light"] .results-state.empty { background: rgba(245,197,24,0.16); }
+        [data-theme="light"] .results-state.ratelimit { background: rgba(245,197,24,0.16); }
+        [data-theme="light"] .rl-bar { background: rgba(0,0,0,0.12); }
+        [data-theme="light"] .status.loading { background: rgba(0,0,0,0.06); border-left-color: #141414; }
+        [data-theme="light"] .back-btn, [data-theme="light"] .dl-btn { background: rgba(0,0,0,0.08); color: #141414; }
+        [data-theme="light"] .back-btn:hover, [data-theme="light"] .dl-btn:hover { background: rgba(0,0,0,0.15); }
+        [data-theme="light"] .player-keys b { color: #141414; }
+        [data-theme="light"] .player-end { color: #f5f5f5; }
+        [data-theme="light"] .src-badge { background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.16); color: #4a4a4a; }
+        [data-theme="light"] .set-val { color: #4a4a4a; }
+        [data-theme="light"] .settings-panel { background: #fff; border-color: #dcdcdc; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+        [data-theme="light"] .set-select, [data-theme="light"] .set-sub input { background: #fff; color: #141414; border-color: #c9c9c9; }
+        [data-theme="light"] .set-sub input { color: #141414; }
+        [data-theme="light"] .live-title { color: #141414; }
+        [data-theme="light"] .lsrc-btn { background: #fff; color: #141414; border-color: #c9c9c9; }
+        [data-theme="light"] .lsrc-menu { background: #fff; border-color: #dcdcdc; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+        [data-theme="light"] .lsrc-search { background: #fff; color: #141414; border-color: #c9c9c9; }
+        [data-theme="light"] .lsrc-item { color: #1c1c1c; }
+        [data-theme="light"] .lsrc-item:hover, [data-theme="light"] .lsrc-item:focus-visible { background: #efefef; }
+        [data-theme="light"] .lsrc-item.active { color: #000; }
+        [data-theme="light"] .live-filter { background: #fff; color: #141414; border-color: #c9c9c9; }
+        [data-theme="light"] .live-filter:focus { border-color: #141414; }
+        [data-theme="light"] .live-card { background: #fff; border-color: #e4e4e4; }
+        [data-theme="light"] .live-card:hover { background: #f2f2f2; border-color: #cfcfcf; }
+        [data-theme="light"] .lc-logo { background: #f0f0f0; }
+        [data-theme="light"] .lc-init { color: #333; }
+        [data-theme="light"] .lc-name { color: #141414; }
+        [data-theme="light"] .lchip { background: rgba(0,0,0,0.06); color: #2b2b2b; border-color: rgba(0,0,0,0.16); }
+        [data-theme="light"] .lchip:hover { background: rgba(0,0,0,0.12); }
+        [data-theme="light"] .lchip.active { background: #141414; color: #fff; border-color: #141414; }
+        [data-theme="light"] .lc-badge { background: rgba(0,0,0,0.08); color: #444; }
+        [data-theme="light"] .lc-badge.geo { background: rgba(245,197,24,0.22); color: #7a5c00; }
+        [data-theme="light"] .lc-badge.not24 { background: rgba(0,0,0,0.05); color: #6f6f6f; }
+        [data-theme="light"] .lc-badge.q { background: rgba(84,185,197,0.22); color: #0d6572; }
+        [data-theme="light"] .live-more { background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.2); color: #141414; }
+        [data-theme="light"] .live-more:hover { background: rgba(0,0,0,0.12); }
+        [data-theme="light"] .live-error { color: #141414; }
+        [data-theme="light"] .page-body { color: #2b2b2b; }
+        [data-theme="light"] .page-body h2 { color: #111; }
+        [data-theme="light"] .page-body a { color: #111; }
+        [data-theme="light"] .page-body code { background: rgba(0,0,0,0.07); }
+        [data-theme="light"] .f-ask { color: #3a3a3a; }
+        [data-theme="light"] .f-link { color: #4a4a4a; }
+        [data-theme="light"] .f-link:hover { color: #000; }
+        [data-theme="light"] .f-copy { color: #6b6b6b; }
+        @media (max-width: 700px) {
+            /* na telefonu je lišta plná - server je vidět v Nastavení a u přehrávače */
+            .src-badge { display: none; }
+        }

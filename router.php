@@ -91,10 +91,19 @@ function effectiveProxies($serverProxies) {
     return array_values(array_unique(array_filter($serverProxies, 'isValidProxyUrl')));
 }
 
+// Který zdroj dotaz obsloužil, jde do prohlížeče jako hlavička X-Wflix-Proxy (odznak v liště).
+// Nastavuje ji viaProxyRace (vítězný server) a přímá cesta v switchi níž ("direct").
+function setActiveSource($src) {
+    $GLOBALS['WFLIX_ACTIVE_SOURCE'] = $src;
+}
+
 // Odešle tělo vítěze závodu a skončí. Vrátí jenom false - pak proxy selhaly (429, výpadek, ...)
 // a volající pokračuje přímo přes index.php na tomhle serveru, což je ten fallback.
 function sendRaceWinner($winner) {
     if ($winner === null) return false;
+    if (!empty($GLOBALS['WFLIX_ACTIVE_SOURCE'])) {
+        header('X-Wflix-Proxy: ' . $GLOBALS['WFLIX_ACTIVE_SOURCE']);
+    }
     header('Content-Type: application/json; charset=utf-8');
     echo $winner;
     exit;
@@ -152,6 +161,7 @@ function viaProxyRace(array $bases, string $query, int $timeoutSeconds = 30) {
             if ($winner === null && $err === '' && $code >= 200 && $code < 300 && $body !== ''
                 && isGoodBody($body)) {
                 $winner = $body;
+                setActiveSource($base);
             } else {
                 $errors[] = $base . ': ' . ($err !== '' ? $err : "HTTP $code");
             }
@@ -545,6 +555,7 @@ switch ($path) {
         $q = $_GET['q'] ?? '';
         $qs = 'action=search&q=' . rawurlencode($q);
         if ($proxies) sendRaceWinner(viaProxyRace($proxies, $qs, 30));
+        else setActiveSource('direct');
         // proxy selhaly (429 atd.) -> jedeme přímo přes index.php na tomhle serveru
         $_GET['action'] = 'search';
         require __DIR__ . '/index.php';
@@ -558,7 +569,7 @@ switch ($path) {
                 . '&re=' . rawurlencode($re) . '&src=' . $src;
             if (isset($_GET['y']) && $_GET['y'] !== '') $qs .= '&y=' . rawurlencode($_GET['y']);
             sendRaceWinner(viaProxyRace($proxies, $qs, 40));
-        }
+        } else setActiveSource('direct');
         $_GET['action'] = 'thumb';
         require __DIR__ . '/index.php';
         return true;
@@ -568,6 +579,7 @@ switch ($path) {
         if ($url === '') jsonError(['success' => false, 'error' => 'Missing url parameter']);
         if (!isPrehrajUrl($url)) jsonError(['success' => false, 'error' => 'URL must be from prehraj.to']);
         if ($proxies) sendRaceWinner(viaProxyRace($proxies, 'url=' . rawurlencode($url), 30));
+        else setActiveSource('direct');
         $_GET['action'] = 'video';
         require __DIR__ . '/index.php';
         return true;
