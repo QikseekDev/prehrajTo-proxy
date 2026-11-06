@@ -21,7 +21,7 @@
   function $(id) { return document.getElementById(id); }
   /* Ikony ze sprite v index.html (stroke = currentColor). */
   function icon(name, cls) {
-    return '<svg class="i' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
+    return '<svg class="i' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="#i-' + name + '" xlink:href="#i-' + name + '"/></svg>';
   }
   function esc(s) {
     return String(s === null || s === undefined ? '' : s)
