@@ -33,7 +33,6 @@
         const srcMode = document.getElementById('srcMode');
         const favBtn = document.getElementById('favBtn');
         const pipBtn = document.getElementById('pipBtn');
-        const proxyStatusEl = document.getElementById('proxyStatus');
         // PiP umí Chrome/Edge; tlačítko se ukáže až u načteného videa (viz updateFavBtn).
         const pipSupported = !!(document.pictureInPictureEnabled && HTMLVideoElement.prototype.requestPictureInPicture);
 
@@ -185,9 +184,12 @@
             srcBadge.classList.toggle('changed', switched);
             clearTimeout(noteActiveProxy.timer);
             if (switched) noteActiveProxy.timer = setTimeout(() => srcBadge.classList.remove('changed'), 4000);
-            if (proxyStatusEl) {
-                proxyStatusEl.textContent = label;
-                proxyStatusEl.title = src === 'direct' ? 'prehraj.to volá server přímo' : src;
+            // Nastavení je stránka, která se vykresluje až při otevření - prvek
+            // proto hledáme pokaždé znovu, ne jednou při startu.
+            const proxyEl = document.getElementById('proxyStatus');
+            if (proxyEl) {
+                proxyEl.textContent = label;
+                proxyEl.title = src === 'direct' ? 'prehraj.to volá server přímo' : src;
             }
         }
         let thumbCache = {};
@@ -989,6 +991,11 @@
                     <p>Než napíšeš, koukni do <button type="button" class="f-link" onclick="openPage('help')" style="color:#fff;text-decoration:underline">Centra nápovědy</button> – většina problémů je limit prehraj.to (429) nebo mrtvý rip.</p>
                 `,
             },
+            settings: {
+                title: 'Nastavení',
+                body: settingsPageHtml(),
+                onOpen: bindSettings,
+            },
         };
 
         // Odkud se na stránku v patičce přišlo, abychom se vrátili na stejné místo.
@@ -1004,6 +1011,7 @@
             hideStatus();
             pageTitle.textContent = page.title;
             pageBody.innerHTML = page.body;
+            if (typeof page.onOpen === 'function') page.onOpen(pageBody);
             showSection('page');
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -2254,50 +2262,82 @@
             playLive(liveChannels[Number(card.dataset.live)]);
         });
 
-        // ===== Nastavení: panel =====
-        (function () {
-            const panel = document.getElementById('settingsPanel');
-            const tog = document.getElementById('limitToggle');
-            const val = document.getElementById('limitValue');
-            const sub = document.getElementById('limitSub');
-            const catSel = document.getElementById('catLangSelect');
-            catSel.value = settings.catLang === 'en' ? 'en' : 'cz';
-            catSel.addEventListener('change', () => {
-                settings.catLang = catSel.value === 'en' ? 'en' : 'cz';
-                saveSettings();
-                loadCatalog(); // jiný žebříček = jiný seznam filmů (server má oba v cache)
-            });
-            tog.checked = !!settings.limitOn;
-            val.value = settings.limit;
-            sub.classList.toggle('show', tog.checked);
-            // Avatar profilu otevře panel Nastavení (stopPropagation, aby se panel hned
-            // zase nezavřel přes document listener níže)
-            document.querySelectorAll('.js-settings-btn').forEach(b =>
-                b.addEventListener('click', e => { e.stopPropagation(); panel.classList.toggle('open'); }));
-            document.addEventListener('click', e => { if (!e.target.closest('#settingsWrap')) panel.classList.remove('open'); });
-            tog.addEventListener('change', () => {
-                settings.limitOn = tog.checked;
-                sub.classList.toggle('show', tog.checked);
-                saveSettings();
-                pumpThumbs();
-            });
-            val.addEventListener('change', () => {
-                settings.limit = Math.min(20, Math.max(1, parseInt(val.value, 10) || 3));
-                val.value = settings.limit;
-                saveSettings();
-            });
-            const directTog = document.getElementById('directToggle');
-            directTog.checked = directPreferred();
-            directTog.addEventListener('change', () => {
-                settings.direct = directTog.checked;
-                saveSettings();
-                // Vypnutí přímého přehrávání schová ruční nabídku serveru; aktuální
-                // přehrávání se nemění, aby se video zbytečně nepřerušilo.
-                if (!settings.direct) proxyBtn.hidden = true;
-            });
+        // ===== Nastavení: samostatná stránka (avatar vpravo nahoře) =====
+        // Volby se do rozbalovacího panelu nevešly, takže je Nastavení stránka jako odkazy
+        // v patičce - otevírá ji avatar a chová se stejně jako nápověda nebo o projektu.
+        function settingsPageHtml() {
+            return `
+                    <h2>Vzhled</h2>
+                    <div class="set-row">
+                        <label for="themeToggle">Světlý režim</label>
+                        <label class="switch"><input type="checkbox" id="themeToggle"><span></span></label>
+                    </div>
+                    <div class="set-hint">Vypnuto = tmavý režim (výchozí). Přepínač mění jen vzhled a uloží se v prohlížeči.</div>
 
-            // Světlý/tmavý režim - jen překreslí povrch, přehrávání se nemění.
-            const themeTog = document.getElementById('themeToggle');
+                    <h2>Přehrávač</h2>
+                    <div class="set-row">
+                        <label for="directToggle">Přímé přehrávání z CDN</label>
+                        <label class="switch"><input type="checkbox" id="directToggle"><span></span></label>
+                    </div>
+                    <div class="set-hint">Zapnuto (výchozí): video i IPTV jdou přímo ze zdroje. Když přímé přehrávání opakovaně selže, appka pro tohle přehrávání dočasně přejde na server a příště zkusí CDN znovu – server se používá, jen když je opravdu potřeba. Vypnuto: hned přes server.</div>
+
+                    <h2>Titulky</h2>
+                    <div class="set-row">
+                        <label for="subSizeSelect">Velikost</label>
+                        <select class="set-select" id="subSizeSelect">
+                            <option value="m">Normální</option>
+                            <option value="l">Velké</option>
+                            <option value="xl">Extra velké</option>
+                        </select>
+                    </div>
+                    <div class="set-row">
+                        <label for="subBgSelect">Pozadí</label>
+                        <select class="set-select" id="subBgSelect">
+                            <option value="dark">Tmavé</option>
+                            <option value="light">Světlé</option>
+                            <option value="none">Bez pozadí</option>
+                        </select>
+                    </div>
+                    <div class="set-hint">Týká se titulků u filmů (WebVTT). Změna je vidět hned, stopa se nenačítá znovu.</div>
+
+                    <h2>Úvodní stránka</h2>
+                    <div class="set-row">
+                        <label for="catLangSelect">Katalog</label>
+                        <select class="set-select" id="catLangSelect">
+                            <option value="cz">iTunes CZ (výchozí)</option>
+                            <option value="en">iTunes EN</option>
+                        </select>
+                    </div>
+                    <div class="set-hint">Odkud se berou filmy na úvodní stránce: žebříček iTunes CZ, nebo anglický iTunes US. Seznam i s plakáty stáhne server a cacheuje na 1 den.</div>
+
+                    <h2>Náhledy</h2>
+                    <div class="set-row">
+                        <label for="limitToggle">Omezit souběžné dotazy na náhledy</label>
+                        <label class="switch"><input type="checkbox" id="limitToggle"><span></span></label>
+                    </div>
+                    <div class="set-sub" id="limitSub">
+                        <label for="limitValue">Max. najednou</label>
+                        <input type="number" id="limitValue" min="1" max="20" step="1">
+                    </div>
+                    <div class="set-hint">Vypnuto (výchozí): náhledy se načítají všechny naráz. Zapni, pokud prehraj.to vrací chybu 429.</div>
+
+                    <h2>Připojení</h2>
+                    <div class="set-row">
+                        <span>Aktivní proxy server</span>
+                        <span class="set-val" id="proxyStatus">–</span>
+                    </div>
+                    <div class="set-hint">Když server neodpovídá, appka sama přepne na další. První dotaz po přepnutí může být pomalejší, protože se čeká na timeout mrtvého serveru.</div>
+
+                    <h2>Data v prohlížeči</h2>
+                    <p>Nastavení, rozehrané filmy i oblíbené zůstávají jen v tomhle prohlížeči. Co přesně se ukládá a jak to smazat najdeš v <button type="button" class="f-link" onclick="openPage('cookies')" style="color:#fff;text-decoration:underline">Předvolbách cookies</button>.</p>
+            `;
+        }
+
+        // Napojení ovládacích prvků po každém vykreslení stránky (prvky jsou nové).
+        function bindSettings(root) {
+            const q = id => root.querySelector('#' + id);
+
+            const themeTog = q('themeToggle');
             if (themeTog) {
                 themeTog.checked = settings.theme === 'light';
                 themeTog.addEventListener('change', () => {
@@ -2307,8 +2347,19 @@
                 });
             }
 
-            // Velikost a pozadí titulků - přes CSS proměnné, takže se stopa nemusí načítat znovu.
-            const subSizeSel = document.getElementById('subSizeSelect');
+            const directTog = q('directToggle');
+            if (directTog) {
+                directTog.checked = directPreferred();
+                directTog.addEventListener('change', () => {
+                    settings.direct = directTog.checked;
+                    saveSettings();
+                    // Vypnutí přímého přehrávání schová ruční nabídku serveru; aktuální
+                    // přehrávání se nemění, aby se video zbytečně nepřerušilo.
+                    if (!settings.direct) proxyBtn.hidden = true;
+                });
+            }
+
+            const subSizeSel = q('subSizeSelect');
             if (subSizeSel) {
                 subSizeSel.value = CUE_SIZES[settings.subSize] ? settings.subSize : 'm';
                 subSizeSel.addEventListener('change', () => {
@@ -2317,7 +2368,8 @@
                     applyCueStyle();
                 });
             }
-            const subBgSel = document.getElementById('subBgSelect');
+
+            const subBgSel = q('subBgSelect');
             if (subBgSel) {
                 subBgSel.value = CUE_BACKGROUNDS[settings.subBg] ? settings.subBg : 'dark';
                 subBgSel.addEventListener('change', () => {
@@ -2326,7 +2378,53 @@
                     applyCueStyle();
                 });
             }
-        })();
+
+            const catSel = q('catLangSelect');
+            if (catSel) {
+                catSel.value = settings.catLang === 'en' ? 'en' : 'cz';
+                catSel.addEventListener('change', () => {
+                    settings.catLang = catSel.value === 'en' ? 'en' : 'cz';
+                    saveSettings();
+                    loadCatalog();   // jiný žebříček = jiný seznam filmů (server má oba v cache)
+                });
+            }
+
+            const tog = q('limitToggle');
+            const val = q('limitValue');
+            const sub = q('limitSub');
+            if (tog) {
+                tog.checked = !!settings.limitOn;
+                if (val) val.value = settings.limit;
+                if (sub) sub.classList.toggle('show', tog.checked);
+                tog.addEventListener('change', () => {
+                    settings.limitOn = tog.checked;
+                    if (sub) sub.classList.toggle('show', tog.checked);
+                    saveSettings();
+                    pumpThumbs();
+                });
+            }
+            if (val) {
+                val.addEventListener('change', () => {
+                    settings.limit = Math.min(20, Math.max(1, parseInt(val.value, 10) || 3));
+                    val.value = settings.limit;
+                    saveSettings();
+                });
+            }
+
+            const proxyEl = q('proxyStatus');
+            if (proxyEl) {
+                if (activeProxy) {
+                    proxyEl.textContent = proxyLabel(activeProxy);
+                    proxyEl.title = activeProxy === 'direct' ? 'prehraj.to volá server přímo' : activeProxy;
+                } else {
+                    proxyEl.textContent = '–';
+                    proxyEl.title = 'Zatím žádný požadavek – server se ukáže po prvním hledání.';
+                }
+            }
+        }
+
+        function openSettings() { openPage('settings'); }
+        window.openSettings = openSettings;
 
         // ===== Wflix intro: krátký filmový podpis =====
         // Bez tlačítek a bez interakce: overlay se sám zavře.
