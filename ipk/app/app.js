@@ -716,10 +716,13 @@
     var html = '';
     for (var i = 0; i < state.results.length; i++) {
       var m = state.results[i];
-      var img = m.thumbnail || thumbUrl(m.title);
-      html += '<button class="f card" type="button" data-idx="' + i + '">'
-        + '<span class="art"><img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer"'
-        + ' onerror="this.onerror=null;this.src=\'' + esc(thumbUrl(m.title)) + '\'"><div class="ph" style="display:none">' + icon('film') + '</div></span>'
+      var img = m.thumbnail || '';
+      var artImg = img
+        ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer"'
+          + ' onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
+        : '';
+      html += '<button class="f card wide" type="button" data-idx="' + i + '">'
+        + '<span class="art">' + artImg + '<span class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</span></span>'
         + '<span class="cap"><span class="t">' + esc(m.title) + '</span>'
         + (m.year ? '<span class="y">' + esc(m.year) + '</span>' : '') + '</span>'
         + '</button>';
