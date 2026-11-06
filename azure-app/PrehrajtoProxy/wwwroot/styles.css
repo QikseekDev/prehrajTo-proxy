@@ -72,7 +72,6 @@
         }
         .set-row + .set-row { border-top: 0; }
         .set-hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; line-height: 1.5; }
-        .set-val { color: #cfcfcf; font-size: 14px; }
         .page-body h2:first-child { margin-top: 0; }
         .set-select { background: #000; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; font: inherit; max-width: 150px; }
         .set-sub { display: none; align-items: center; justify-content: space-between; margin-top: 10px; }
@@ -395,7 +394,6 @@
         .src-mode { font-size: 12px; color: var(--muted); white-space: nowrap; }
         .src-mode[hidden] { display: none; }
         .src-mode.relay { color: #f5c518; }
-        .set-val { color: #cfcfcf; font-size: 13px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .dl-btn.on { color: #ffd15c; }
         /* Po skončení videa: co dál. Leží přes video, takže neposouvá stránku. */
         .player-end {
@@ -433,21 +431,7 @@
         .nav-live.active { color: #fff; }
         .nav-live.active .live-ico { color: var(--red); }
         /* Odznak aktivního proxy serveru - malý, aby nerušil, ale bylo vidět, přes co to jde. */
-        .src-badge {
-            display: inline-flex; align-items: center; gap: 6px; flex: none;
-            padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.4;
-            color: #cfcfcf; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16);
-            white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
-            transition: color 0.2s, border-color 0.2s;
-        }
-        .src-badge[hidden] { display: none; }
-        .src-badge i {
-            width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--green);
-            box-shadow: 0 0 6px rgba(70,211,105,0.85);
-        }
         /* Po přepnutí na jiný server je odznak chvíli jantarový - "tady se něco stalo". */
-        .src-badge.changed { color: #f5c518; border-color: rgba(245,197,24,0.45); }
-        .src-badge.changed i { background: #f5c518; box-shadow: 0 0 6px rgba(245,197,24,0.9); }
         .live-section { display: none; padding: 100px 4% 0; }
         .live-head {
             display: flex; align-items: center; justify-content: space-between;
@@ -740,8 +724,6 @@
         [data-theme="light"] .back-btn:hover, [data-theme="light"] .dl-btn:hover { background: rgba(0,0,0,0.15); }
         [data-theme="light"] .player-keys b { color: #141414; }
         [data-theme="light"] .player-end { color: #f5f5f5; }
-        [data-theme="light"] .src-badge { background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.16); color: #4a4a4a; }
-        [data-theme="light"] .set-val { color: #4a4a4a; }
         [data-theme="light"] .set-row { border-bottom-color: rgba(0,0,0,0.1); }
         [data-theme="light"] .set-select, [data-theme="light"] .set-sub input { background: #fff; color: #141414; border-color: #c9c9c9; }
         [data-theme="light"] .set-sub input { color: #141414; }
@@ -779,5 +761,125 @@
         [data-theme="light"] .f-copy { color: #6b6b6b; }
         @media (max-width: 700px) {
             /* na telefonu je lišta plná - server je vidět v Nastavení a u přehrávače */
-            .src-badge { display: none; }
+        }
+
+        /* ===== Knihovna: historie a oblíbené ===== */
+        .lib-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 30px 0 12px;
+        }
+        .lib-head h2 { margin: 0; }
+        .lib-clear {
+            font: inherit;
+            font-size: 13px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            border: 1px solid #3d3d3d;
+            background: transparent;
+            color: #e8e8e8;
+            cursor: pointer;
+        }
+        .lib-clear:hover:not(:disabled) { background: #2a2a2a; border-color: #5a5a5a; }
+        .lib-clear:disabled { opacity: 0.45; cursor: default; }
+        .lib-filter { max-width: 320px; margin-bottom: 14px; }
+        .lib-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+        .lib-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px;
+            border: 1px solid #2c2c2c;
+            border-radius: 10px;
+            background: #1b1b1b;
+        }
+        .lib-item[hidden] { display: none; }
+        .lib-open {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+            padding: 0;
+            border: 0;
+            background: none;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+        .lib-open:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+        .lib-art {
+            position: relative;
+            flex: 0 0 96px;
+            width: 96px;
+            height: 56px;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+        }
+        .lib-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .lib-art .progress {
+            position: absolute;
+            left: 6px;
+            right: 6px;
+            bottom: 5px;
+            height: 3px;
+            border-radius: 2px;
+            background: rgba(255,255,255,0.3);
+            overflow: hidden;
+        }
+        .lib-art .progress i { display: block; height: 100%; background: #e50914; }
+        .lib-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .lib-info b {
+            font-size: 15px;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .lib-meta { font-size: 12.5px; color: #a6a6a6; }
+        .lib-del {
+            flex: 0 0 auto;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: 1px solid #3a3a3a;
+            background: #232323;
+            color: #bdbdbd;
+            font-size: 14px;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .lib-del:hover, .lib-del:focus-visible { background: #2f2f2f; border-color: #6d6d6d; color: #fff; }
+        .lib-del.star { color: #f5c518; border-color: rgba(245,197,24,0.35); }
+        .lib-empty {
+            padding: 18px;
+            border: 1px dashed #333;
+            border-radius: 10px;
+            color: #9c9c9c;
+            font-size: 14px;
+        }
+        [data-theme="light"] .lib-item { background: #fff; border-color: #e4e4e4; }
+        [data-theme="light"] .lib-del { background: #f2f2f2; border-color: #d8d8d8; color: #555; }
+        [data-theme="light"] .lib-del:hover, [data-theme="light"] .lib-del:focus-visible { background: #e8e8e8; color: #111; }
+        [data-theme="light"] .lib-meta { color: #6b6b6b; }
+        [data-theme="light"] .lib-empty { border-color: #dcdcdc; color: #666; }
+        [data-theme="light"] .lib-clear { border-color: #d5d5d5; color: #333; }
+        @media (max-width: 640px) {
+            .lib-head { flex-wrap: wrap; }
+            .lib-filter { max-width: none; }
+            .lib-art { flex-basis: 72px; width: 72px; height: 44px; }
+            .lib-info b { white-space: normal; }
         }

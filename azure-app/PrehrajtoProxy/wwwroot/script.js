@@ -28,8 +28,6 @@
         const playerEnd = document.getElementById('playerEnd');
         const playerEndTitle = document.getElementById('playerEndTitle');
         const placeholder = document.getElementById('placeholder');
-        const srcBadge = document.getElementById('srcBadge');
-        const srcBadgeName = document.getElementById('srcBadgeName');
         const srcMode = document.getElementById('srcMode');
         const favBtn = document.getElementById('favBtn');
         const pipBtn = document.getElementById('pipBtn');
@@ -114,7 +112,7 @@
         const HISTORY_KEY = 'wflix-history';
         const FAVS_KEY = 'wflix-favs';
         const HISTORY_MAX = 40;
-        let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: true, theme: 'dark', subSize: 'm', subBg: 'dark' };
+        let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: true, theme: 'dark', subSize: 'm', subBg: 'dark', historyOn: true };
         try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) {}
         // Starší verze ukládaly volby, které už v panelu nejsou (vypnuté náhledy, zdroj
         // náhledů, proxy). Zahodit, ať se v localStorage nevrátí zpátky do oběhu.
@@ -163,35 +161,6 @@
             .map(u => '&proxy=' + encodeURIComponent(u.trim()))
             .join('');
 
-        // ===== Aktivní proxy server (odznak v liště, řádek v Nastavení) =====
-        // Backend zkouší servery jeden po druhém a v hlavičce X-Wflix-Proxy posílá ten, který
-        // odpověděl. Změna znamená failover - proto odznak krátce zjantaroví a vysvětlí to v tooltipu.
-        let activeProxy = '';
-        function proxyLabel(src) {
-            if (!src) return '';
-            if (src === 'direct') return 'přímo';
-            try { return new URL(src).hostname.replace(/^www\./, ''); } catch (e) { return src; }
-        }
-        function noteActiveProxy(src) {
-            if (!src || src === activeProxy || !srcBadge || !srcBadgeName) return;
-            const switched = !!activeProxy;
-            activeProxy = src;
-            const label = proxyLabel(src);
-            srcBadgeName.textContent = label;
-            srcBadge.hidden = false;
-            srcBadge.title = 'Aktivní proxy server: ' + (src === 'direct' ? 'přímé volání' : src)
-                + (switched ? ' (po výpadku předchozího serveru)' : '');
-            srcBadge.classList.toggle('changed', switched);
-            clearTimeout(noteActiveProxy.timer);
-            if (switched) noteActiveProxy.timer = setTimeout(() => srcBadge.classList.remove('changed'), 4000);
-            // Nastavení je stránka, která se vykresluje až při otevření - prvek
-            // proto hledáme pokaždé znovu, ne jednou při startu.
-            const proxyEl = document.getElementById('proxyStatus');
-            if (proxyEl) {
-                proxyEl.textContent = label;
-                proxyEl.title = src === 'direct' ? 'prehraj.to volá server přímo' : src;
-            }
-        }
         let thumbCache = {};
         try { thumbCache = JSON.parse(localStorage.getItem(THUMB_KEY) || '{}'); } catch (e) {}
         const thumbQueue = [];
@@ -349,7 +318,6 @@
 
         let history = readList(HISTORY_KEY).filter(x => x.url);
         let favorites = readList(FAVS_KEY).filter(x => x.key);
-        let favFilterText = '';
         let lastHistoryWrite = 0;
 
         const saveHistory = () => writeList(HISTORY_KEY, history);
@@ -375,6 +343,8 @@
         function historySave(force) {
             const page = player.page;
             if (!page) return;
+            // Vypnutá historie v Knihovně: nic se neukládá, ani pozice rozehraných filmů.
+            if (settings.historyOn === false) return;
             const now = Date.now();
             if (!force && now - lastHistoryWrite < 4000) return;
             const dur = isFinite(videoPlayer.duration) && videoPlayer.duration > 0 ? Math.round(videoPlayer.duration) : 0;
@@ -454,57 +424,6 @@
                 data-fav-url="${escapeHtml(it.url || '')}" data-fav-q="${escapeHtml(it.q || '')}"
                 data-fav-title="${escapeHtml(it.title || '')}" data-fav-poster="${escapeHtml(it.poster || '')}"
                 aria-pressed="${on}" aria-label="${label}" title="${label}">${on ? '★' : '☆'}</span>`;
-        }
-
-        // Karta v osobní řadě: plakát, název a buď zbytek stopáže, nebo "Dohráno".
-        function libCardHtml(it) {
-            const played = it.t > 0 && it.d > 0;
-            const pct = played ? Math.min(100, Math.max(2, Math.round((it.t / it.d) * 100))) : 0;
-            const meta = played
-                ? (histDone(it) ? 'Dohráno' : `Zbývá ${fmtRemain(it.d - it.t)}`)
-                : 'Oblíbené';
-            const action = it.url ? `data-hist="${escapeHtml(it.url)}"` : `data-catq="${escapeHtml(it.q || '')}"`;
-            const img = it.poster
-                ? `<img class="thumb portrait" alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(it.poster)}"
-                        onerror="this.parentElement.classList.remove('has-img');this.remove()">`
-                : '';
-            return `<button class="poster" ${action} data-name="${escapeHtml(norm(it.title))}" aria-label="${escapeHtml(it.title)}">
-                <span class="art${it.poster ? ' has-img' : ''}" style="background:${posterGradient(it.title || '')}">
-                    ${img}
-                    <span class="emoji">🎬</span>
-                    <span class="shade"></span>
-                    <span class="play">▶</span>
-                    <span class="p-title">${escapeHtml(it.title || 'Video')}</span>
-                    <span class="p-meta">${escapeHtml(meta)}</span>
-                    ${pct ? `<span class="progress"><i style="width:${pct}%"></i></span>` : ''}
-                </span>
-                ${favBtnHtml({ url: it.url || '', q: it.q || '', title: it.title || '', poster: it.poster || '' })}
-            </button>`;
-        }
-
-        // Filtr v řadě oblíbených filtruje už vykreslené karty, takže neztrácí fokus
-        // při psaní (řada se kvůli tomu nepřekresluje).
-        function applyFavFilter() {
-            const row = document.querySelector('.cat-row.fav-row');
-            if (!row) return;
-            const q = norm(favFilterText.trim());
-            row.querySelectorAll('.poster[data-name]').forEach(el => {
-                el.style.display = (!q || (el.dataset.name || '').includes(q)) ? '' : 'none';
-            });
-        }
-
-        function renderLibraryRows() {
-            const rows = [];
-            const cont = history.filter(h => h.t > 30 && !histDone(h)).slice(0, 12);
-            if (cont.length) rows.push(carouselHtml('Pokračovat ve sledování', cont.map(libCardHtml).join('')));
-            const recent = history.slice(0, 12);
-            if (recent.length) rows.push(carouselHtml('Nedávno sledované', recent.map(libCardHtml).join('')));
-            if (favorites.length) {
-                const head = `<input class="row-filter" id="favFilter" type="search" autocomplete="off"
-                    placeholder="Filtrovat oblíbené…" aria-label="Filtrovat oblíbené" value="${escapeHtml(favFilterText)}">`;
-                rows.push(carouselHtml('Moje oblíbené', favorites.map(libCardHtml).join(''), head, 'fav-row'));
-            }
-            return rows.join('');
         }
 
         function openFromCatalog(q) {
@@ -601,9 +520,9 @@
             document.getElementById('chips').innerHTML = CHIPS.map(c =>
                 `<button class="chip ${c === activeChip ? 'active' : ''}" data-chip="${c}">${c}</button>`).join('');
 
-            // Osobní řady jdou nahoru, nad katalog: rozehrané a oblíbené jsou to první,
-            // co divák hledá. Filtry žánrů se jich netýkají.
-            let html = renderLibraryRows();
+            // Historie a oblíbené mají vlastní stránku (Knihovna v liště), takže úvodní
+            // stránka zůstává čistě katalog a hledání.
+            let html = '';
             if (activeChip === 'Vše') {
                 const day = Math.floor(Date.now() / 86400000);
                 const top = Array.from({ length: 10 }, (_, i) => CATALOG[(day * 7 + i * 3) % CATALOG.length]);
@@ -617,16 +536,8 @@
             }).join('');
             document.getElementById('catalogRows').innerHTML = html;
             observeThumbs();
-            applyFavFilter();
             syncFavButtons();
         }
-
-        // Filtr v řadě oblíbených (posluchač drží na kontejneru, řady se překreslují).
-        document.getElementById('catalogRows').addEventListener('input', e => {
-            if (e.target.id !== 'favFilter') return;
-            favFilterText = e.target.value;
-            applyFavFilter();
-        });
 
         document.getElementById('placeholder').addEventListener('click', (e) => {
             // Záložka oblíbených leží uvnitř karty, takže musí být dřív než otevření titulu.
@@ -740,8 +651,6 @@
             const max = opts.retries == null ? 3 : opts.retries;
             for (let attempt = 0; ; attempt++) {
                 const response = await fetch(url);
-                // Backend hlásí, který proxy server dotaz obsloužil (po failoveru jiný).
-                noteActiveProxy(response.headers.get('X-Wflix-Proxy'));
                 let data = null;
                 try { data = await response.json(); } catch (e) { data = null; }
                 if (!isRateLimited(response.status, data)) return { response, data, rateLimited: false };
@@ -882,12 +791,12 @@
                     <h2>Přehrávač a klávesy</h2>
                     <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ PiP</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa).</p>
                     <p>Velikost a pozadí titulků se nastavují v Nastavení (avatar vpravo nahoře).</p>
-                    <h2>Oblíbené a rozehrané filmy</h2>
-                    <p>Hvězdička na kartě přidá titul do oblíbených, stejně jako tlačítko u přehrávače. Úvodní stránka pak nahoře ukazuje řady <b>Pokračovat ve sledování</b>, <b>Moje oblíbené</b> a <b>Nedávno sledované</b>. Filmy se po otevření samy pustí od místa, kde jsi skončil. Vše se ukládá jen v tvém prohlížeči.</p>
+                    <h2>Knihovna: oblíbené a historie</h2>
+                    <p>Hvězdička na kartě přidá titul do oblíbených, stejně jako tlačítko u přehrávače. Odkaz <b>Knihovna</b> v liště (před Živě) ukazuje historii přehrávání i oblíbené. U historie jde každý film odebrat křížkem, celou ji smažeš tlačítkem <b>Vymazat historii</b> a přepínačem <b>Ukládat historii přehrávání</b> ji můžeš úplně vypnout. Filmy se po otevření samy pustí od místa, kde jsi skončil. Vše se ukládá jen v tvém prohlížeči.</p>
                     <h2>Chyba 429 (Too Many Requests)</h2>
                     <p>Prehraj.to limituje počet dotazů. Když se to objeví, dej appce minutu pauzu a v Nastavení (avatar vpravo nahoře) zapni „Omezit souběžné dotazy na náhledy“ – načítání náhledů je nejčastější příčina.</p>
                     <h2>Proxy servery</h2>
-                    <p>Appka nikdy nevolá prehraj.to přímo. Dotazy jdou přes PHP proxy servery, které má v sobě nastavené, a používá se první, která odpoví. Když je jeden mrtvý nebo zaplněný, appka ho přeskočí a zkusí další. Který server právě odpovídá, ukazuje malý odznak v liště (a řádek v Nastavení) – po přepnutí může být první načtení pomalejší, protože se čeká na timeout mrtvého serveru.</p>
+                    <p>Appka nikdy nevolá prehraj.to přímo. Dotazy jdou přes PHP proxy servery, které má v sobě nastavené, a používá se první, která odpoví. Když je jeden mrtvý nebo zaplněný, appka ho přeskočí a zkusí další. Který server zrovna odpovídá appka neukazuje; po přepnutí může být první načtení pomalejší, protože se čeká na timeout mrtvého serveru.</p>
                     <h2>Náhledy a nastavení</h2>
                     <p>V Nastavení (avatar vpravo nahoře) jde změnit katalog na úvodní stránce, omezit počet souběžných dotazů na náhledy a vypnout nebo zapnout Přímé přehrávání z CDN (výchozí: zapnuto). Vše se ukládá jen do tvého prohlížeče.</p>
                     <h2>Přímé přehrávání z CDN</h2>
@@ -990,6 +899,11 @@
                     </ul>
                     <p>Než napíšeš, koukni do <button type="button" class="f-link" onclick="openPage('help')" style="color:#fff;text-decoration:underline">Centra nápovědy</button> – většina problémů je limit prehraj.to (429) nebo mrtvý rip.</p>
                 `,
+            },
+            library: {
+                title: 'Knihovna',
+                body: libraryPageHtml(),
+                onOpen: bindLibrary,
             },
             settings: {
                 title: 'Nastavení',
@@ -2321,13 +2235,6 @@
                     </div>
                     <div class="set-hint">Vypnuto (výchozí): náhledy se načítají všechny naráz. Zapni, pokud prehraj.to vrací chybu 429.</div>
 
-                    <h2>Připojení</h2>
-                    <div class="set-row">
-                        <span>Aktivní proxy server</span>
-                        <span class="set-val" id="proxyStatus">–</span>
-                    </div>
-                    <div class="set-hint">Když server neodpovídá, appka sama přepne na další. První dotaz po přepnutí může být pomalejší, protože se čeká na timeout mrtvého serveru.</div>
-
                     <h2>Data v prohlížeči</h2>
                     <p>Nastavení, rozehrané filmy i oblíbené zůstávají jen v tomhle prohlížeči. Co přesně se ukládá a jak to smazat najdeš v <button type="button" class="f-link" onclick="openPage('cookies')" style="color:#fff;text-decoration:underline">Předvolbách cookies</button>.</p>
             `;
@@ -2411,17 +2318,170 @@
                 });
             }
 
-            const proxyEl = q('proxyStatus');
-            if (proxyEl) {
-                if (activeProxy) {
-                    proxyEl.textContent = proxyLabel(activeProxy);
-                    proxyEl.title = activeProxy === 'direct' ? 'prehraj.to volá server přímo' : activeProxy;
-                } else {
-                    proxyEl.textContent = '–';
-                    proxyEl.title = 'Zatím žádný požadavek – server se ukáže po prvním hledání.';
-                }
-            }
         }
+
+        // ===== Knihovna: historie a oblíbené na vlastní stránce =====
+        // Dřív to byly řady na úvodní stránce. S mazáním a vypínáním historie se to tam
+        // nevešlo, takže je z toho stránka v liště (před Živě), stejná jako Nastavení.
+        function fmtSeen(ts) {
+            if (!ts) return '';
+            const days = Math.floor((Date.now() - ts) / 86400000);
+            if (days <= 0) return 'dnes';
+            if (days === 1) return 'včera';
+            if (days < 5) return days + ' dny zpět';
+            if (days < 7) return days + ' dní zpět';
+            const d = new Date(ts);
+            return d.getDate() + '. ' + (d.getMonth() + 1) + '.';
+        }
+
+        // Klikací atributy nesou jen číslo - pořadí se po každé změně překreslí, takže
+        // se do onclick nedostane adresa s apostrofem nebo ampersandem.
+        let libOrder = [];
+        let libFilterText = '';
+
+        function libMeta(it, kind) {
+            if (kind === 'fav') return 'Oblíbené';
+            const bits = [];
+            if (it.t > 0 && it.d > 0) bits.push(histDone(it) ? 'Dohráno' : 'Zbývá ' + fmtRemain(it.d - it.t));
+            if (it.at) bits.push('Sledováno ' + fmtSeen(it.at));
+            return bits.join(' · ') || 'Rozehrané';
+        }
+
+        function libRowHtml(entry, i) {
+            const it = entry.item;
+            const kind = entry.kind;
+            const pct = (it.t > 0 && it.d > 0) ? Math.min(100, Math.max(2, Math.round((it.t / it.d) * 100))) : 0;
+            const title = escapeHtml(it.title || 'Video');
+            const art = it.poster
+                ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(it.poster)}" onerror="this.remove()">`
+                : '<span class="emoji">🎬</span>';
+            const del = kind === 'fav'
+                ? `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">★</button>`
+                : `<button class="lib-del" type="button" onclick="libDelHist(${i})" aria-label="Odebrat z historie" title="Odebrat z historie">✕</button>`;
+            return `<div class="lib-item" data-name="${escapeHtml(norm(it.title))}">
+                <button class="lib-open" type="button" onclick="libPlay(${i})" aria-label="Přehrát ${title}">
+                    <span class="lib-art" style="background:${posterGradient(it.title || '')}">
+                        ${art}
+                        ${pct ? `<span class="progress"><i style="width:${pct}%"></i></span>` : ''}
+                    </span>
+                    <span class="lib-info">
+                        <b>${title}</b>
+                        <span class="lib-meta">${escapeHtml(libMeta(it, kind))}</span>
+                    </span>
+                </button>
+                ${del}
+            </div>`;
+        }
+
+        function libraryPageHtml() {
+            return `
+                    <div class="set-row">
+                        <label for="histToggle">Ukládat historii přehrávání</label>
+                        <label class="switch"><input type="checkbox" id="histToggle"><span></span></label>
+                    </div>
+                    <div class="set-hint">Zapnuto (výchozí): rozehrané filmy se ukládají a po otevření se pustí od místa, kde jsi skončil. Vypnuto: nic nového se neukládá - co už v knihovně je, zůstane, dokud to nesmažeš.</div>
+
+                    <div class="lib-head">
+                        <h2>Historie</h2>
+                        <button class="lib-clear" type="button" id="libClearHist" onclick="libClearHistory()">Vymazat historii</button>
+                    </div>
+                    <input class="row-filter lib-filter" id="libFilter" type="search" autocomplete="off"
+                        placeholder="Filtrovat knihovnu…" aria-label="Filtrovat knihovnu">
+                    <div class="lib-list" id="libHistList"></div>
+
+                    <h2>Oblíbené</h2>
+                    <div class="lib-list" id="libFavList"></div>
+                    <div class="set-hint">Hvězdička na kartě filmu titul přidá sem, hvězdička tady ho zase odebere. Knihovna je jen v tomhle prohlížeči - nikam se neposílá.</div>
+            `;
+        }
+
+        function applyLibFilter() {
+            const q = norm(libFilterText.trim());
+            document.querySelectorAll('#pageBody .lib-item').forEach(el => {
+                el.hidden = !!q && !(el.dataset.name || '').includes(q);
+            });
+        }
+
+        function renderLibraryBody() {
+            const histEl = document.getElementById('libHistList');
+            const favEl = document.getElementById('libFavList');
+            if (!histEl || !favEl) return;
+            libOrder = history.map(h => ({ kind: 'hist', item: h }))
+                              .concat(favorites.map(f => ({ kind: 'fav', item: f })));
+            const rows = libOrder.map(libRowHtml);
+            const histRows = rows.slice(0, history.length);
+            histEl.innerHTML = histRows.length
+                ? histRows.join('')
+                : '<div class="lib-empty">Zatím nic přehraného. Pusť si film a objeví se tady i s místem, kde jsi skončil.</div>';
+            favEl.innerHTML = rows.length > history.length
+                ? rows.slice(history.length).join('')
+                : '<div class="lib-empty">Zatím žádné oblíbené. Hvězdička na kartě filmu ho přidá sem.</div>';
+            const clearBtn = document.getElementById('libClearHist');
+            if (clearBtn) clearBtn.disabled = history.length === 0;
+            applyLibFilter();
+        }
+
+        function bindLibrary(root) {
+            const tog = root.querySelector('#histToggle');
+            if (tog) {
+                tog.checked = settings.historyOn !== false;
+                tog.addEventListener('change', () => {
+                    settings.historyOn = tog.checked;
+                    saveSettings();
+                    notice(tog.checked ? 'Historie je zapnutá' : 'Historie je vypnutá - nová přehrávání se neukládají');
+                });
+            }
+            const filter = root.querySelector('#libFilter');
+            if (filter) {
+                filter.value = libFilterText;
+                filter.addEventListener('input', () => { libFilterText = filter.value; applyLibFilter(); });
+            }
+            renderLibraryBody();
+        }
+
+        function libPlay(i) {
+            const e = libOrder[i];
+            if (!e) return;
+            if (e.item.url) { playFromLibrary(e.item.url); return; }
+            if (e.item.q) { goHome(); openFromCatalog(e.item.q); return; }
+            notice('Tenhle titul nemá odkaz - zkus ho najít hledáním.', 'error');
+        }
+
+        function libDelHist(i) {
+            const e = libOrder[i];
+            if (!e || e.kind !== 'hist') return;
+            history = history.filter(x => x !== e.item && x.url !== e.item.url);
+            saveHistory();
+            renderLibraryBody();
+            notice('Odebráno z historie');
+        }
+
+        function libDelFav(i) {
+            const e = libOrder[i];
+            if (!e || e.kind !== 'fav') return;
+            favorites = favorites.filter(f => f.key !== e.item.key);
+            saveFavorites();
+            renderCatalog();   // hvězdičky na kartách katalogu musí odpovídat
+            renderLibraryBody();
+            notice('Odebráno z oblíbených');
+        }
+
+        function libClearHistory() {
+            if (!history.length) return;
+            if (!window.confirm('Smazat celou historii přehrávání? Rozehrané filmy pak začnou od začátku.')) return;
+            const n = history.length;
+            history = [];
+            saveHistory();
+            renderLibraryBody();
+            notice('Historie smazána (' + n + (n === 1 ? ' film)' : ' filmů)'));
+        }
+
+        function openLibrary() { openPage('library'); }
+        window.openLibrary = openLibrary;
+        window.libPlay = libPlay;
+        window.libDelHist = libDelHist;
+        window.libDelFav = libDelFav;
+        window.libClearHistory = libClearHistory;
 
         function openSettings() { openPage('settings'); }
         window.openSettings = openSettings;
