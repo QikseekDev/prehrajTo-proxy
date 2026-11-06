@@ -9,6 +9,8 @@
 
   var VERSION = '1.1.0';
   var LS_SERVER = 'wflix.server';
+  // Pevný server – adresa se v aplikaci nezadává ani nemění.
+  var FIXED_SERVER = 'http://wflix.runasp.net';
   var LS_SETTINGS = 'wflix.settings';
 
   var Native = window.WflixNative || null;
@@ -56,7 +58,7 @@
    *  Nastavení
    * ------------------------------------------------------------------ */
   var settings = {
-    server: '',
+    server: FIXED_SERVER,
     direct: true,      // přímé přehrávání z CDN (jako ve webovém Wflixu)
     lang: 'cz',        // jazyk katalogu
     live: 'cz',        // výchozí zdroj živého vysílání
@@ -75,7 +77,7 @@
         if (s.subBg === 'dark' || s.subBg === 'light' || s.subBg === 'none') settings.subBg = s.subBg;
       }
     } catch (e) { /* poškozené úložiště – jedeme s výchozím */ }
-    settings.server = localStorage.getItem(LS_SERVER) || '';
+    settings.server = FIXED_SERVER;   // starší uložená adresa se ignoruje
   }
   function saveSettings() {
     try {
@@ -83,7 +85,6 @@
         direct: settings.direct, lang: settings.lang, live: settings.live,
         subSize: settings.subSize, subBg: settings.subBg
       }));
-      localStorage.setItem(LS_SERVER, settings.server || '');
     } catch (e) { /* TV může mít úložiště vypnuté – jede se dál bez uložení */ }
   }
 
@@ -1395,7 +1396,6 @@
       + '<div class="set-row">'
       + '  <div class="lab"><b>Server</b><span>' + esc(settings.server || '—') + '</span></div>'
       + '  <div class="set-actions">'
-      + '    <button class="f btn ghost" type="button" id="setServer">Změnit</button>'
       + '    <button class="f btn ghost" type="button" id="setTest">Otestovat</button>'
       + '  </div>'
       + '</div>'
@@ -1425,22 +1425,6 @@
       + '</div>';
     $('settingsList').innerHTML = html;
 
-    $('setServer').addEventListener('click', function () {
-      openKeyboard({
-        title: 'Adresa serveru', value: settings.server,
-        onDone: function (v) {
-          var s = normalizeServer(v);
-          if (!s) { toast('Adresa nesmí být prázdná.'); return; }
-          settings.server = s;
-          saveSettings();
-          renderSettings();
-          focusEl($('setServer'));
-          loadHome();
-          state.channels = [];
-          toast('Server uložen.');
-        }
-      });
-    });
     $('setTest').addEventListener('click', function () {
       loading('Testuji server…');
       apiJson('/api/live?country=cz', 20000).then(function (d) {
@@ -1643,17 +1627,7 @@
   /* ------------------------------------------------------------------ *
    *  Start
    * ------------------------------------------------------------------ */
-  var serverPrefill = '';
-
-  function showSetup() {
-    hide($('shell'));
-    show($('setup'));
-    $('serverField').textContent = settings.server || serverPrefill || 'http://192.168.1.10:5218';
-    setTimeout(function () { focusEl($('serverField')); }, 50);
-  }
-
   function startApp() {
-    hide($('setup'));
     show($('shell'));
     setView('home');
     loadHome();
@@ -1662,65 +1636,11 @@
     if (settings.live) state.liveFilter = settings.live;
   }
 
-  function testAndConnect(server) {
-    settings.server = server;
-    loading('Připojuji se k serveru…');
-    $('setupMsg').textContent = '';
-    $('setupMsg').className = 'msg';
-    apiJson('/api/catalog?lang=' + settings.lang, 20000).then(function (d) {
-      loading(null);
-      if (!d || !d.success) throw new Error('Server nevrátil očekávaná data');
-      saveSettings();
-      $('setupMsg').textContent = 'Připojeno';
-      $('setupMsg').className = 'msg ok';
-      startApp();
-    }).catch(function (e) {
-      loading(null);
-      $('setupMsg').textContent = 'Nepřipojeno: ' + e.message + ' — můžeš to zkusit i tak.';
-      $('setupMsg').className = 'msg err';
-      saveSettings();
-      setTimeout(function () {
-        if ($('setupMsg').className.indexOf('err') !== -1) startApp();
-      }, 1600);
-    });
-  }
-
   function boot() {
     document.body.classList.toggle('touch', isTouch);
     loadSettings();
     applyCueStyle();
     $('verLine').textContent = VERSION;
-
-    if (!settings.server && /^https?:$/.test(location.protocol)) {
-      // Předvyplníme adresu, na které klient běží – uživatel jen potvrdí.
-      serverPrefill = location.origin;
-      $('serverField').textContent = serverPrefill;
-    }
-
-    $('serverField').addEventListener('click', function () {
-      openKeyboard({
-        title: 'Adresa serveru', value: settings.server || (($('serverField').textContent || '').indexOf('http') === 0 ? $('serverField').textContent : ''),
-        onDone: function (v) {
-          var s = normalizeServer(v);
-          if (!s) return;
-          settings.server = s;
-          saveSettings();
-          $('serverField').textContent = s;
-          $('setupMsg').textContent = '';
-        }
-      });
-    });
-
-    $('connectBtn').addEventListener('click', function () {
-      var s = normalizeServer(settings.server || $('serverField').textContent);
-      if (!s || s === 'http://192.168.1.10:5218') {
-        toast('Nejdřív zadej adresu serveru.');
-        return;
-      }
-      settings.server = s;
-      $('serverField').textContent = s;
-      testAndConnect(s);
-    });
 
     var navs = document.querySelectorAll('.navbtn');
     for (var i = 0; i < navs.length; i++) {
@@ -1761,13 +1681,7 @@
     renderLiveChips();
     renderSettings();
 
-    if (settings.server) {
-      hide($('setup'));
-      show($('shell'));
-      startApp();
-    } else {
-      showSetup();
-    }
+    startApp();
   }
 
   if (document.readyState === 'loading') {
