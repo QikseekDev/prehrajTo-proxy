@@ -516,7 +516,7 @@
   /* ------------------------------------------------------------------ *
    *  Obrazovková klávesnice (TV)
    * ------------------------------------------------------------------ */
-  var kbdState = { value: '', title: '', onDone: null, onCancel: null };
+  var kbdState = { value: '', title: '', onDone: null, onCancel: null, physical: false };
   var KBD_ROWS = [
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '.'],
     ['q', 'w', 'e', 'r', 't', 'z', 'u', 'i', 'o', 'p', '/', ':'],
@@ -537,7 +537,8 @@
       value: String(opts.value || ''),
       title: opts.title || 'Zadej text',
       onDone: opts.onDone || null,
-      onCancel: opts.onCancel || null
+      onCancel: opts.onCancel || null,
+      physical: false
     };
     $('kbdTitle').textContent = kbdState.title;
     renderKeyboard();
@@ -584,8 +585,12 @@
       kbdState.value += k;
     }
     renderKeyboard();
-    var btns = $('kbdKeys').querySelectorAll('[data-k="' + (k === '__back' || k === '__clear' ? k : k) + '"]');
-    if (btns.length) focusEl(btns[0]);
+    var all = $('kbdKeys').querySelectorAll('[data-k]');
+    var hit = null;
+    for (var b = 0; b < all.length; b++) {
+      if (all[b].getAttribute('data-k') === k) { hit = all[b]; break; }
+    }
+    if (hit) focusEl(hit);
     else focusFirst();
   }
 
@@ -1530,12 +1535,35 @@
     if (Native && typeof Native.exitApp === 'function') { Native.exitApp(); }
   }
 
+  /* Pole, do kterého se píše – tam klávesy patří poli, ne navigaci. */
+  function isTextField(el) {
+    if (!el || !el.tagName) return false;
+    if (el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+    if (el.tagName !== 'INPUT') return false;
+    var t = (el.getAttribute('type') || 'text').toLowerCase();
+    return ['text', 'search', 'url', 'email', 'tel', 'password', 'number'].indexOf(t) !== -1;
+  }
+
+  /* Fyzická klávesnice při otevřené obrazovkové klávesnici: znaky se píší,
+     Backspace maže, Enter potvrdí (jen když už se psalo fyzicky). */
+  function kbdPhysicalKey(e) {
+    var k = e.key;
+    if (!k || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (k === 'Backspace') { e.preventDefault(); kbdState.physical = true; kbdPress('__back'); return true; }
+    if (k === 'Enter' && kbdState.physical) { e.preventDefault(); kbdPress('__ok'); return true; }
+    if (k.length === 1) { e.preventDefault(); kbdState.physical = true; kbdPress(k); return true; }
+    return false;
+  }
+
   function onKeyDown(e) {
     var k = e.key;
     var code = e.keyCode;
 
     // webOS dálkové ovládání
     if (code === 461) { e.preventDefault(); goBack(); return; }
+
+    if (!$('kbd').hidden && kbdPhysicalKey(e)) return;
+    var typing = isTextField(e.target) || isTextField(document.activeElement);
     if (code === 415) { e.preventDefault(); if (!$('player').hidden) play(); return; }
     if (code === 19) { e.preventDefault(); if (!$('player').hidden) video.pause(); return; }
     if (code === 412) { e.preventDefault(); if (!$('player').hidden) seekBy(-10); return; }
@@ -1545,10 +1573,20 @@
     var kbdOpen = !$('kbd').hidden;
 
     if (k) {
-      if (k === 'Escape' || k === 'Backspace' || k === 'GoBack' || k === 'BrowserBack') {
+      // Backspace je „zpět“ jen mimo textové pole; v poli maže znaky.
+      if (k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || (k === 'Backspace' && !typing)) {
         e.preventDefault();
+        if (typing && document.activeElement && document.activeElement.blur) document.activeElement.blur();
         goBack();
         return;
+      }
+      if (typing && (k === 'ArrowLeft' || k === 'ArrowRight')) {
+        // šipky uvnitř textu posouvají kurzor; z pole se vystoupí až na jeho kraji
+        var fld = document.activeElement;
+        var pos = fld && typeof fld.selectionStart === 'number' ? fld.selectionStart : 0;
+        var end = fld && typeof fld.selectionEnd === 'number' ? fld.selectionEnd : 0;
+        var len = fld && fld.value ? fld.value.length : 0;
+        if (k === 'ArrowLeft' ? pos > 0 || end > 0 : pos < len || end < len) return;
       }
       if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
         if (playerOpen) {
