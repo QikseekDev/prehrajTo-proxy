@@ -55,7 +55,7 @@ public class MainActivity extends Activity {
 
     private static final String START_URL = "file:///android_asset/www/index.html";
     private static final String ASSET_PREFIX = "file:///android_asset/";
-    private static final int BG = 0xFF050B16;
+    private static final int BG = 0xFF0B0C0F;
     private static final long MAX_BODY_BYTES = 32L * 1024 * 1024;   // ochrana proti obrovské odpovědi
     private static final int MAX_REDIRECTS = 5;
 
