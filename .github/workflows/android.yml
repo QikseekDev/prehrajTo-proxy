@@ -8,9 +8,6 @@ on:
 permissions:
   contents: read
 
-env:
-  JAVA_HOME: /usr/lib/jvm/default-java
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,6 +22,12 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Výchozí seznam balíčků akce je "tools platform-tools", ale "tools" už
+          # v novějších cmdline-tools není - sdkmanager skončí chybou
+          # "Failed to find package 'tools'". Instaluje se proto jen to, co build
+          # potřebuje: compileSdk 34, build-tools 34.0.0 (apksigner) a platform-tools.
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
       - name: Assemble release
         working-directory: apk
