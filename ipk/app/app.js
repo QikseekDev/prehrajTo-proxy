@@ -897,7 +897,7 @@
     if (list.length) focusEl(list[0]);
   }
 
-  /* Z katalogu: najdi film a rovnou ho přehraj (první rozumný výsledek) */
+  /* Z katalogu: najdi film a ukaž výsledky hledání (nic se nespouští samo) */
   function searchThenPlay(q) {
     loading('Hledám „' + q + '“ …');
     apiJson('/api/search?q=' + encodeURIComponent(q)).then(function (d) {
@@ -906,9 +906,17 @@
         toast('Pro „' + q + '“ prehraj.to nic nenašel.');
         return;
       }
-      // Rovnou spustíme přehrávač s nejlepším výsledkem – žádné přepínání na obrazovku s výsledky.
+      // Jen ukážeme výsledky hledání – nic se samo nespouští ani neotevírá.
       var ranked = rankMovies(q, d.movies);
-      playMovie(ranked[0]);
+      state.results = ranked;
+      closeDetail();
+      setView('search');
+      $('searchInput').value = q;
+      $('searchState').className = 'state show';
+      $('searchState').textContent = 'Nalezeno ' + ranked.length + ' výsledků pro „' + q + '“';
+      renderResults();
+      var firstCard = $('searchGrid').querySelector('.f.card');
+      if (firstCard) focusEl(firstCard);
     }).catch(function (e) {
       loading(null);
       toast('Chyba: ' + e.message, 4000);
