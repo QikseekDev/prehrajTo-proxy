@@ -65,7 +65,7 @@ jobs:
             echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/wflix.jks"
             echo "WFLIX_STORE_FILE=$RUNNER_TEMP/wflix.jks" >> "$GITHUB_ENV"
           else
-            echo "::warning::Secret WFLIX_KEYSTORE_BASE64 není nastavený - APK bude podepsaný DEBUG klíčem (každý build jiným, aktualizace přes starší instalaci nepůjde). Viz apk/README.md."
+            echo "::warning::Secret WFLIX_KEYSTORE_BASE64 není nastavený - APK bude podepsaný pevným debug klíčem z repa (apk/app/debug.keystore) - aktualizace přes sebe funguje, ale pro distribuci nastav vlastní keystore. Viz apk/README.md."
           fi
 
       - name: Assemble release
