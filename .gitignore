@@ -32,6 +32,7 @@ logs/
 # Android
 *.jks
 *.keystore
+!apk/app/debug.keystore
 local.properties
 apk/.gradle/
 apk/**/build/
