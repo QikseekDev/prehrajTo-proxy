@@ -76,7 +76,7 @@ Stejná adresa se používá pro všechno: katalog, hledání, přehrávání, t
 
 ```
 MainActivity (Java, žádné AndroidX)
-├── WebView  →  assets/www/  (stejný klient jako webOS appka, viz ../ipk/app)
+├── WebView  →  assets/www/  (webový klient)
 │                index.html, styles.css, app.js, hls.min.js
 └── Bridge  "WflixNative"  (JavaScript interface)
       httpGetAsync(url,id) – asynchronní HTTP bez CORS, výsledek jde do window.__wflixNativeResult
@@ -147,17 +147,11 @@ apk/
     └── src/main/
         ├── AndroidManifest.xml      INTERNET, cleartext pro LAN, LEANBACK_LAUNCHER
         ├── java/cz/qikseek/wflix/MainActivity.java
-        ├── assets/www/              sdílený klient (kopie z ../ipk/app)
+        ├── assets/www/              webový klient (zdroj)
         └── res/                     ikony, TV banner, téma, network security config
 ```
 
-### Synchronizace klienta
-
-UI je stejné jako u TV appky, zdroj je v `../ipk/app`. Po úpravě klienta zkopíruj soubory:
-
-```bash
-cp ../ipk/app/{index.html,styles.css,app.js,hls.min.js} app/src/main/assets/www/
-```
+Zdroj webového klienta je přímo v `app/src/main/assets/www/` – stačí upravit tamní soubory.
 
 ---
 
