@@ -186,7 +186,20 @@ app.UseForwardedHeaders();
 // ty platí na IP a jsou nastavené tak, aby běžnému divákovi nepřekážely.
 app.UseRateLimiter();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// Cache-Control: verzované css/js se nemění, takže je prohlížeč může držet rok; HTML se naopak
+// musí vždy ověřit (304 přes ETag), aby po nasazení neběžela stará značka s novým skriptem.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var file = ctx.File.Name;
+        var versioned = file.EndsWith(".css") || file.EndsWith(".js")
+            || file.EndsWith(".png") || file.EndsWith(".svg") || file.EndsWith(".woff2");
+        ctx.Context.Response.Headers.CacheControl = versioned
+            ? "public, max-age=31536000, immutable"
+            : "no-cache";
+    }
+});
 
 // Optional: set "Prehraj:ProxyUrls" in appsettings.json / Azure config (Prehraj__ProxyUrls__0,
 // Prehraj__ProxyUrls__1, ... in App Service) to a list of your own index.php hosts
