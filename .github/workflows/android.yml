@@ -20,6 +20,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write   # jen kvůli publikaci GitHub Release u tagů
     outputs:
       version: ${{ steps.ver.outputs.name }}
     steps:
@@ -87,28 +89,24 @@ jobs:
           sha256sum "$APK" | tee "$APK.sha256"
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: Wflix-${{ steps.ver.outputs.name }}
-          path: |
-            apk/Wflix-${{ steps.ver.outputs.name }}.apk
-            apk/Wflix-${{ steps.ver.outputs.name }}.apk.sha256
+          path: apk/Wflix-${{ steps.ver.outputs.name }}.apk
+          archive: false
           if-no-files-found: error
 
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
+      - name: Upload checksum
+        uses: actions/upload-artifact@v7
         with:
-          name: Wflix-${{ needs.build.outputs.version }}
-          path: dist
+          path: apk/Wflix-${{ steps.ver.outputs.name }}.apk.sha256
+          archive: false
+          if-no-files-found: error
 
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            apk/Wflix-${{ steps.ver.outputs.name }}.apk
+            apk/Wflix-${{ steps.ver.outputs.name }}.apk.sha256
           generate_release_notes: true
