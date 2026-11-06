@@ -4,8 +4,9 @@ Webová appka pro televizory LG s webOS, zabalená do `.ipk`.
 
 | | |
 |---|---|
-| **Hotový balíček** | [`cz.qikseek.wflix_1.0.0_all.ipk`](cz.qikseek.wflix_1.0.0_all.ipk) |
+| **Hotový balíček** | [`cz.qikseek.wflix_1.0.0_all.ipk`](cz.qikseek.wflix_1.0.0_all.ipk) (poslední přiložený build) · **1.1.0** vyrábí CI (`webOS IPK build`) |
 | **App ID** | `cz.qikseek.wflix` |
+| **Verze** | 1.1.0 |
 | **Zdroj** | [`app/`](app) – čisté HTML/CSS/JS, žádný build krok |
 | **Rozlišení** | 1920×1080, `uiRevision: 2` |
 | **Velikost** | ~153 kB (včetně `hls.min.js`) |
@@ -79,6 +80,10 @@ Fokus je vždy vidět (bílý rám + modrý obrys), ovládání přehrávače se
 - **Hledat** – `/api/search`, výsledky seřazené podle shody názvu, detail s plakátem.
 - **Přehrávač** – přímé CDN přehrávání, automatický přechod na `/api/stream` při chybě nebo
   vypršení odkazu, ruční tlačítko **Přes server**, titulky WebVTT přes `/api/subtitles`.
+- **Pokračovat ve sledování** – pozice se ukládá do `localStorage` (`wflix-history`) a film naváže
+  tam, kde jsi skončil (řady *Pokračovat ve sledování* a *Nedávno sledované* na úvodní stránce).
+- **Oblíbené** – záložka ★ v detailu titulu a řada *Moje oblíbené* (`wflix-favs`).
+- **Titulky na míru** – velikost a pozadí titulků v Nastavení (CSS proměnné, stopa se nenačítá znovu).
 - **Živě** – `/api/live` (iptv-org: Česko, Čeština, Slovensko, USA, VB) s filtry 1080p /
   bez geo bloku / jen 24-7, HLS přes `hls.js`, relay `/api/live/hls` pro kanály, které chtějí
   vlastní User-Agent nebo Referer.
@@ -119,8 +124,8 @@ prázdné.
 ```bash
 npm install -g @webos-tools/cli
 cd ipk
-ares-package app -o .          # → cz.qikseek.wflix_1.0.0_all.ipk
-ares-package -I cz.qikseek.wflix_1.0.0_all.ipk   # kontrola obsahu/manifestu
+ares-package app -o .          # → cz.qikseek.wflix_1.1.0_all.ipk
+ares-package -I cz.qikseek.wflix_1.1.0_all.ipk   # kontrola obsahu/manifestu
 ```
 
 Po změně `appinfo.json` (verze, název) balíček přebal. Nová verze musí mít vyšší `version`,
@@ -130,8 +135,9 @@ jinak ji TV odmítne aktualizovat.
 
 ## Omezení
 
-- **Ověřeno v prohlížeči proti mock backendu** (render, fokus, hledání, přehrávání mp4 i HLS,
-  relay), ale **ne na skutečné televizi**. Před použitím projdi instalaci a přehrávání na TV.
+- **Ověřeno v prohlížeči proti živému backendu** (render, fokus, hledání, detail, oblíbené,
+  osobní řady, nastavení titulků), ale **ne na skutečné televizi**. Instalaci, ovladač a
+  přehrávání je potřeba projít na TV.
 - webOS nemá nativní HLS v `<video>` na všech verzích, proto je přibalený `hls.js` (MSE).
   DRM (Widevine L1) appka neřeší – zdroje s DRM nepřehraje.
 - Kanály z iptv-org jsou cizí streamy: část je geoblokovaná na ČR, část je neoficiální

@@ -84,6 +84,7 @@
         <p id="detailNote" class="muted detail-note"></p>
         <div class="detail-actions">
           <button id="detailPlay" class="f btn primary" type="button">▶ Přehrát</button>
+          <button id="detailFav" class="f btn ghost" type="button">☆ Do oblíbených</button>
           <button id="detailDl" class="f btn ghost" type="button" hidden>⬇ Stáhnout</button>
           <button id="detailClose" class="f btn ghost" type="button">Zavřít</button>
         </div>
@@ -100,7 +101,7 @@
       <div class="p-live-badge" id="pLive" hidden>● ŽIVĚ</div>
     </div>
     <div id="pBottom" class="p-bottom">
-      <div id="pBar" class="p-bar" role="slider" tabindex="0" aria-label="Pozice přehrávání">
+      <div id="pBar" class="p-bar f" role="slider" tabindex="0" aria-label="Pozice přehrávání">
         <div class="p-track"><div class="p-buf" id="pBuf"></div><div class="p-prog" id="pProg"></div></div>
         <div class="p-knob" id="pKnob"></div>
       </div>

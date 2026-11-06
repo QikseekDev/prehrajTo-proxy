@@ -7,7 +7,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var LS_SERVER = 'wflix.server';
   var LS_SETTINGS = 'wflix.settings';
 
@@ -55,7 +55,9 @@
     server: '',
     direct: true,      // přímé přehrávání z CDN (jako ve webovém Wflixu)
     lang: 'cz',        // jazyk katalogu
-    live: 'cz'         // výchozí zdroj živého vysílání
+    live: 'cz',        // výchozí zdroj živého vysílání
+    subSize: 'm',      // velikost titulků (m | l | xl)
+    subBg: 'dark'      // pozadí titulků (dark | light | none)
   };
 
   function loadSettings() {
@@ -65,6 +67,8 @@
         if (typeof s.direct === 'boolean') settings.direct = s.direct;
         if (s.lang === 'en' || s.lang === 'cz') settings.lang = s.lang;
         if (typeof s.live === 'string') settings.live = s.live;
+        if (s.subSize === 'm' || s.subSize === 'l' || s.subSize === 'xl') settings.subSize = s.subSize;
+        if (s.subBg === 'dark' || s.subBg === 'light' || s.subBg === 'none') settings.subBg = s.subBg;
       }
     } catch (e) { /* poškozené úložiště – jedeme s výchozím */ }
     settings.server = localStorage.getItem(LS_SERVER) || '';
@@ -72,7 +76,8 @@
   function saveSettings() {
     try {
       localStorage.setItem(LS_SETTINGS, JSON.stringify({
-        direct: settings.direct, lang: settings.lang, live: settings.live
+        direct: settings.direct, lang: settings.lang, live: settings.live,
+        subSize: settings.subSize, subBg: settings.subBg
       }));
       localStorage.setItem(LS_SERVER, settings.server || '');
     } catch (e) { /* TV může mít úložiště vypnuté – jede se dál bez uložení */ }
@@ -85,6 +90,200 @@
     return v.replace(/\/+$/, '');
   }
   function url(path) { return settings.server ? settings.server + path : path; }
+
+  /* ------------------------------------------------------------------ *
+   *  Knihovna diváka – rozehrané filmy a oblíbené (jen localStorage)
+   *  Klíče jsou stejné jako u webového Wflixu, takže se formát nerozjíždí:
+   *    wflix-history  [{ url, title, poster, t, d, at }]
+   *    wflix-favs     [{ key, url, title, poster, at }]
+   * ------------------------------------------------------------------ */
+  var LS_HIST = 'wflix-history';
+  var LS_FAVS = 'wflix-favs';
+  var HIST_MAX = 40;
+  var CUE_SIZES = { m: '1em', l: '1.3em', xl: '1.6em' };
+  var CUE_BACKGROUNDS = { dark: 'rgba(0,0,0,.72)', light: 'rgba(255,255,255,.88)', none: 'transparent' };
+  var SUB_SIZE_LABELS = { m: 'Normální', l: 'Velké', xl: 'Extra velké' };
+  var SUB_BG_LABELS = { dark: 'Tmavé', light: 'Světlé', none: 'Bez pozadí' };
+  var lastFocus = null;
+
+  function readList(key) {
+    try {
+      var v = JSON.parse(localStorage.getItem(key) || '[]');
+      return Object.prototype.toString.call(v) === '[object Array]' ? v : [];
+    } catch (e) { return []; }            /* TV může mít úložiště vypnuté */
+  }
+  function writeList(key, list) {
+    try { localStorage.setItem(key, JSON.stringify(list)); } catch (e) { }
+  }
+  function normText(s) {
+    return String(s === null || s === undefined ? '' : s).toLowerCase()
+      .replace(/[áàâä]/g, 'a').replace(/[čć]/g, 'c').replace(/ď/g, 'd')
+      .replace(/[éèêëě]/g, 'e').replace(/[íìîï]/g, 'i').replace(/ň/g, 'n')
+      .replace(/[óòôö]/g, 'o').replace(/[řŕ]/g, 'r').replace(/[šś]/g, 's')
+      .replace(/ť/g, 't').replace(/[úùûüů]/g, 'u').replace(/[ýÿ]/g, 'y')
+      .replace(/[žź]/g, 'z')
+      .replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  var history = readList(LS_HIST).filter(function (h) { return h && h.url; });
+  var favorites = readList(LS_FAVS).filter(function (f) { return f && f.key; });
+  var lastHistoryWrite = 0;
+
+  function saveHistory() { writeList(LS_HIST, history); }
+  function saveFavorites() { writeList(LS_FAVS, favorites); }
+  function histDone(h) { return h.d > 0 && h.t >= h.d - 30; }
+  function historyFor(u) {
+    for (var i = 0; i < history.length; i++) if (history[i].url === u) return history[i];
+    return null;
+  }
+  /* Kde navázat: ne první ani poslední půlminuta a ne dohraný film. */
+  function resumeFor(u) {
+    var h = historyFor(u);
+    if (!h || !h.t || h.t < 30) return 0;
+    if (histDone(h)) return 0;
+    if (h.d > 0 && h.d - h.t < 30) return 0;
+    return h.t;
+  }
+  function remainText(sec) {
+    var min = Math.round(Math.max(0, sec || 0) / 60);
+    if (min < 1) return 'méně než minuta';
+    if (min < 60) return min + ' min';
+    return Math.floor(min / 60) + ' h ' + (min % 60) + ' min';
+  }
+  function dayText(at) {
+    var d = new Date(at), now = new Date();
+    if (d.toDateString() === now.toDateString()) return 'dnes';
+    if (d.toDateString() === new Date(now.getTime() - 86400000).toDateString()) return 'včera';
+    return d.getDate() + '. ' + (d.getMonth() + 1) + '.';
+  }
+
+  function favKeyOf(item) { return item.url || ('q:' + normText(item.title)); }
+  function isFav(item) {
+    if (!item) return false;
+    var k = favKeyOf(item);
+    for (var i = 0; i < favorites.length; i++) if (favorites[i].key === k) return true;
+    return false;
+  }
+
+  /* Vrací true, když se položka přidala (jinak se odebrala). */
+  function toggleFav(item) {
+    if (!item) return false;
+    var k = favKeyOf(item), kept = [], had = false;
+    for (var i = 0; i < favorites.length; i++) {
+      if (favorites[i].key === k) had = true;
+      else kept.push(favorites[i]);
+    }
+    if (!had) {
+      kept.unshift({
+        key: k, url: item.url || '', title: item.title || '',
+        poster: item.poster || '', at: Date.now()
+      });
+    }
+    favorites = kept;
+    saveFavorites();
+    renderRows();
+    return !had;
+  }
+
+  /* Uloží pozici přehrávání – během hraní nejvýš každé 4 s, na pauze a při
+     odchodu hned. U živého vysílání se nic neukládá. */
+  function historySave(force) {
+    if (player.kind !== 'movie') return;
+    var page = player.page;
+    if (!page || typeof page !== 'string') return;
+    var now = Date.now();
+    if (!force && now - lastHistoryWrite < 4000) return;
+    var d = (isFinite(video.duration) && video.duration > 0) ? Math.round(video.duration) : 0;
+    var t = Math.round(video.currentTime || 0);
+    if (t < 2 && !force) return;
+    var rec = historyFor(page);
+    if (!rec) { if (t < 2) return; rec = { url: page }; }
+    rec.title = player.title || rec.title || 'Video';
+    rec.poster = player.poster || rec.poster || '';
+    rec.t = t;
+    rec.d = d || rec.d || 0;
+    rec.at = now;
+    var out = [rec];
+    for (var i = 0; i < history.length; i++) if (history[i].url !== page) out.push(history[i]);
+    history = out.slice(0, HIST_MAX);
+    lastHistoryWrite = now;
+    saveHistory();
+  }
+
+  function applyResumeOnce() {
+    var at = player.resumeAt || 0;
+    player.resumeAt = 0;
+    if (!at) return;
+    var dur = (isFinite(video.duration) && video.duration > 0) ? video.duration : 0;
+    if (dur && at > dur - 30) return;
+    try { video.currentTime = at; } catch (e) { return; }
+    toast('Pokračuji od ' + fmtTime(at));
+  }
+
+  function libCardHtml(rec, kind, idx) {
+    var img = rec.poster || '';
+    var art = img ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '';
+    var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>🎬</div>';
+    var pct = (rec.d > 0 && rec.t > 0) ? Math.max(2, Math.min(100, Math.round(rec.t / rec.d * 100))) : 0;
+    var badge = '', note = '';
+    if (kind === 'cont') {
+      badge = '<span class="badge">' + pct + ' %</span>';
+      note = 'Zbývá ' + remainText(rec.d - rec.t);
+    } else if (kind === 'recent') {
+      if (histDone(rec)) badge = '<span class="badge done">Dohráno</span>';
+      note = (rec.d > 0 && !histDone(rec))
+        ? 'Zbývá ' + remainText(rec.d - rec.t)
+        : (rec.at ? 'Sledováno ' + dayText(rec.at) : '');
+    } else {
+      note = 'Oblíbené';
+    }
+    return '<button class="f card" type="button" data-idx="' + idx + '">'
+      + badge
+      + '<span class="art">' + art + ph + '</span>'
+      + '<span class="grad"></span>'
+      + (pct ? '<span class="progress"><i style="width:' + pct + '%"></i></span>' : '')
+      + '<span class="meta-block"><span class="t">' + esc(rec.title || 'Video') + '</span>'
+      + (note ? '<span class="y">' + esc(note) + '</span>' : '') + '</span>'
+      + '</button>';
+  }
+
+  /* Klik na kartu z osobní řady – oblíbené bez odkazu jdou přes hledání. */
+  function openLibEntry(kind, rec) {
+    if (!rec) return;
+    if (!rec.url) { searchThenPlay(rec.title || ''); return; }
+    openMovieDetail({ url: rec.url, title: rec.title, thumbnail: rec.poster || '' });
+  }
+
+  function applyCueStyle() {
+    var root = document.documentElement;
+    root.style.setProperty('--cue-size', CUE_SIZES[settings.subSize] || CUE_SIZES.m);
+    root.style.setProperty('--cue-bg', CUE_BACKGROUNDS[settings.subBg] || CUE_BACKGROUNDS.dark);
+  }
+  function subSizeLabel() { return SUB_SIZE_LABELS[settings.subSize] || SUB_SIZE_LABELS.m; }
+  function subBgLabel() { return SUB_BG_LABELS[settings.subBg] || SUB_BG_LABELS.dark; }
+  function cycleIn(map, value) {
+    var keys = [];
+    for (var k in map) if (Object.prototype.hasOwnProperty.call(map, k)) keys.push(k);
+    var i = keys.indexOf(value);
+    return keys[(i + 1) % keys.length];
+  }
+
+  function detailItem() {
+    if (!state.detail) return null;
+    return state.detail.kind === 'movie'
+      ? { url: state.detail.movie.url, title: state.detail.movie.title, poster: state.detail.movie.thumbnail || '' }
+      : { url: '', title: itemTitle(state.detail.item), poster: itemImg(state.detail.item) };
+  }
+
+  function updateDetailFav() {
+    var btn = $('detailFav');
+    if (!btn) return;
+    var item = detailItem();
+    var on = item ? isFav(item) : false;
+    btn.textContent = on ? '★ V oblíbených' : '☆ Do oblíbených';
+    if (on) btn.classList.add('on'); else btn.classList.remove('on');
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
 
   /* ------------------------------------------------------------------ *
    *  API – s nativním mostem (Android) obejde CORS, jinak fetch
@@ -440,6 +639,11 @@
   function renderRows() {
     var cat = state.catalog;
     var rows = [];
+    /* Osobní řady jdou první – divák chce vidět, co má rozehrané. */
+    var cont = history.filter(function (h) { return h.t > 30 && !histDone(h); }).slice(0, 12);
+    if (cont.length) rows.push({ name: 'Pokračovat ve sledování', items: cont, lib: 'cont' });
+    if (history.length) rows.push({ name: 'Nedávno sledované', items: history.slice(0, 12), lib: 'recent' });
+    if (favorites.length) rows.push({ name: 'Moje oblíbené', items: favorites, lib: 'fav' });
     rows.push({ name: 'Doporučujeme', items: cat.slice(0, 16) });
     for (var i = 0; i < GENRE_ORDER.length; i++) {
       var g = GENRE_ORDER[i];
@@ -454,7 +658,9 @@
         + '</h2><span class="row-sub">' + rows[r].items.length + '</span></div>'
         + '<div class="row-scroll" data-row="' + r + '">';
       for (var k = 0; k < rows[r].items.length; k++) {
-        html += cardHtml(rows[r].items[k], r + ':' + k);
+        html += rows[r].lib
+          ? libCardHtml(rows[r].items[k], rows[r].lib, r + ':' + k)
+          : cardHtml(rows[r].items[k], r + ':' + k);
       }
       html += '</div></section>';
     }
@@ -469,7 +675,9 @@
           var row = rows[parseInt(parts[0], 10)];
           if (!row) return;
           var it = row.items[parseInt(parts[1], 10)];
-          if (it) openCatalogDetail(it);
+          if (!it) return;
+          if (row.lib) openLibEntry(row.lib, it);
+          else openCatalogDetail(it);
         });
       })(cards[c]);
     }
@@ -581,6 +789,7 @@
   }
 
   function openCatalogDetail(it) {
+    lastFocus = document.activeElement;
     state.detail = { kind: 'catalog', item: it };
     var img = itemImg(it) || thumbUrl(itemTitle(it));
     $('detailBg').style.backgroundImage = 'url("' + img + '")';
@@ -594,12 +803,14 @@
     $('detailNote').textContent = 'Klient vyhledá dostupné verze na prehraj.to a nabídne je k přehrání. '
       + 'Titulky se načtou automaticky, pokud je zdroj má.';
     hide($('detailDl'));
+    updateDetailFav();
     bindDetailActions(function () { searchThenPlay(itemQuery(it)); });
     show($('detail'));
     focusEl($('detailPlay'));
   }
 
   function openMovieDetail(m) {
+    lastFocus = document.activeElement;
     state.detail = { kind: 'movie', movie: m };
     var img = m.thumbnail || thumbUrl(m.title);
     $('detailBg').style.backgroundImage = 'url("' + img + '")';
@@ -615,6 +826,7 @@
     } else {
       hide($('detailDl'));
     }
+    updateDetailFav();
     bindDetailActions(function () { playMovie(m); });
     show($('detail'));
     focusEl($('detailPlay'));
@@ -630,7 +842,7 @@
     close.parentNode.replaceChild(freshClose, close);
     freshClose.addEventListener('click', function () { closeDetail(); focusAfterOverlay(); });
     freshClose.id = 'detailClose';
-    if (Native && typeof Native.download === 'function') {
+    if (Native && typeof Native.download === 'function' && state.detail && state.detail.kind === 'movie') {
       var freshDl = dl.cloneNode(true);
       dl.parentNode.replaceChild(freshDl, dl);
       freshDl.id = 'detailDl';
@@ -643,6 +855,10 @@
   }
 
   function focusAfterOverlay() {
+    /* Zavřený překryv má vrátit fokus tam, odkud se otevřel (karta v řadě). */
+    var back = lastFocus;
+    lastFocus = null;
+    if (back && isVisible(back)) { focusEl(back); return; }
     var list = focusables();
     if (list.length) focusEl(list[0]);
   }
@@ -802,6 +1018,7 @@
     hls: null,
     subs: [], subIndex: -1,
     triedRelay: false,
+    resumeAt: 0,          /* pozice, na kterou se má po načtení přeskočit */
     idleTimer: null
   };
 
@@ -831,6 +1048,7 @@
     player.subs = [];
     player.subIndex = -1;
     $('pSub').textContent = 'Titulky';
+    $('pSub').disabled = true;
   }
 
   function openPlayer(kind, title) {
@@ -858,6 +1076,7 @@
 
   function closePlayer() {
     var t = video.currentTime;
+    historySave(true);          /* poslední pozice před zavřením přehrávače */
     resetVideo();
     if (Native) {
       if (typeof Native.setFullscreen === 'function') Native.setFullscreen(false);
@@ -883,6 +1102,7 @@
     opts = opts || {};
     destroyHls();
     setPlayerState(null);
+    if (player.resumeAt) video.addEventListener('loadedmetadata', applyResumeOnce, { once: true });
     if (isHls && window.Hls && window.Hls.isSupported()) {
       var hls = new window.Hls({
         lowLatencyMode: false,
@@ -948,14 +1168,19 @@
     bumpIdle();
   }
 
-  video.addEventListener('timeupdate', updateProgress);
+  video.addEventListener('timeupdate', function () { updateProgress(); historySave(false); });
   video.addEventListener('progress', updateProgress);
   video.addEventListener('durationchange', updateProgress);
   video.addEventListener('play', function () { $('pPlay').textContent = 'Pozastavit'; bumpIdle(); });
-  video.addEventListener('pause', function () { $('pPlay').textContent = 'Přehrát'; $('player').classList.remove('idle'); });
+  video.addEventListener('pause', function () {
+    $('pPlay').textContent = 'Přehrát';
+    $('player').classList.remove('idle');
+    historySave(true);
+  });
   video.addEventListener('waiting', function () { setPlayerState('Načítám stream…'); });
   video.addEventListener('playing', function () { setPlayerState(null); bumpIdle(); });
   video.addEventListener('ended', function () {
+    historySave(true);   /* dohrané: pozice na konci → zmizí z "Pokračovat" */
     var d = video.duration;
     var finished = isFinite(d) && d > 0 && video.currentTime >= d - 1.5;
     if (finished) {
@@ -994,7 +1219,7 @@
     if (video.paused) play(); else video.pause();
     bumpIdle();
   });
-  $('pBack').addEventListener('click', function () { closePlayer(); focusAfterOverlay(); });
+  $('pBack').addEventListener('click', function () { closePlayer(); renderRows(); focusAfterOverlay(); });
   $('pRelay').addEventListener('click', function () { switchToRelay(video.currentTime); });
 
   $('pBar').addEventListener('click', function (e) {
@@ -1048,7 +1273,9 @@
     closeDetail();
     player.page = m.url;
     player.cdn = '';
+    player.poster = m.thumbnail || '';
     player.title = m.title || 'Video';
+    player.resumeAt = resumeFor(m.url);
     openPlayer('movie', player.title);
     setPlayerState('Získávám odkaz na video…');
     if (player.kind === 'movie') $('pSub').disabled = true;
@@ -1152,6 +1379,14 @@
       + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setLive">' + esc(liveLabel(settings.live)) + '</button></div>'
       + '</div>'
       + '<div class="set-row">'
+      + '  <div class="lab"><b>Velikost titulků</b><span>Pro filmy s titulky (WebVTT).</span></div>'
+      + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setSubSize">' + esc(subSizeLabel()) + '</button></div>'
+      + '</div>'
+      + '<div class="set-row">'
+      + '  <div class="lab"><b>Pozadí titulků</b><span>Čtecí pruh pod textem titulků.</span></div>'
+      + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setSubBg">' + esc(subBgLabel()) + '</button></div>'
+      + '</div>'
+      + '<div class="set-row">'
       + '  <div class="lab"><b>O aplikaci</b><span>Wflix klient ' + VERSION + ' · ' + (isTV ? 'TV' : 'mobil') + ' · ' + (Native ? 'nativní most' : 'webový režim') + '</span></div>'
       + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setAbout">Co to je?</button></div>'
       + '</div>';
@@ -1166,6 +1401,7 @@
           settings.server = s;
           saveSettings();
           renderSettings();
+          focusEl($('setServer'));
           loadHome();
           state.channels = [];
           toast('Server uložen.');
@@ -1186,12 +1422,14 @@
       settings.direct = !settings.direct;
       saveSettings();
       renderSettings();
+      focusEl($('setDirect'));
       toast('Přímé přehrávání: ' + (settings.direct ? 'zapnuto' : 'vypnuto'));
     });
     $('setLang').addEventListener('click', function () {
       settings.lang = settings.lang === 'en' ? 'cz' : 'en';
       saveSettings();
       renderSettings();
+      focusEl($('setLang'));
       loadHome();
     });
     $('setLive').addEventListener('click', function () {
@@ -1200,9 +1438,26 @@
       settings.live = ids[(i + 1) % ids.length];
       saveSettings();
       renderSettings();
+      focusEl($('setLive'));
       state.liveFilter = settings.live;
       state.channels = [];
       renderLiveChips();
+    });
+    $('setSubSize').addEventListener('click', function () {
+      settings.subSize = cycleIn(CUE_SIZES, settings.subSize);
+      saveSettings();
+      applyCueStyle();
+      renderSettings();
+      focusEl($('setSubSize'));
+      toast('Velikost titulků: ' + subSizeLabel());
+    });
+    $('setSubBg').addEventListener('click', function () {
+      settings.subBg = cycleIn(CUE_BACKGROUNDS, settings.subBg);
+      saveSettings();
+      applyCueStyle();
+      renderSettings();
+      focusEl($('setSubBg'));
+      toast('Pozadí titulků: ' + subBgLabel());
     });
     $('setAbout').addEventListener('click', function () {
       toast('Klient pro Wflix proxy: hledá na prehraj.to, přehrává přes CDN nebo server. Obsah nehostuje.', 6000);
@@ -1219,7 +1474,7 @@
    * ------------------------------------------------------------------ */
   function closeOverlays() {
     if (!$('kbd').hidden) { hide($('kbd')); return true; }
-    if (!$('player').hidden) { closePlayer(); focusAfterOverlay(); return true; }
+    if (!$('player').hidden) { closePlayer(); renderRows(); focusAfterOverlay(); return true; }
     if (!$('detail').hidden) { closeDetail(); focusAfterOverlay(); return true; }
     return false;
   }
@@ -1296,6 +1551,29 @@
 
   document.addEventListener('keydown', onKeyDown, true);
 
+  /* Záložka v detailu – přidá nebo odebere titul z oblíbených. */
+  var detailFavBtn = $('detailFav');
+  if (detailFavBtn) {
+    detailFavBtn.addEventListener('click', function () {
+      var item = detailItem();
+      if (!item) return;
+      var added = toggleFav(item);
+      updateDetailFav();
+      toast(added ? 'Přidáno do oblíbených' : 'Odebráno z oblíbených');
+      focusEl(detailFavBtn);
+    });
+  }
+
+  /* Android: když appka jde do pozadí, uložíme pozici a video pozastavíme,
+     aby zvuk nehrál přes jiné aplikace. */
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) return;
+    if (!$('player').hidden) {
+      historySave(true);
+      try { if (!video.paused) video.pause(); } catch (e) { }
+    }
+  });
+
   /* ------------------------------------------------------------------ *
    *  Start
    * ------------------------------------------------------------------ */
@@ -1344,6 +1622,7 @@
   function boot() {
     document.body.classList.toggle('touch', isTouch);
     loadSettings();
+    applyCueStyle();
     $('verLine').textContent = VERSION;
 
     if (!settings.server && /^https?:$/.test(location.protocol)) {

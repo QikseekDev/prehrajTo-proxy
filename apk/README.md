@@ -4,8 +4,9 @@ Nativní obal webového klienta Wflixu pro Android a Android TV.
 
 | | |
 |---|---|
-| **Hotový APK** | [`Wflix-1.0.0.apk`](Wflix-1.0.0.apk) (podepsaný, instalovatelný) |
+| **Hotový APK** | [`Wflix-1.0.0.apk`](Wflix-1.0.0.apk) (poslední přiložený build) · **1.1.0** vyrábí CI (`Android APK build` → `Wflix-1.1.0.apk`) |
 | **Package** | `cz.qikseek.wflix` |
+| **Verze** | 1.1.0 (versionCode 2) |
 | **Min. Android** | 6.0 (API 23) |
 | **Cíl** | API 34, Android 14 |
 | **Velikost** | ~166 kB |
@@ -56,6 +57,10 @@ Stejná adresa se používá pro všechno: katalog, hledání, přehrávání, t
   odkazu se přepne na `/api/stream` a pokračuje od stejného místa. Tlačítko **Přes server**
   přepne okamžitě, nastavení **Přímé přehrávání z CDN** to mění globálně.
 - **Titulky** – WebVTT přes `/api/subtitles`, volba jazyka tlačítkem *Titulky* v přehrávači.
+- **Pokračovat ve sledování** – pozice se ukládá do `localStorage` (`wflix-history`) a film naváže
+  tam, kde jsi skončil (řady *Pokračovat ve sledování* a *Nedávno sledované* na úvodní stránce).
+- **Oblíbené** – záložka ★ v detailu titulu a řada *Moje oblíbené* (`wflix-favs`).
+- **Titulky na míru** – velikost a pozadí titulků v Nastavení (CSS proměnné, stopa se nenačítá znovu).
 - **Živé vysílání** – `/api/live` (iptv-org: Česko, Čeština, Slovensko, USA, VB) s filtry
   1080p / bez geo bloku / jen 24-7. HLS hraje `hls.js`, kanály s vlastním User-Agentem nebo
   Refererem jdou vždy přes relay `/api/live/hls`.
@@ -102,7 +107,7 @@ echo "sdk.dir=$HOME/android-sdk" > local.properties     # nebo nastav ANDROID_HO
 # → app/build/outputs/apk/release/app-release.apk
 ```
 
-Výsledný soubor zkopíruj jako `Wflix-1.0.0.apk` do týhle složky.
+Výsledný soubor se v CI ukládá jako `Wflix-1.1.0.apk`.
 
 ### Podpis
 
@@ -146,8 +151,9 @@ cp ../ipk/app/{index.html,styles.css,app.js,hls.min.js} app/src/main/assets/www/
 
 ## Omezení
 
-- **Ověřeno jen buildem a v prohlížeči** (stejný klient běžící proti mock backendu) – appka
-  nebyla spuštěná na skutečném telefonu ani TV. Před nasazením projdi instalaci a přehrávání.
+- **Ověřeno v prohlížeči proti živému backendu** (katalog, hledání, detail, oblíbené, osobní
+  řady, nastavení titulků) – appka ale neběžela na skutečném telefonu ani TV. Na zařízení je
+  potřeba projít instalaci, D-pad/ovladač a přehrávání.
 - Přehrávání jde přes `<video>` ve WebView (žádný ExoPlayer), takže kodeky řeší systémový
   WebView: H.264/AAC ano, exotické formáty a DRM ne.
 - Bez aktualizovaného backendu (CORS) funguje hledání a katalog přes nativní most, ale živé

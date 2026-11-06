@@ -30,15 +30,15 @@ jobs:
         working-directory: apk
         run: |
           ./gradlew assembleRelease --no-daemon
-          cp app/build/outputs/apk/release/app-release.apk Wflix-1.0.0.apk
+          cp app/build/outputs/apk/release/app-release.apk Wflix-1.1.0.apk
 
       - name: Verify signature
         working-directory: apk
         run: |
-          $ANDROID_HOME/build-tools/34.0.0/apksigner verify Wflix-1.0.0.apk
+          $ANDROID_HOME/build-tools/34.0.0/apksigner verify Wflix-1.1.0.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Wflix-1.0.0.apk
-          path: apk/Wflix-1.0.0.apk
+          name: Wflix-1.1.0.apk
+          path: apk/Wflix-1.1.0.apk

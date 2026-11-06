@@ -429,3 +429,27 @@ body.touch .key{min-width:2.2rem;height:2.6rem}
 @media (orientation:portrait){
   body.touch .hero{padding-top:1rem}
 }
+
+/* ==========================================================================
+   Knihovna diváka – rozehrané filmy, oblíbené
+   ========================================================================== */
+.card .progress{
+  position:absolute;left:0;right:0;bottom:0;height:.22rem;background:rgba(255,255,255,.2);z-index:2;
+}
+.card .progress i{display:block;height:100%;background:var(--gold)}
+.card .badge.done{background:rgba(255,255,255,.86);color:#0b1220}
+.btn.on{background:rgba(247,201,72,.18);border-color:rgba(247,201,72,.6);color:var(--gold)}
+
+/* ==========================================================================
+   Titulky (WebVTT) – velikost a pozadí z Nastavení
+   ========================================================================== */
+video::cue{
+  font-size:var(--cue-size,1em);
+  color:#fff;
+  background:var(--cue-bg,rgba(0,0,0,.72));
+}
+/* Pruh pozice je ovladatelný dálkovým ovladačem – vlastní zvýraznění fokusu
+   (obecný rám kolem celého pruhu by vypadal jako druhá lišta). */
+.p-bar.f:focus{box-shadow:none}
+.p-bar.f:focus .p-track{height:.5rem;box-shadow:0 0 0 2px var(--gold)}
+.p-bar.f:focus .p-knob{box-shadow:0 0 0 4px rgba(247,201,72,.5)}
