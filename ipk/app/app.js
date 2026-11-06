@@ -19,6 +19,10 @@
    *  Malé pomocníky
    * ------------------------------------------------------------------ */
   function $(id) { return document.getElementById(id); }
+  /* Ikony ze sprite v index.html (stroke = currentColor). */
+  function icon(name, cls) {
+    return '<svg class="i' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="#i-' + name + '" xlink:href="#i-' + name + '"/></svg>';
+  }
   function esc(s) {
     return String(s === null || s === undefined ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -223,11 +227,10 @@
   function libCardHtml(rec, kind, idx) {
     var img = rec.poster || '';
     var art = img ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '';
-    var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>🎬</div>';
+    var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</div>';
     var pct = (rec.d > 0 && rec.t > 0) ? Math.max(2, Math.min(100, Math.round(rec.t / rec.d * 100))) : 0;
     var badge = '', note = '';
     if (kind === 'cont') {
-      badge = '<span class="badge">' + pct + ' %</span>';
       note = 'Zbývá ' + remainText(rec.d - rec.t);
     } else if (kind === 'recent') {
       if (histDone(rec)) badge = '<span class="badge done">Dohráno</span>';
@@ -238,11 +241,9 @@
       note = 'Oblíbené';
     }
     return '<button class="f card" type="button" data-idx="' + idx + '">'
-      + badge
-      + '<span class="art">' + art + ph + '</span>'
-      + '<span class="grad"></span>'
-      + (pct ? '<span class="progress"><i style="width:' + pct + '%"></i></span>' : '')
-      + '<span class="meta-block"><span class="t">' + esc(rec.title || 'Video') + '</span>'
+      + '<span class="art">' + art + ph + badge
+      + (pct ? '<span class="progress"><i style="width:' + pct + '%"></i></span>' : '') + '</span>'
+      + '<span class="cap"><span class="t">' + esc(rec.title || 'Video') + '</span>'
       + (note ? '<span class="y">' + esc(note) + '</span>' : '') + '</span>'
       + '</button>';
   }
@@ -280,7 +281,7 @@
     if (!btn) return;
     var item = detailItem();
     var on = item ? isFav(item) : false;
-    btn.textContent = on ? '★ V oblíbených' : '☆ Do oblíbených';
+    btn.innerHTML = icon('star', on ? 'fill' : '') + '<span>' + (on ? 'V oblíbených' : 'Do oblíbených') + '</span>';
     if (on) btn.classList.add('on'); else btn.classList.remove('on');
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
@@ -516,7 +517,7 @@
   /* ------------------------------------------------------------------ *
    *  Obrazovková klávesnice (TV)
    * ------------------------------------------------------------------ */
-  var kbdState = { value: '', title: '', onDone: null, onCancel: null };
+  var kbdState = { value: '', title: '', onDone: null, onCancel: null, physical: false };
   var KBD_ROWS = [
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '.'],
     ['q', 'w', 'e', 'r', 't', 'z', 'u', 'i', 'o', 'p', '/', ':'],
@@ -537,7 +538,8 @@
       value: String(opts.value || ''),
       title: opts.title || 'Zadej text',
       onDone: opts.onDone || null,
-      onCancel: opts.onCancel || null
+      onCancel: opts.onCancel || null,
+      physical: false
     };
     $('kbdTitle').textContent = kbdState.title;
     renderKeyboard();
@@ -559,7 +561,7 @@
       html += '</div>';
     }
     html += '<div class="kbd-row">'
-      + '<button class="key wide f" type="button" data-k="__back">⌫ smazat</button>'
+      + '<button class="key wide f" type="button" data-k="__back">Smazat</button>'
       + '<button class="key wide f" type="button" data-k="__clear">vymazat</button>'
       + '<button class="key wide gold f" type="button" data-k="__ok">Hotovo</button>'
       + '<button class="key wide f" type="button" data-k="__cancel">Zpět</button>'
@@ -584,8 +586,12 @@
       kbdState.value += k;
     }
     renderKeyboard();
-    var btns = $('kbdKeys').querySelectorAll('[data-k="' + (k === '__back' || k === '__clear' ? k : k) + '"]');
-    if (btns.length) focusEl(btns[0]);
+    var all = $('kbdKeys').querySelectorAll('[data-k]');
+    var hit = null;
+    for (var b = 0; b < all.length; b++) {
+      if (all[b].getAttribute('data-k') === k) { hit = all[b]; break; }
+    }
+    if (hit) focusEl(hit);
     else focusFirst();
   }
 
@@ -622,7 +628,6 @@
   function itemYear(it) { return it.y || it.year || ''; }
   function itemGenres(it) { return it.g || it.genres || []; }
   function itemImg(it) { return it.img || it.poster || ''; }
-  function itemEmoji(it) { return it.e || '🎬'; }
 
   function renderHero() {
     var list = state.catalog;
@@ -631,26 +636,20 @@
     var g = itemGenres(it);
     var img = itemImg(it);
     var bg = img ? 'style="background-image:url(' + "'" + esc(img) + "'" + ')"' : '';
+    var meta = [];
+    if (itemYear(it)) meta.push(String(itemYear(it)));
+    for (var gi = 0; gi < g.length && gi < 3; gi++) meta.push(g[gi]);
     var html = ''
       + '<div class="hero-art" ' + bg + '></div>'
       + '<div class="hero-scrim"></div>'
       + (img ? '<div class="hero-poster"><img src="' + esc(img) + '" alt=""></div>' : '')
       + '<div class="hero-inner">'
-      + '  <div class="hero-kicker">'
-      + '    <span class="pill gold">Katalog</span>'
-      + (itemYear(it) ? '<span class="pill">' + esc(itemYear(it)) + '</span>' : '')
-      + (g.length ? '<span class="pill ghost">' + esc(g.join(' · ')) + '</span>' : '')
-      + '  </div>'
+      + '  <div class="hero-kicker">Doporučujeme</div>'
       + '  <h1>' + esc(itemTitle(it)) + '</h1>'
-      + '  <div class="hero-meta">'
-      + '    <span class="pill">Wflix</span>'
-      + '    <span class="pill ghost">prehraj.to</span>'
-      + '  </div>'
-      + '  <p class="hero-desc">Po spuštění klient vyhledá dostupné verze na prehraj.to a přehraje tu nejlepší. '
-      + 'Když přímé přehrávání z CDN selže, pokračuje přes server.</p>'
+      + (meta.length ? '  <div class="hero-meta">' + esc(meta.join(' · ')) + '</div>' : '')
       + '  <div class="hero-actions">'
-      + '    <button class="f btn primary" type="button" data-hero="play">▶ Přehrát</button>'
-      + '    <button class="f btn ghost" type="button" data-hero="info">Více info</button>'
+      + '    <button class="f btn primary" type="button" data-hero="play">' + icon('play', 'fill') + '<span>Přehrát</span></button>'
+      + '    <button class="f btn ghost" type="button" data-hero="info"><span>Detail</span></button>'
       + '  </div>'
       + '</div>';
     $('hero').innerHTML = html;
@@ -665,14 +664,11 @@
     var art = img
       ? '<img src="' + esc(img) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
       : '';
-    var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>' + esc(itemEmoji(it)) + '</div>';
+    var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</div>';
     var year = itemYear(it);
-    var badge = extra || (year ? String(year).slice(0, 4) : '');
     return '<button class="f card' + (extra === 'wide' ? ' wide' : '') + '" type="button" data-idx="' + idx + '">'
-      + (badge && badge !== 'wide' ? '<span class="badge">' + esc(badge) + '</span>' : '')
       + '<span class="art">' + art + ph + '</span>'
-      + '<span class="grad"></span>'
-      + '<span class="meta-block"><span class="t">' + esc(itemTitle(it)) + '</span>'
+      + '<span class="cap"><span class="t">' + esc(itemTitle(it)) + '</span>'
       + (year ? '<span class="y">' + esc(year) + '</span>' : '') + '</span>'
       + '</button>';
   }
@@ -801,11 +797,9 @@
       var m = state.results[i];
       var img = m.thumbnail || thumbUrl(m.title);
       html += '<button class="f card" type="button" data-idx="' + i + '">'
-        + (m.year ? '<span class="badge">' + esc(String(m.year).slice(0, 4)) + '</span>' : '')
         + '<span class="art"><img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer"'
-        + ' onerror="this.onerror=null;this.src=\'' + esc(thumbUrl(m.title)) + '\'"><div class="ph" style="display:none">🎬</div></span>'
-        + '<span class="grad"></span>'
-        + '<span class="meta-block"><span class="t">' + esc(m.title) + '</span>'
+        + ' onerror="this.onerror=null;this.src=\'' + esc(thumbUrl(m.title)) + '\'"><div class="ph" style="display:none">' + icon('film') + '</div></span>'
+        + '<span class="cap"><span class="t">' + esc(m.title) + '</span>'
         + (m.year ? '<span class="y">' + esc(m.year) + '</span>' : '') + '</span>'
         + '</button>';
     }
@@ -838,11 +832,11 @@
     $('detailPoster').style.visibility = 'visible';
     $('detailTitle').textContent = itemTitle(it);
     var g = itemGenres(it);
-    $('detailMeta').innerHTML = (itemYear(it) ? '<span class="pill">' + esc(itemYear(it)) + '</span>' : '')
-      + (g.length ? '<span class="pill ghost">' + esc(g.join(' · ')) + '</span>' : '')
-      + '<span class="pill">prehraj.to</span>';
-    $('detailNote').textContent = 'Klient vyhledá dostupné verze na prehraj.to a nabídne je k přehrání. '
-      + 'Titulky se načtou automaticky, pokud je zdroj má.';
+    var dm = [];
+    if (itemYear(it)) dm.push(String(itemYear(it)));
+    for (var di = 0; di < g.length && di < 3; di++) dm.push(g[di]);
+    $('detailMeta').textContent = dm.join(' · ');
+    $('detailNote').textContent = '';
     hide($('detailDl'));
     updateDetailFav();
     bindDetailActions(function () { searchThenPlay(itemQuery(it)); });
@@ -858,10 +852,8 @@
     $('detailPoster').src = img;
     $('detailPoster').style.visibility = 'visible';
     $('detailTitle').textContent = m.title || 'Video';
-    $('detailMeta').innerHTML = (m.year ? '<span class="pill">' + esc(m.year) + '</span>' : '')
-      + '<span class="pill gold">prehraj.to</span>';
-    $('detailNote').textContent = 'Přehrání jde nejdřív přímo z CDN. Když odkaz vyprší nebo CDN neodpovídá, '
-      + 'klient pokračuje přes server, takže se přehrávání nezasekne.';
+    $('detailMeta').textContent = m.year ? String(m.year) : '';
+    $('detailNote').textContent = '';
     if (Native && typeof Native.download === 'function') {
       show($('detailDl'));
     } else {
@@ -948,7 +940,7 @@
       var s = LIVE_SOURCES[i];
       html += '<button class="f chip' + (state.liveFilter === s.id ? ' active' : '') + '" type="button" data-live-src="' + s.id + '">' + esc(s.label) + '</button>';
     }
-    html += '<span style="width:1px;background:rgba(255,255,255,.12);margin:0 .4rem"></span>';
+    html += '<span class="chip-sep" aria-hidden="true"></span>';
     html += '<button class="f chip' + (state.liveFlags.hd ? ' active' : '') + '" type="button" data-live-flag="hd">1080p</button>';
     html += '<button class="f chip' + (state.liveFlags.noGeo ? ' active' : '') + '" type="button" data-live-flag="noGeo">Bez geo bloku</button>';
     html += '<button class="f chip' + (state.liveFlags.only24 ? ' active' : '') + '" type="button" data-live-flag="only24">Jen 24/7</button>';
@@ -1453,7 +1445,7 @@
       loading('Testuji server…');
       apiJson('/api/live?country=cz', 20000).then(function (d) {
         loading(null);
-        toast(d && d.success ? 'Server odpovídá ✔ (' + ((d.channels || []).length) + ' kanálů)' : 'Server odpověděl, ale bez dat.');
+        toast(d && d.success ? 'Server odpovídá, ' + ((d.channels || []).length) + ' kanálů' : 'Server odpověděl, ale bez dat.');
       }).catch(function (e) {
         loading(null);
         toast('Server neodpovídá: ' + e.message, 4500);
@@ -1501,7 +1493,7 @@
       toast('Pozadí titulků: ' + subBgLabel());
     });
     $('setAbout').addEventListener('click', function () {
-      toast('Klient pro Wflix proxy: hledá na prehraj.to, přehrává přes CDN nebo server. Obsah nehostuje.', 6000);
+      toast('Wflix hledá na prehraj.to a přehrává přes CDN nebo server. Obsah nehostuje.', 6000);
     });
   }
 
@@ -1530,12 +1522,35 @@
     if (Native && typeof Native.exitApp === 'function') { Native.exitApp(); }
   }
 
+  /* Pole, do kterého se píše – tam klávesy patří poli, ne navigaci. */
+  function isTextField(el) {
+    if (!el || !el.tagName) return false;
+    if (el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+    if (el.tagName !== 'INPUT') return false;
+    var t = (el.getAttribute('type') || 'text').toLowerCase();
+    return ['text', 'search', 'url', 'email', 'tel', 'password', 'number'].indexOf(t) !== -1;
+  }
+
+  /* Fyzická klávesnice při otevřené obrazovkové klávesnici: znaky se píší,
+     Backspace maže, Enter potvrdí (jen když už se psalo fyzicky). */
+  function kbdPhysicalKey(e) {
+    var k = e.key;
+    if (!k || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (k === 'Backspace') { e.preventDefault(); kbdState.physical = true; kbdPress('__back'); return true; }
+    if (k === 'Enter' && kbdState.physical) { e.preventDefault(); kbdPress('__ok'); return true; }
+    if (k.length === 1) { e.preventDefault(); kbdState.physical = true; kbdPress(k); return true; }
+    return false;
+  }
+
   function onKeyDown(e) {
     var k = e.key;
     var code = e.keyCode;
 
     // webOS dálkové ovládání
     if (code === 461) { e.preventDefault(); goBack(); return; }
+
+    if (!$('kbd').hidden && kbdPhysicalKey(e)) return;
+    var typing = isTextField(e.target) || isTextField(document.activeElement);
     if (code === 415) { e.preventDefault(); if (!$('player').hidden) play(); return; }
     if (code === 19) { e.preventDefault(); if (!$('player').hidden) video.pause(); return; }
     if (code === 412) { e.preventDefault(); if (!$('player').hidden) seekBy(-10); return; }
@@ -1545,10 +1560,20 @@
     var kbdOpen = !$('kbd').hidden;
 
     if (k) {
-      if (k === 'Escape' || k === 'Backspace' || k === 'GoBack' || k === 'BrowserBack') {
+      // Backspace je „zpět“ jen mimo textové pole; v poli maže znaky.
+      if (k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || (k === 'Backspace' && !typing)) {
         e.preventDefault();
+        if (typing && document.activeElement && document.activeElement.blur) document.activeElement.blur();
         goBack();
         return;
+      }
+      if (typing && (k === 'ArrowLeft' || k === 'ArrowRight')) {
+        // šipky uvnitř textu posouvají kurzor; z pole se vystoupí až na jeho kraji
+        var fld = document.activeElement;
+        var pos = fld && typeof fld.selectionStart === 'number' ? fld.selectionStart : 0;
+        var end = fld && typeof fld.selectionEnd === 'number' ? fld.selectionEnd : 0;
+        var len = fld && fld.value ? fld.value.length : 0;
+        if (k === 'ArrowLeft' ? pos > 0 || end > 0 : pos < len || end < len) return;
       }
       if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
         if (playerOpen) {
@@ -1646,7 +1671,7 @@
       loading(null);
       if (!d || !d.success) throw new Error('Server nevrátil očekávaná data');
       saveSettings();
-      $('setupMsg').textContent = 'Připojeno ✔';
+      $('setupMsg').textContent = 'Připojeno';
       $('setupMsg').className = 'msg ok';
       startApp();
     }).catch(function (e) {
