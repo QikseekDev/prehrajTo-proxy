@@ -348,7 +348,8 @@ public class MainActivity extends Activity {
 
     /** http:// mimo lokální síť posílá data nešifrovaně – upozorníme (jednou za spuštění), ale nezablokujeme. */
     private void warnIfInsecure(URL url) {
-        if ("http".equalsIgnoreCase(url.getProtocol()) && !isPrivateHost(url.getHost()) && !insecureWarned) {
+        if ("http".equalsIgnoreCase(url.getProtocol()) && !isPrivateHost(url.getHost())
+                && !"wflix.runasp.net".equalsIgnoreCase(url.getHost()) && !insecureWarned) {
             insecureWarned = true;
             toast("Server běží přes nezabezpečené HTTP. Mimo domácí síť použij HTTPS.");
         }
