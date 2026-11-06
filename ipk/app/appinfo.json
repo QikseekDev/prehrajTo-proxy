@@ -9,7 +9,7 @@
   "largeIcon": "largeIcon.png",
   "splashImage": "splash.png",
   "resolution": "1920x1080",
-  "bgColor": "#050b16",
+  "bgColor": "#0b0c0f",
   "disableBackHistoryAPI": true,
   "handlesRelaunch": true,
   "requiredMemory": 128,
