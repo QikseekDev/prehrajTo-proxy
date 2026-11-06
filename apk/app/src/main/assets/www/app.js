@@ -1020,6 +1020,8 @@
     $('pBar').style.display = kind === 'live' ? 'none' : '';
     $('pTime').style.display = kind === 'live' ? 'none' : '';
     $('pSub').style.display = kind === 'live' ? 'none' : '';
+    // Přehrát na TV: jen v mobilní/tabletové aplikaci (na TV samotné nemá smysl).
+    $('pCast').style.display = canCast() ? '' : 'none';
     $('pPlay').textContent = 'Pozastavit';
     $('pRelay').textContent = (settings.direct && kind === 'movie') ? 'Přes server' : 'Znovu načíst';
     setPlayerState(null);
@@ -1176,6 +1178,19 @@
   });
   $('pBack').addEventListener('click', function () { closePlayer(); renderRows(); focusAfterOverlay(); });
   $('pRelay').addEventListener('click', function () { switchToRelay(video.currentTime); });
+
+  // Přehrát na TV: otevře systémové "Přenést obrazovku" (Google Cast / Miracast / Smart View).
+  // Video pak hraje dál v aplikaci a zrcadlí se na vybranou TV.
+  function canCast() {
+    if (!Native || typeof Native.castScreen !== 'function') return false;
+    try { if (typeof Native.isTV === 'function' && Native.isTV()) return false; } catch (e) { }
+    return true;
+  }
+  $('pCast').addEventListener('click', function () {
+    var ok = false;
+    try { ok = !!Native.castScreen(); } catch (e) { }
+    toast(ok ? 'Vyber TV v nabídce Přenést obrazovku a vrať se do aplikace.' : 'Tohle zařízení přenos obrazovky nepodporuje.', 4000);
+  });
 
   $('pBar').addEventListener('click', function (e) {
     var r = $('pBar').getBoundingClientRect();

@@ -239,7 +239,8 @@ vyptej se provozovatele ([contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)
 - ⏸ Vypínač ukládání historie – nic se pak neposílá ani neukládá
 - ⭐ Oblíbené (watchlist) se záložkou u každého titulu a filtrovatelným seznamem v Knihovně
 - ⌨️ Klávesové zkratky přehrávače (mezerník, šipky, F)
-- 🪟 Obrázek v obraze (Picture-in-Picture)
+- 🪟 Obraz v obraze (Picture-in-Picture)
+- 📺 Přehrát na TV (Chromecast / AirPlay na webu, přenos obrazovky v Android aplikaci)
 - 💬 Volba velikosti a pozadí titulků
 - 🌗 Světlý a tmavý režim
 - 📝 Titulky (WebVTT) u filmů, které je mají

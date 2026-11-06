@@ -33,6 +33,9 @@
         const pipBtn = document.getElementById('pipBtn');
         // PiP umí Chrome/Edge; tlačítko se ukáže až u načteného videa (viz updateFavBtn).
         const pipSupported = !!(document.pictureInPictureEnabled && HTMLVideoElement.prototype.requestPictureInPicture);
+        const castBtn = document.getElementById('castBtn');
+        // Odeslání na TV: Chrome/Edge (Chromecast) přes Remote Playback API, Safari přes AirPlay.
+        const castSupported = !!(('remote' in HTMLMediaElement.prototype) || window.WebKitPlaybackTargetAvailabilityEvent);
 
         let currentResults = [];
         // Stránkování hledání: první stránka se ověřuje (mrtvé kusy zmizí), další se jen
@@ -749,7 +752,7 @@
                     <h2>Titulky</h2>
                     <p>Když má soubor titulky, objeví se pod přehrávačem nabídka „Titulky“ s volbami Vypnuto a jazyky. Načítá je server, takže fungují i u zdrojů, které je prohlížeči přímo nedovolí. Ne každý soubor titulky má – český dabing bývá bez nich.</p>
                     <h2>Přehrávač a klávesy</h2>
-                    <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ PiP</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa).</p>
+                    <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ Obraz v obraze</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa). Tlačítko <b>📺 Přehrát na TV</b> odešle video na Chromecast nebo TV s Google Cast (Chrome, Edge) či přes AirPlay (Safari).</p>
                     <p>Velikost a pozadí titulků se nastavují v Nastavení (avatar vpravo nahoře).</p>
                     <h2>Knihovna: oblíbené</h2>
                     <p>Hvězdička na kartě přidá titul do oblíbených, stejně jako tlačítko u přehrávače. Odkaz <b>Knihovna</b> v liště (před Živě) ukazuje oblíbené. Každý titul jde odebrat hvězdičkou. Appka si historii přehrávání neukládá. Vše se ukládá jen v tvém prohlížeči.</p>
@@ -1699,11 +1702,13 @@
             if (!player.page) {
                 favBtn.hidden = true;
                 if (pipBtn) pipBtn.hidden = true;   // PiP nemá smysl bez videa
+                if (castBtn) castBtn.hidden = true;
                 return;
             }
             const on = isFav(player.page);
             favBtn.hidden = false;
             if (pipBtn && pipSupported) pipBtn.hidden = false;
+            if (castBtn && castSupported) castBtn.hidden = false;
             favBtn.textContent = on ? '★ V oblíbených' : '☆ Do oblíbených';
             favBtn.classList.toggle('on', on);
             favBtn.title = on ? 'Odebrat z oblíbených' : 'Přidat do oblíbených';
@@ -1745,7 +1750,7 @@
         document.getElementById('endHomeBtn').addEventListener('click', goHome);
         document.getElementById('endSearchBtn').addEventListener('click', searchAnother);
 
-        // ===== Obrázek v obraze (Picture-in-Picture) =====
+        // ===== Obraz v obraze (Picture-in-Picture) =====
         // <video> je obyčejný HTML5 prvek, takže stačí requestPictureInPicture(). Tlačítko se
         // ukáže, jen když to prohlížeč umí (Chrome/Edge; Safari má vlastní PiP v ovládání videa).
         // Tlačítko se ukáže až ve chvíli, kdy je v přehrávači video (viz updateFavBtn).
@@ -1754,11 +1759,37 @@
                 if (document.pictureInPictureElement) await document.exitPictureInPicture();
                 else await videoPlayer.requestPictureInPicture();
             } catch (err) {
-                notice('Obrázek v obraze se nepodařilo zapnout.', 'error', 4000);
+                notice('Obraz v obraze se nepodařilo zapnout.', 'error', 4000);
             }
         });
-        videoPlayer.addEventListener('enterpictureinpicture', () => { pipBtn.textContent = '⧉ Zavřít PiP'; });
-        videoPlayer.addEventListener('leavepictureinpicture', () => { pipBtn.textContent = '⧉ PiP'; });
+        videoPlayer.addEventListener('enterpictureinpicture', () => { pipBtn.textContent = '⧉ Zavřít obraz v obraze'; });
+        videoPlayer.addEventListener('leavepictureinpicture', () => { pipBtn.textContent = '⧉ Obraz v obraze'; });
+
+        // ===== Přehrát na TV (Chromecast / AirPlay) =====
+        // Chrome a Edge: Remote Playback API (video.remote.prompt() otevře výběr zařízení).
+        // Safari: AirPlay přes webkitShowPlaybackTargetPicker(). Firefox to neumí, tlačítko se tam nezobrazí.
+        // Na TV se pošle adresa videa, takže se přehrává přímo tam (telefon/počítač může zůstat v klidu).
+        if (castBtn) {
+            const castLabel = (on) => { castBtn.textContent = on ? '📺 Přehrává se na TV' : '📺 Přehrát na TV'; castBtn.classList.toggle('on', !!on); };
+            castBtn.addEventListener('click', async () => {
+                try {
+                    if (videoPlayer.remote && typeof videoPlayer.remote.prompt === 'function') {
+                        await videoPlayer.remote.prompt();
+                    } else if (typeof videoPlayer.webkitShowPlaybackTargetPicker === 'function') {
+                        videoPlayer.webkitShowPlaybackTargetPicker();
+                    }
+                } catch (err) {
+                    if (err && err.name === 'NotAllowedError') return;   // výběr zařízení jen zavřel
+                    if (err && err.name === 'NotFoundError') notice('V síti nebyla nalezena žádná TV ani přehrávač.', 'error', 4000);
+                    else notice('Video se nepodařilo odeslat na TV.', 'error', 4000);
+                }
+            });
+            if (videoPlayer.remote && typeof videoPlayer.remote.addEventListener === 'function') {
+                videoPlayer.remote.addEventListener('connect', () => castLabel(true));
+                videoPlayer.remote.addEventListener('disconnect', () => castLabel(false));
+            }
+            videoPlayer.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => castLabel(!!videoPlayer.webkitCurrentPlaybackTargetIsWireless));
+        }
 
         // ===== Klávesové zkratky přehrávače =====
         // Jen když je otevřený přehrávač a fokus není ve formulářovém prvku - jinak by
@@ -1921,6 +1952,7 @@
                 proxyBtn.hidden = true;
                 if (favBtn) favBtn.hidden = true;
                 if (pipBtn) pipBtn.hidden = true;
+                if (castBtn) castBtn.hidden = true;
                 if (srcMode) srcMode.hidden = true;
                 clearSubtitles();
                 refreshDl();
