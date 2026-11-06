@@ -297,8 +297,45 @@
     return raw;
   }
 
+  var nativeSeq = 0;
+  var nativePending = {};
+  // Odpověď z nativního mostu (Android) – viz MainActivity.Bridge.httpGetAsync.
+  window.__wflixNativeResult = function (id, ok, payload) {
+    var p = nativePending[id];
+    if (!p) return;
+    delete nativePending[id];
+    clearTimeout(p.timer);
+    if (ok) p.resolve(String(payload));
+    else p.reject(new Error(String(payload)));
+  };
+
+  function nativeGetAsync(path, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var id = 'n' + (++nativeSeq);
+      var timer = setTimeout(function () {
+        delete nativePending[id];
+        var e = new Error('Server neodpovídá (timeout)');
+        e.noFallback = true;
+        reject(e);
+      }, timeoutMs + 5000);
+      nativePending[id] = { resolve: resolve, reject: reject, timer: timer };
+      try { Native.httpGetAsync(url(path), id); }
+      catch (e) { clearTimeout(timer); delete nativePending[id]; reject(e); }
+    });
+  }
+
   function apiJson(path, timeoutMs) {
     var to = timeoutMs || 25000;
+    // Asynchronní most: stránka se při čekání na server neblokuje (u synchronního httpGet by se zasekla).
+    if (Native && typeof Native.httpGetAsync === 'function') {
+      return nativeGetAsync(path, to).then(function (body) {
+        try { return JSON.parse(body); }
+        catch (e) { throw new Error('Server nevrátil JSON'); }
+      }, function (err) {
+        if (err && err.noFallback) throw err;
+        return apiJsonFetch(path, to);      // most je jen zrychlení; když selže, zkusíme normální fetch
+      });
+    }
     try {
       var body = nativeGet(path);
       if (body !== null) {
@@ -309,6 +346,10 @@
       // most je jen zrychlení; když selže, zkusíme normální fetch
     }
 
+    return apiJsonFetch(path, to);
+  }
+
+  function apiJsonFetch(path, to) {
     var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
     var timer = null;
     var opts = { headers: { 'Accept': 'application/json' }, cache: 'no-store' };

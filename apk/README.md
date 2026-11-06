@@ -4,9 +4,9 @@ Nativní obal webového klienta Wflixu pro Android a Android TV.
 
 | | |
 |---|---|
-| **Hotový APK** | [`Wflix-1.0.0.apk`](Wflix-1.0.0.apk) (poslední přiložený build) · **1.1.0** vyrábí CI (`Android APK build` → `Wflix-1.1.0.apk`) |
+| **Hotový APK** | CI (`Android APK build`) vyrábí podepsaný `Wflix-<verze>.apk` + `.sha256`; u tagu `v*` je přiloží k GitHub Release. Přiložený `Wflix-1.0.0.apk` je starý build podepsaný debug klíčem. |
 | **Package** | `cz.qikseek.wflix` |
-| **Verze** | 1.1.0 (versionCode 2) |
+| **Verze** | 1.2.0 (versionCode 3) |
 | **Min. Android** | 6.0 (API 23) |
 | **Cíl** | API 34, Android 14 |
 | **Velikost** | ~166 kB |
@@ -79,7 +79,8 @@ MainActivity (Java, žádné AndroidX)
 ├── WebView  →  assets/www/  (stejný klient jako webOS appka, viz ../ipk/app)
 │                index.html, styles.css, app.js, hls.min.js
 └── Bridge  "WflixNative"  (JavaScript interface)
-      httpGet(url)      – synchronní HTTP bez CORS (pro starší backendy)
+      httpGetAsync(url,id) – asynchronní HTTP bez CORS, výsledek jde do window.__wflixNativeResult
+      httpGet(url)      – synchronní varianta (blokuje JS vlákno, jen pro starší klienty)
       setFullscreen(on) – immersive režim
       setKeepScreenOn() – FLAG_KEEP_SCREEN_ON při přehrávání
       download(url,name) – DownloadManager
@@ -107,31 +108,42 @@ echo "sdk.dir=$HOME/android-sdk" > local.properties     # nebo nastav ANDROID_HO
 # → app/build/outputs/apk/release/app-release.apk
 ```
 
-Výsledný soubor se v CI ukládá jako `Wflix-1.1.0.apk`.
+Výsledný soubor se v CI ukládá jako `Wflix-<verze>.apk` (verze z `versionName`).
 
-### Podpis
+### Podpis a vydání
 
-`release` build je podepsaný **debug klíčem**, aby šel hned nainstalovat bez dalšího nastavení.
-Pro vlastní distribuci (Google Play, delší aktualizace) si vyrob keystore a v `app/build.gradle`
-nahraď `signingConfig signingConfigs.debug`:
+`release` build je minifikovaný (R8, `shrinkResources`) a podepisuje se **tvým keystorem**, pokud je
+nastavený. Bez něj spadne na debug klíč – použitelné jen na vyzkoušení: každý takový build má jiný
+podpis, takže ho nejde nainstalovat přes starší verzi (Android hlásí konflikt podpisů).
 
-```bash
-keytool -genkey -v -keystore wflix.jks -keyalg RSA -keysize 2048 -validity 10000 -alias wflix
-```
+1. Vyrob keystore (jednou) a nastav GitHub secrets:
 
-Do `~/.gradle/gradle.properties` (ne do gitu) pak patří `WFLEX_STORE_FILE`, `WFLEX_STORE_PASSWORD`,
-`WFLEX_KEY_ALIAS`, `WFLEX_KEY_PASSWORD`.
+   ```bash
+   bash apk/scripts/generate-keystore.sh     # vypíše i příkazy `gh secret set …`
+   ```
+
+   Secrets: `WFLIX_KEYSTORE_BASE64`, `WFLIX_STORE_PASSWORD`, `WFLIX_KEY_ALIAS`, `WFLIX_KEY_PASSWORD`.
+   **Keystore a heslo si zazálohuj** – bez nich nejde appku aktualizovat.
+
+2. Lokální release build: do `~/.gradle/gradle.properties` (ne do gitu) přidej
+   `WFLIX_STORE_FILE`, `WFLIX_STORE_PASSWORD`, `WFLIX_KEY_ALIAS`, `WFLIX_KEY_PASSWORD`
+   (starý překlep `WFLEX_*` stále funguje).
+
+3. Vydání: zvyš `versionCode`/`versionName` v `app/build.gradle`, pushni tag `vX.Y.Z`.
+   CI ověří, že tag odpovídá `versionName`, build **odmítne** bez keystoru, zkontroluje podpis
+   (`apksigner verify`), vytvoří `.sha256` a přiloží obojí k GitHub Release.
 
 ### Struktura projektu
 
 ```
 apk/
-├── Wflix-1.0.0.apk                  hotový podepsaný build
+├── Wflix-1.0.0.apk                  starý přiložený build (debug klíč)
 ├── settings.gradle, build.gradle    Gradle 8.7 + AGP 8.5.2
 ├── gradlew, gradle/wrapper/         wrapper (build bez instalace Gradle)
 ├── gradle.properties
+├── scripts/generate-keystore.sh     výroba release keystoru
 └── app/
-    ├── build.gradle
+    ├── build.gradle, proguard-rules.pro
     └── src/main/
         ├── AndroidManifest.xml      INTERNET, cleartext pro LAN, LEANBACK_LAUNCHER
         ├── java/cz/qikseek/wflix/MainActivity.java
@@ -158,5 +170,8 @@ cp ../ipk/app/{index.html,styles.css,app.js,hls.min.js} app/src/main/assets/www/
   WebView: H.264/AAC ano, exotické formáty a DRM ne.
 - Bez aktualizovaného backendu (CORS) funguje hledání a katalog přes nativní most, ale živé
   vysílání a titulky ne.
-- Cleartext HTTP je povolený (self-host na LAN), pro veřejný provoz používej HTTPS.
+- Cleartext HTTP je povolený (self-host na LAN), pro veřejný provoz používej HTTPS. Mostu stačí vědět,
+  že adresa mimo soukromou síť jde přes `http://` – appka tě jednou za spuštění upozorní.
+- Stránka běží z `file://` s povoleným `allowUniversalAccessFromFileURLs` (kvůli starším backendům bez CORS).
+  Appka proto nikdy nenačítá cizí stránky – externí odkazy (jen `http/https`) otevírá v prohlížeči.
 - Appka nehostuje žádný obsah, jen zprostředkovává API a přehrává streamy třetích stran.

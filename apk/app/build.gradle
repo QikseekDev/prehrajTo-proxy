@@ -2,6 +2,24 @@ plugins {
     id 'com.android.application'
 }
 
+// Podpisové údaje: ~/.gradle/gradle.properties (lokálně, NE do gitu) nebo proměnné prostředí (CI).
+// Starší překlep WFLEX_* zůstává jako záloha, aby dřívější nastavení dál fungovala.
+def signingProp = { String name, String legacy ->
+    def v = project.findProperty(name) ?: System.getenv(name)
+    if (!v && legacy) {
+        v = project.findProperty(legacy) ?: System.getenv(legacy)
+    }
+    return v ? v.toString() : null
+}
+
+def storeFilePath  = signingProp('WFLIX_STORE_FILE', 'WFLEX_STORE_FILE')
+def ksPass          = signingProp('WFLIX_STORE_PASSWORD', 'WFLEX_STORE_PASSWORD')
+def keyAliasValue  = signingProp('WFLIX_KEY_ALIAS', 'WFLEX_KEY_ALIAS')
+def keyPasswordVal = signingProp('WFLIX_KEY_PASSWORD', 'WFLEX_KEY_PASSWORD')
+def hasReleaseKey  = storeFilePath && file(storeFilePath).exists() && ksPass && keyAliasValue && keyPasswordVal
+// CI u tagů nastaví WFLIX_REQUIRE_RELEASE_KEY=true, aby nikdy nevznikl release podepsaný debug klíčem.
+def requireReleaseKey = (signingProp('WFLIX_REQUIRE_RELEASE_KEY', null) == 'true')
+
 android {
     namespace 'cz.qikseek.wflix'
     compileSdk 34
@@ -10,18 +28,40 @@ android {
         applicationId 'cz.qikseek.wflix'
         minSdk 23
         targetSdk 34
-        versionCode 2
-        versionName '1.1.0'
+        versionCode 3
+        versionName '1.2.0'
         // Klient mluví s tvým Wflix backendem (Azure nebo PHP self-host)
         // a streamy tahá z CDN, takže potřebuje jen internet.
     }
 
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile file(storeFilePath)
+                storePassword ksPass
+                keyAlias keyAliasValue
+                keyPassword keyPasswordVal
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            // Debug build jde nainstalovat vedle release.
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
         release {
-            minifyEnabled false
-            // Release podepisujeme debug klíčem, aby šel APK rovnou nainstalovat.
-            // Pro vlastní distribuci nahraď signingConfig vlastním keystorem (README).
-            signingConfig signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Bez vlastního keystoru se podepisuje debug klíčem (jen pro rychlé vyzkoušení –
+            // takový APK nejde aktualizovat přes APK podepsaný jiným klíčem).
+            if (hasReleaseKey) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
         }
     }
 
@@ -30,7 +70,23 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    // Do APK se nepřidávají zašifrované metadata závislostí (menší a reprodukovatelnější build).
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     lint {
         abortOnError false
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def building = graph.allTasks.any { it.name.toLowerCase().contains('release') && (it.name.startsWith('assemble') || it.name.startsWith('bundle')) }
+    if (building && !hasReleaseKey) {
+        if (requireReleaseKey) {
+            throw new GradleException('Chybí release keystore (WFLIX_STORE_FILE / WFLIX_STORE_PASSWORD / WFLIX_KEY_ALIAS / WFLIX_KEY_PASSWORD).')
+        }
+        logger.warn('WARNING: release build je podepsaný DEBUG klíčem. Pro distribuci nastav vlastní keystore (viz apk/README.md).')
     }
 }

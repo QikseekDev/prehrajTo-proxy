@@ -5,15 +5,22 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.net.Uri;
+import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.webkit.JavascriptInterface;
+import android.webkit.RenderProcessGoneDetail;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -22,44 +29,72 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Wflix – obal webového klienta (assets/www) pro Android / Android TV.
  *
  * Klient je stejný jako u webOS verze, jen běží v plnohodnotném Chromiu:
  *  - {@link Bridge} dává JS přístup k HTTP (obchází CORS, takže funguje i proti
- *    staršímu backendu bez Access-Control-Allow-Origin),
+ *    staršímu backendu bez Access-Control-Allow-Origin). Preferovaná je asynchronní
+ *    varianta {@code httpGetAsync}, která neblokuje vykreslování stránky,
  *  - tlačítko Zpět zavírá překryvy v aplikaci, na úvodní obrazovce ukončí appku,
- *  - přehrávání je celoobrazovkové, displej nezhasíná, HLS řeší hls.js v klientovi.
+ *  - displej zůstává zapnutý jen při přehrávání (řídí klient přes setKeepScreenOn),
+ *  - pád renderovacího procesu WebView se zotaví (WebView se znovu vytvoří).
  */
 public class MainActivity extends Activity {
 
     private static final String START_URL = "file:///android_asset/www/index.html";
     private static final String ASSET_PREFIX = "file:///android_asset/";
+    private static final int BG = 0xFF050B16;
+    private static final long MAX_BODY_BYTES = 32L * 1024 * 1024;   // ochrana proti obrovské odpovědi
+    private static final int MAX_REDIRECTS = 5;
 
+    private FrameLayout root;
     private WebView web;
+    private ExecutorService net;
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private Runnable backFallback;
     private volatile boolean backHandled = false;
+    private boolean immersive = true;
+    private volatile boolean insecureWarned = false;
 
-    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // Displej NEhoří trvale – klient zapíná FLAG_KEEP_SCREEN_ON jen při přehrávání.
+        net = Executors.newFixedThreadPool(4);
 
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(0xFF050B16);
+        root = new FrameLayout(this);
+        root.setBackgroundColor(BG);
+        setContentView(root);
+
+        // Ladění přes chrome://inspect jen u debug buildů.
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
+
+        createWebView(savedInstanceState);
+        enterImmersive(true);
+    }
+
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    private void createWebView(Bundle state) {
         web = new WebView(this);
         web.setLayoutParams(new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        web.setBackgroundColor(0xFF050B16);
+        web.setBackgroundColor(BG);
         root.addView(web);
-        setContentView(root);
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -67,8 +102,10 @@ public class MainActivity extends Activity {
         s.setDatabaseEnabled(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
-        s.setAllowFileAccess(true);
-        s.setAllowContentAccess(true);
+        // Soubory appky jsou v assets (file:///android_asset/ je dostupné vždy). Přístup k ostatním
+        // souborům a content:// URI klient nepotřebuje, takže je vypínáme.
+        s.setAllowFileAccess(false);
+        s.setAllowContentAccess(false);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setSupportMultipleWindows(false);
@@ -77,6 +114,7 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         }
+        // Stránka běží z file:// a mluví s libovolným backendem uživatele (bez CORS u starších serverů).
         s.setAllowFileAccessFromFileURLs(true);
         s.setAllowUniversalAccessFromFileURLs(true);
 
@@ -93,27 +131,54 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 return handleNavigation(url);
             }
+
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                // Nikdy nepokračujeme s neplatným certifikátem.
+                handler.cancel();
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                // Renderer spadl (málo paměti / crash). Bez tohohle by padla celá appka.
+                if (view == web) {
+                    recreateWebView();
+                }
+                return true;
+            }
         });
 
-        if (savedInstanceState != null) {
-            web.restoreState(savedInstanceState);
-        } else {
+        if (state == null || web.restoreState(state) == null) {
             web.loadUrl(START_URL);
         }
-        enterImmersive(true);
     }
 
-    /** Navigace uvnitř appky zůstane, cizí odkazy jdou do prohlížeče. */
+    private void recreateWebView() {
+        if (web != null) {
+            root.removeView(web);
+            web.destroy();
+            web = null;
+        }
+        createWebView(null);
+        toast("Prohlížeč se restartoval");
+    }
+
+    /** Navigace uvnitř appky zůstane, cizí odkazy (jen http/https) jdou do prohlížeče. */
     private boolean handleNavigation(String url) {
         if (url == null) return false;
         if (url.startsWith(ASSET_PREFIX) || url.startsWith("about:") || url.startsWith("data:")) {
             return false;
         }
+        openExternalSafe(url);
+        return true;
+    }
+
+    private void openExternalSafe(String url) {
+        if (!isHttpUrl(url)) return;     // žádné intent:, file:, content: apod.
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
         } catch (Exception ignored) {
         }
-        return true;
     }
 
     @Override
@@ -135,8 +200,21 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // Po dialogu / systémové liště by se jinak lišty už neschovaly.
+        if (hasFocus) applyImmersive();
+    }
+
+    @Override
     protected void onDestroy() {
+        ui.removeCallbacksAndMessages(null);
+        if (net != null) {
+            net.shutdownNow();
+            net = null;
+        }
         if (web != null) {
+            root.removeView(web);
             web.destroy();
             web = null;
         }
@@ -155,12 +233,14 @@ public class MainActivity extends Activity {
         web.evaluateJavascript(
                 "(function(){var e=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:461,which:461,bubbles:true,cancelable:true});"
                         + "document.dispatchEvent(e);return 1;})()", null);
-        web.postDelayed(new Runnable() {
+        if (backFallback != null) ui.removeCallbacks(backFallback);
+        backFallback = new Runnable() {
             @Override
             public void run() {
                 if (!backHandled) moveTaskToBack(true);
             }
-        }, 450);
+        };
+        ui.postDelayed(backFallback, 450);
     }
 
     @Override
@@ -185,32 +265,191 @@ public class MainActivity extends Activity {
     }
 
     private void enterImmersive(final boolean on) {
+        immersive = on;
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                View decor = getWindow().getDecorView();
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    if (on) {
-                        getWindow().setDecorFitsSystemWindows(false);
-                        decor.getWindowInsetsController().hide(
-                                android.view.WindowInsets.Type.systemBars());
-                    } else {
-                        getWindow().setDecorFitsSystemWindows(true);
-                        decor.getWindowInsetsController().show(
-                                android.view.WindowInsets.Type.systemBars());
-                    }
-                } else {
-                    if (on) {
-                        decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                                | View.SYSTEM_UI_FLAG_FULLSCREEN
-                                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-                    } else {
-                        decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+                applyImmersive();
+            }
+        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private void applyImmersive() {
+        View decor = getWindow().getDecorView();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            getWindow().setDecorFitsSystemWindows(!immersive);
+            WindowInsetsController c = decor.getWindowInsetsController();
+            if (c == null) return;      // okno ještě není připojené, zopakuje se při onWindowFocusChanged
+            if (immersive) {
+                c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                c.hide(WindowInsets.Type.systemBars());
+            } else {
+                c.show(WindowInsets.Type.systemBars());
+            }
+        } else if (immersive) {
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        } else {
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        }
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  HTTP pomocné funkce (volané z mostu, nikdy z UI vlákna)
+     * ------------------------------------------------------------------ */
+
+    private static boolean isHttpUrl(String url) {
+        return url != null && (url.regionMatches(true, 0, "http://", 0, 7)
+                || url.regionMatches(true, 0, "https://", 0, 8));
+    }
+
+    private static URL parseHttpUrl(String s) {
+        if (s == null) return null;
+        s = s.trim();
+        if (!isHttpUrl(s)) return null;
+        try {
+            URL u = new URL(s);
+            String host = u.getHost();
+            return (host == null || host.isEmpty()) ? null : u;
+        } catch (MalformedURLException e) {
+            return null;
+        }
+    }
+
+    /** Soukromá / lokální adresa, kde je http:// v pořádku (LAN, Termux, Tailscale…). Bez DNS dotazů. */
+    private static boolean isPrivateHost(String host) {
+        if (host == null) return false;
+        String h = host.toLowerCase(Locale.ROOT);
+        if (h.startsWith("[") && h.endsWith("]")) h = h.substring(1, h.length() - 1);
+        if (h.equals("localhost") || h.endsWith(".local") || h.endsWith(".lan") || h.endsWith(".home")
+                || h.endsWith(".internal") || h.endsWith(".localdomain")) {
+            return true;
+        }
+        if (h.indexOf(':') >= 0) {
+            return h.equals("::1") || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80");
+        }
+        if (h.matches("\\d{1,3}(\\.\\d{1,3}){3}")) {
+            String[] p = h.split("\\.");
+            int a = Integer.parseInt(p[0]);
+            int b = Integer.parseInt(p[1]);
+            return a == 10 || a == 127
+                    || (a == 192 && b == 168)
+                    || (a == 172 && b >= 16 && b <= 31)
+                    || (a == 169 && b == 254)
+                    || (a == 100 && b >= 64 && b <= 127);
+        }
+        return h.indexOf('.') < 0;      // jednoslovný hostname (např. "nas")
+    }
+
+    /** http:// mimo lokální síť posílá data nešifrovaně – upozorníme (jednou za spuštění), ale nezablokujeme. */
+    private void warnIfInsecure(URL url) {
+        if ("http".equalsIgnoreCase(url.getProtocol()) && !isPrivateHost(url.getHost()) && !insecureWarned) {
+            insecureWarned = true;
+            toast("Server běží přes nezabezpečené HTTP. Mimo domácí síť použij HTTPS.");
+        }
+    }
+
+    private String userAgent() {
+        String v = "1";
+        try {
+            v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+        }
+        return "WflixAndroid/" + v;
+    }
+
+    private static final class Result {
+        final boolean ok;
+        final String data;      // tělo odpovědi, nebo popis chyby
+
+        private Result(boolean ok, String data) {
+            this.ok = ok;
+            this.data = data;
+        }
+
+        static Result ok(String d) {
+            return new Result(true, d);
+        }
+
+        static Result err(String d) {
+            return new Result(false, d);
+        }
+    }
+
+    /** GET s ručním sledováním přesměrování (http↔https), limitem velikosti a timeouty. */
+    private Result fetchBody(String urlStr, int connectMs, int readMs) {
+        HttpURLConnection conn = null;
+        try {
+            URL url = parseHttpUrl(urlStr);
+            if (url == null) return Result.err("Neplatná adresa");
+            warnIfInsecure(url);
+            for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(connectMs);
+                conn.setReadTimeout(readMs);
+                conn.setInstanceFollowRedirects(false);
+                conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+                conn.setRequestProperty("User-Agent", userAgent());
+                int code = conn.getResponseCode();
+                if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                    String loc = conn.getHeaderField("Location");
+                    conn.disconnect();
+                    conn = null;
+                    if (loc == null) return Result.err("HTTP " + code);
+                    url = parseHttpUrl(new URL(url, loc).toString());
+                    if (url == null) return Result.err("Neplatné přesměrování");
+                    continue;
+                }
+                if (code >= 400) return Result.err("HTTP " + code);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                try (InputStream in = conn.getInputStream()) {
+                    byte[] buf = new byte[16384];
+                    int n;
+                    long total = 0;
+                    while ((n = in.read(buf)) != -1) {
+                        total += n;
+                        if (total > MAX_BODY_BYTES) return Result.err("Odpověď je příliš velká");
+                        out.write(buf, 0, n);
                     }
                 }
+                return Result.ok(out.toString("UTF-8"));
+            }
+            return Result.err("Příliš mnoho přesměrování");
+        } catch (Exception e) {
+            return Result.err(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private static String jsQuote(String s) {
+        return JSONObject.quote(s == null ? "" : s)
+                .replace("\u2028", "\\u2028")
+                .replace("\u2029", "\\u2029");
+    }
+
+    /** Doručí výsledek asynchronního požadavku do window.__wflixNativeResult(id, ok, payload). */
+    private void deliver(final String id, final boolean ok, final String payload) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (web == null) return;
+                web.evaluateJavascript("window.__wflixNativeResult&&window.__wflixNativeResult("
+                        + jsQuote(id) + "," + ok + "," + jsQuote(payload) + ")", null);
+            }
+        });
+    }
+
+    private void toast(final String msg) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
             }
         });
     }
@@ -219,39 +458,32 @@ public class MainActivity extends Activity {
     private class Bridge {
 
         /**
-         * Synchronní GET, který nepodléhá CORS (volá se z JS vlákna WebView, ne z UI).
-         * Vrací tělo odpovědi, nebo "__ERROR__:popis".
+         * Synchronní GET (zachováno kvůli starším klientům). Blokuje JS vlákno stránky,
+         * proto klient používá {@link #httpGetAsync}. Vrací tělo odpovědi, nebo "__ERROR__:popis".
          */
         @JavascriptInterface
         public String httpGet(String url) {
-            HttpURLConnection conn = null;
+            Result r = fetchBody(url, 15000, 40000);
+            return r.ok ? r.data : "__ERROR__:" + r.data;
+        }
+
+        /**
+         * Asynchronní GET bez CORS. Výsledek přijde do
+         * window.__wflixNativeResult(id, ok, payload) – stránka se při čekání neblokuje.
+         */
+        @JavascriptInterface
+        public void httpGetAsync(final String url, final String id) {
+            if (id == null || id.length() > 64) return;
             try {
-                conn = (HttpURLConnection) new URL(url).openConnection();
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(40000);
-                conn.setInstanceFollowRedirects(true);
-                conn.setRequestProperty("Accept", "application/json, text/plain, */*");
-                conn.setRequestProperty("User-Agent", "WflixAndroid/1.0");
-                int code = conn.getResponseCode();
-                InputStream in = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
-                if (in == null) return "__ERROR__:HTTP " + code;
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                byte[] buf = new byte[16384];
-                int n;
-                long total = 0;
-                while ((n = in.read(buf)) != -1) {
-                    out.write(buf, 0, n);
-                    total += n;
-                    if (total > 32L * 1024 * 1024) break;      // ochrana proti obrovské odpovědi
-                }
-                in.close();
-                String body = out.toString("UTF-8");
-                if (code >= 400) return "__ERROR__:HTTP " + code;
-                return body;
+                net.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        Result r = fetchBody(url, 15000, 30000);
+                        deliver(id, r.ok, r.data);
+                    }
+                });
             } catch (Exception e) {
-                return "__ERROR__:" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
-            } finally {
-                if (conn != null) conn.disconnect();
+                deliver(id, false, "Aplikace se ukončuje");
             }
         }
 
@@ -266,26 +498,34 @@ public class MainActivity extends Activity {
                 @Override
                 public void run() {
                     if (on) {
-                        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                     } else {
-                        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                        getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                     }
                 }
             });
         }
 
         @JavascriptInterface
-        public void openExternal(String url) {
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-            } catch (Exception ignored) {
-            }
+        public void openExternal(final String url) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    openExternalSafe(url);
+                }
+            });
         }
 
         /** Stahování přes systémový DownloadManager (jde vždy přes /api/stream?download=1). */
         @JavascriptInterface
         public void download(String url, String name) {
             try {
+                URL u = parseHttpUrl(url);
+                if (u == null) {
+                    toast("Neplatná adresa ke stažení");
+                    return;
+                }
+                warnIfInsecure(u);
                 String safe = (name == null || name.trim().isEmpty()) ? "wflix-video.mp4" : name.trim();
                 safe = safe.replaceAll("[\\\\/:*?\"<>|]+", "_");
                 if (!safe.toLowerCase(Locale.ROOT).endsWith(".mp4")) safe += ".mp4";
@@ -294,9 +534,11 @@ public class MainActivity extends Activity {
                     toast("Stahování není dostupné");
                     return;
                 }
-                DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
+                DownloadManager.Request req = new DownloadManager.Request(Uri.parse(u.toString()));
                 req.setTitle(safe);
                 req.setDescription("Wflix");
+                req.setMimeType("video/mp4");
+                req.addRequestHeader("User-Agent", userAgent());
                 req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
                 req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safe);
                 dm.enqueue(req);
@@ -323,22 +565,17 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String version() {
-            return "1.1.0";
+            try {
+                return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            } catch (Exception e) {
+                return "";
+            }
         }
 
         @JavascriptInterface
         public boolean isTV() {
             return getPackageManager().hasSystemFeature("android.software.leanback")
                     || getPackageManager().hasSystemFeature("android.hardware.type.television");
-        }
-
-        private void toast(final String msg) {
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
-                }
-            });
         }
     }
 }

@@ -28,3 +28,10 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Android
+*.jks
+*.keystore
+local.properties
+apk/.gradle/
+apk/**/build/
