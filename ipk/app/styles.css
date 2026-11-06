@@ -146,7 +146,7 @@ body.touch .f:focus:not(.search-input):not(.p-bar){outline:none}
 }
 .row-scroll::-webkit-scrollbar{display:none}
 
-.card{flex:0 0 auto;width:10.6rem;text-align:left}
+.card{flex:0 0 auto;width:10.6rem;text-align:left;display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;align-self:flex-start}
 .card.f:focus{outline:none}
 .card .art{
   display:block;position:relative;width:100%;padding-top:150%;aspect-ratio:2/3;overflow:hidden;
@@ -180,7 +180,7 @@ body.touch .f:focus:not(.search-input):not(.p-bar){outline:none}
 .searchbar{
   position:relative;display:flex;align-items:center;gap:.6rem;flex:1 1 26rem;max-width:44rem;
 }
-.s-ico{position:absolute;left:.95rem;display:grid;place-items:center;color:var(--muted);pointer-events:none}
+.s-ico{position:absolute;left:.95rem;z-index:6;display:grid;place-items:center;color:var(--muted);pointer-events:none}
 .search-input{
   flex:1;min-width:0;min-height:2.9rem;padding:0 1rem 0 2.7rem;border-radius:var(--radius);
   background:var(--surface);border:1px solid var(--line-strong);color:var(--text);font-size:1rem;
@@ -189,6 +189,7 @@ body.touch .f:focus:not(.search-input):not(.p-bar){outline:none}
 .search-input::placeholder{color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10.6rem,1fr));gap:1.4rem 1rem;padding:.6rem var(--gutter) 2rem}
 .grid .card{width:auto}
+#searchGrid{grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))}
 .state{padding:.6rem var(--gutter) 3rem;color:var(--muted);font-size:.95rem;display:none}
 .state.show{display:block}
 .state.err{color:var(--err)}
@@ -367,6 +368,8 @@ body.touch .page-head{padding:1.2rem var(--gutter) .7rem;gap:.8rem}
 body.touch .page-title{font-size:1.45rem}
 body.touch .searchbar{flex:1 1 100%}
 body.touch .grid{grid-template-columns:repeat(auto-fill,minmax(8.2rem,1fr));gap:1rem .7rem;padding:.4rem var(--gutter) 1.4rem}
+body.touch .grid .card,body.touch .grid .card.wide{width:auto}
+body.touch #searchGrid{grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))}
 body.touch .channels{grid-template-columns:repeat(auto-fill,minmax(8.6rem,1fr));gap:.6rem;padding:.2rem var(--gutter) 1.4rem}
 body.touch .state{padding:.6rem var(--gutter) 2rem}
 body.touch .settings{padding:.1rem var(--gutter) 1.4rem}
