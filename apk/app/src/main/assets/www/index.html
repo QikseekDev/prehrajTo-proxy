@@ -26,7 +26,7 @@
   <!-- ===================== Připojení k serveru ===================== -->
   <section id="setup" class="setup">
     <div class="setup-card">
-      <div class="brand"><span class="brand-mark">W</span><span class="brand-name">flix</span></div>
+      <div class="brand"><span class="brand-name">Wflix</span></div>
       <h1>Připojení k serveru</h1>
       <p class="muted">Zadej adresu svého Wflix serveru (ASP.NET na Azure nebo PHP self-host).</p>
       <div class="setup-row">
@@ -41,12 +41,12 @@
   <!-- ===================== Aplikace ===================== -->
   <div id="shell" class="shell" hidden>
     <nav id="rail" class="rail" aria-label="Hlavní navigace">
-      <div class="rail-logo"><span>W</span></div>
-      <button class="navbtn f" data-nav="home" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg></span><span class="lbl">Domů</span></button>
-      <button class="navbtn f" data-nav="search" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg></span><span class="lbl">Hledat</span></button>
-      <button class="navbtn f" data-nav="live" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-live"/></svg></span><span class="lbl">Živě</span></button>
+      <div class="rail-logo">Wflix</div>
+      <button class="navbtn f" data-nav="home" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-home" xlink:href="#i-home"/></svg></span><span class="lbl">Domů</span></button>
+      <button class="navbtn f" data-nav="search" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-search" xlink:href="#i-search"/></svg></span><span class="lbl">Hledat</span></button>
+      <button class="navbtn f" data-nav="live" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-live" xlink:href="#i-live"/></svg></span><span class="lbl">Živě</span></button>
       <div class="rail-spacer"></div>
-      <button class="navbtn f" data-nav="settings" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg></span><span class="lbl">Nastavení</span></button>
+      <button class="navbtn f" data-nav="settings" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-settings" xlink:href="#i-settings"/></svg></span><span class="lbl">Nastavení</span></button>
     </nav>
 
     <main id="main" class="main">
@@ -59,7 +59,7 @@
         <div class="page-head">
           <h1 class="page-title">Hledat</h1>
           <div class="searchbar">
-            <span class="s-ico" aria-hidden="true"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg></span>
+            <span class="s-ico" aria-hidden="true"><svg class="i" aria-hidden="true"><use href="#i-search" xlink:href="#i-search"/></svg></span>
             <input id="searchInput" class="search-input f" type="text" autocomplete="off"
                    spellcheck="false" placeholder="Název filmu nebo seriálu" enterkeyhint="search" aria-label="Hledat film nebo seriál">
             <button id="searchGo" class="f btn" type="button">Hledat</button>
@@ -96,9 +96,9 @@
         <div id="detailMeta" class="meta"></div>
         <p id="detailNote" class="muted detail-note"></p>
         <div class="detail-actions">
-          <button id="detailPlay" class="f btn primary" type="button"><svg class="i fill" aria-hidden="true"><use href="#i-play"/></svg><span>Přehrát</span></button>
-          <button id="detailFav" class="f btn ghost" type="button"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg><span>Do oblíbených</span></button>
-          <button id="detailDl" class="f btn ghost" type="button" hidden><svg class="i" aria-hidden="true"><use href="#i-download"/></svg><span>Stáhnout</span></button>
+          <button id="detailPlay" class="f btn primary" type="button"><svg class="i fill" aria-hidden="true"><use href="#i-play" xlink:href="#i-play"/></svg><span>Přehrát</span></button>
+          <button id="detailFav" class="f btn ghost" type="button"><svg class="i" aria-hidden="true"><use href="#i-star" xlink:href="#i-star"/></svg><span>Do oblíbených</span></button>
+          <button id="detailDl" class="f btn ghost" type="button" hidden><svg class="i" aria-hidden="true"><use href="#i-download" xlink:href="#i-download"/></svg><span>Stáhnout</span></button>
           <button id="detailClose" class="f btn ghost" type="button">Zavřít</button>
         </div>
       </div>
@@ -109,7 +109,7 @@
   <div id="player" class="overlay player" hidden>
     <video id="video" playsinline webkit-playsinline preload="metadata"></video>
     <div id="pTop" class="p-top">
-      <button id="pBack" class="f p-btn" type="button"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg><span>Zpět</span></button>
+      <button id="pBack" class="f p-btn" type="button"><svg class="i" aria-hidden="true"><use href="#i-back" xlink:href="#i-back"/></svg><span>Zpět</span></button>
       <div class="p-title" id="pTitle"></div>
       <div class="p-live-badge" id="pLive" hidden>Živě</div>
     </div>
