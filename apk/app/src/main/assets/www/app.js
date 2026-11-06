@@ -897,7 +897,7 @@
     if (list.length) focusEl(list[0]);
   }
 
-  /* Z katalogu: najdi film a otevři detail prvního rozumného výsledku */
+  /* Z katalogu: najdi film a rovnou ho přehraj (první rozumný výsledek) */
   function searchThenPlay(q) {
     loading('Hledám „' + q + '“ …');
     apiJson('/api/search?q=' + encodeURIComponent(q)).then(function (d) {
@@ -906,14 +906,9 @@
         toast('Pro „' + q + '“ prehraj.to nic nenašel.');
         return;
       }
+      // Rovnou spustíme přehrávač s nejlepším výsledkem – žádné přepínání na obrazovku s výsledky.
       var ranked = rankMovies(q, d.movies);
-      state.results = ranked;
-      setView('search');
-      $('searchInput').value = q;
-      $('searchState').className = 'state show';
-      $('searchState').textContent = 'Nalezeno ' + ranked.length + ' výsledků pro „' + q + '“';
-      renderResults();
-      openMovieDetail(ranked[0]);
+      playMovie(ranked[0]);
     }).catch(function (e) {
       loading(null);
       toast('Chyba: ' + e.message, 4000);
