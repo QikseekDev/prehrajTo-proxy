@@ -573,6 +573,26 @@ public class MainActivity extends Activity {
             }
         }
 
+        /** Otevře systémové "Přenést obrazovku" (Google Cast / Miracast / Smart View). */
+        @JavascriptInterface
+        public boolean castScreen() {
+            String[] actions = {
+                    "android.settings.CAST_SETTINGS",
+                    "android.settings.WIRELESS_SETTINGS"
+            };
+            for (String action : actions) {
+                try {
+                    Intent i = new Intent(action);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                    return true;
+                } catch (Exception ignored) {
+                    // zkusí další variantu
+                }
+            }
+            return false;
+        }
+
         @JavascriptInterface
         public boolean isTV() {
             return getPackageManager().hasSystemFeature("android.software.leanback")
