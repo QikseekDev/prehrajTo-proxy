@@ -136,15 +136,12 @@ Překročení vrací `429` + `Retry-After: 5` a JSON `{"success":false,"error":"
 jako běžnou chybu hledání. Za App Service se IP bere z `X-Forwarded-For` (`UseForwardedHeaders`),
 jinak by všechny požadavky měly IP front-endu Azure a limit by platil pro celý internet dohromady.
 
-**2. Blokace nástrojů** – požadavek na `/api` dostane `403`, když má User-Agent z deny-listu
-(curl, wget, python-requests, httpx, aiohttp, scrapy, go-http-client, okhttp, axios, httpie,
-Postman, PowerShell, headless Chrome, Puppeteer, Playwright, Selenium…), prázdný UA, nebo nemá
-ani `Sec-Fetch-Site` ani `Referer` na vlastní doménu. Statické soubory (`/`, `index.html`, `script.js`, `styles.css`) se
-neblokují ani nelimitují, aby fungoval uptime monitoring.
-
-> Hlavičky jde podstrčit, takže blokace UA není bezpečnostní hranice – scraping reálně brzdí až
-> rate limiting. Pro ruční testování z terminálu je potřeba poslat prohlížečové hlavičky:
-> `curl -A 'Mozilla/5.0 … Chrome/131' -H 'Sec-Fetch-Site: same-origin' '…/api/search?q=matrix'`.
+**2. Nic se neblokuje podle hlaviček** – `/api` nekontroluje User-Agent, `Sec-Fetch-Site` ani
+`Referer`. Dřív tu byl deny-list nástrojů (curl, python-requests, okhttp…) plus požadavek na
+vlastní `Referer`, ale to zároveň blokovalo WebView v mobilní appce a jiné klienty, kteří tyhle
+hlavičky neposílají – dostávali `403` a appka vypadala rozbitá. Scraping teď brzdí jen limity
+výš, statické soubory se nelimitují vůbec, takže funguje i uptime monitoring a `curl` na
+`/api/search?q=matrix` vrátí normální JSON.
 
 ## Komponenty
 

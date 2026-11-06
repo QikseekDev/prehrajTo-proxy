@@ -34,6 +34,8 @@
         const favBtn = document.getElementById('favBtn');
         const pipBtn = document.getElementById('pipBtn');
         const proxyStatusEl = document.getElementById('proxyStatus');
+        // PiP umí Chrome/Edge; tlačítko se ukáže až u načteného videa (viz updateFavBtn).
+        const pipSupported = !!(document.pictureInPictureEnabled && HTMLVideoElement.prototype.requestPictureInPicture);
 
         let currentResults = [];
         // Stránkování hledání: první stránka se ověřuje (mrtvé kusy zmizí), další se jen
@@ -172,7 +174,7 @@
             try { return new URL(src).hostname.replace(/^www\./, ''); } catch (e) { return src; }
         }
         function noteActiveProxy(src) {
-            if (!src || src === activeProxy) return;
+            if (!src || src === activeProxy || !srcBadge || !srcBadgeName) return;
             const switched = !!activeProxy;
             activeProxy = src;
             const label = proxyLabel(src);
@@ -1814,6 +1816,7 @@
 
         // Zdroj aktuálního přehrávání (CDN vs server) - malý štítek u tlačítek přehrávače.
         function setPlayerSource(mode) {
+            if (!srcMode) return;
             if (!player.page) { srcMode.hidden = true; return; }
             const relay = mode === 'relay';
             srcMode.hidden = false;
@@ -1826,14 +1829,20 @@
 
         // Záložka u přehrávače - stejná položka jako na kartách, jen pro právě hraný titul.
         function updateFavBtn() {
-            if (!player.page) { favBtn.hidden = true; return; }
+            if (!favBtn) return;
+            if (!player.page) {
+                favBtn.hidden = true;
+                if (pipBtn) pipBtn.hidden = true;   // PiP nemá smysl bez videa
+                return;
+            }
             const on = isFav(player.page);
             favBtn.hidden = false;
+            if (pipBtn && pipSupported) pipBtn.hidden = false;
             favBtn.textContent = on ? '★ V oblíbených' : '☆ Do oblíbených';
             favBtn.classList.toggle('on', on);
             favBtn.title = on ? 'Odebrat z oblíbených' : 'Přidat do oblíbených';
         }
-        favBtn.addEventListener('click', () => {
+        if (favBtn) favBtn.addEventListener('click', () => {
             if (!player.page) return;
             toggleFavorite({ url: player.page, title: player.title, poster: player.poster });
         });
@@ -1873,9 +1882,8 @@
         // ===== Obrázek v obraze (Picture-in-Picture) =====
         // <video> je obyčejný HTML5 prvek, takže stačí requestPictureInPicture(). Tlačítko se
         // ukáže, jen když to prohlížeč umí (Chrome/Edge; Safari má vlastní PiP v ovládání videa).
-        const pipSupported = !!(document.pictureInPictureEnabled && videoPlayer.requestPictureInPicture);
-        if (pipSupported) pipBtn.hidden = false;
-        pipBtn.addEventListener('click', async () => {
+        // Tlačítko se ukáže až ve chvíli, kdy je v přehrávači video (viz updateFavBtn).
+        if (pipBtn) pipBtn.addEventListener('click', async () => {
             try {
                 if (document.pictureInPictureElement) await document.exitPictureInPicture();
                 else await videoPlayer.requestPictureInPicture();
@@ -2050,8 +2058,9 @@
                 historySave(true);   // poslední pozice před odchodem z přehrávače
                 player.page = ''; player.cdn = '';
                 proxyBtn.hidden = true;
-                favBtn.hidden = true;
-                srcMode.hidden = true;
+                if (favBtn) favBtn.hidden = true;
+                if (pipBtn) pipBtn.hidden = true;
+                if (srcMode) srcMode.hidden = true;
                 clearSubtitles();
                 refreshDl();
                 clearTimeout(player.stallTimer); player.stallTimer = null;
@@ -2289,28 +2298,34 @@
 
             // Světlý/tmavý režim - jen překreslí povrch, přehrávání se nemění.
             const themeTog = document.getElementById('themeToggle');
-            themeTog.checked = settings.theme === 'light';
-            themeTog.addEventListener('change', () => {
-                settings.theme = themeTog.checked ? 'light' : 'dark';
-                saveSettings();
-                applyTheme();
-            });
+            if (themeTog) {
+                themeTog.checked = settings.theme === 'light';
+                themeTog.addEventListener('change', () => {
+                    settings.theme = themeTog.checked ? 'light' : 'dark';
+                    saveSettings();
+                    applyTheme();
+                });
+            }
 
             // Velikost a pozadí titulků - přes CSS proměnné, takže se stopa nemusí načítat znovu.
             const subSizeSel = document.getElementById('subSizeSelect');
-            subSizeSel.value = CUE_SIZES[settings.subSize] ? settings.subSize : 'm';
-            subSizeSel.addEventListener('change', () => {
-                settings.subSize = subSizeSel.value;
-                saveSettings();
-                applyCueStyle();
-            });
+            if (subSizeSel) {
+                subSizeSel.value = CUE_SIZES[settings.subSize] ? settings.subSize : 'm';
+                subSizeSel.addEventListener('change', () => {
+                    settings.subSize = subSizeSel.value;
+                    saveSettings();
+                    applyCueStyle();
+                });
+            }
             const subBgSel = document.getElementById('subBgSelect');
-            subBgSel.value = CUE_BACKGROUNDS[settings.subBg] ? settings.subBg : 'dark';
-            subBgSel.addEventListener('change', () => {
-                settings.subBg = subBgSel.value;
-                saveSettings();
-                applyCueStyle();
-            });
+            if (subBgSel) {
+                subBgSel.value = CUE_BACKGROUNDS[settings.subBg] ? settings.subBg : 'dark';
+                subBgSel.addEventListener('change', () => {
+                    settings.subBg = subBgSel.value;
+                    saveSettings();
+                    applyCueStyle();
+                });
+            }
         })();
 
         // ===== Wflix intro: krátký filmový podpis =====

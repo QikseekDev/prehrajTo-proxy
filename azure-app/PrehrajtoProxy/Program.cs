@@ -180,49 +180,10 @@ var app = builder.Build();
 
 app.UseForwardedHeaders();
 
-// Zjevné nástroje (curl, wget, skriptovací knihovny, headless prohlížeče) na /api nepustíme.
-// Není to bezpečnostní hranice - hlavičky jde podstrčit - ale odradí to nejjednodušší
-// scraping a zbytek drží limity výš. Běžný prohlížeč vždy pošle Sec-Fetch-Site (novější)
-// nebo Referer na vlastní doménu (starší), takže normálnímu návštěvníkovi to nevadí.
-string[] blockedAgents =
-[
-    "curl", "wget", "python-requests", "python-urllib", "python-httpx", "httpx", "aiohttp",
-    "scrapy", "go-http-client", "java/", "okhttp", "node-fetch", "axios", "undici",
-    "libwww-perl", "httpie", "postmanruntime", "insomnia", "powershell", "winhttp",
-    "apache-httpclient", "guzzlehttp", "headlesschrome", "phantomjs", "puppeteer", "playwright",
-    "selenium", "webdriver", "zgrab", "masscan", "nmap", "nikto", "sqlmap",
-];
-
-app.Use(async (ctx, next) =>
-{
-    if (!ctx.Request.Path.StartsWithSegments("/api"))
-    {
-        await next();
-        return;
-    }
-
-    var ua = ctx.Request.Headers.UserAgent.ToString();
-    var uaLower = ua.ToLowerInvariant();
-    var botUa = string.IsNullOrWhiteSpace(ua) || blockedAgents.Any(b => uaLower.Contains(b));
-
-    var origin = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
-    var fetchSite = ctx.Request.Headers["Sec-Fetch-Site"].ToString().ToLowerInvariant();
-    var referer = ctx.Request.Headers.Referer.ToString();
-    var sameOrigin = (fetchSite.Length > 0 && fetchSite != "cross-site")
-        || (referer.Length > 0 && referer.StartsWith(origin, StringComparison.OrdinalIgnoreCase));
-
-    if (botUa || !sameOrigin)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-        ctx.Response.ContentType = "application/json; charset=utf-8";
-        await ctx.Response.WriteAsync(
-            "{\"success\":false,\"error\":\"Automatizované požadavky nejsou povolené. Otevři appku v prohlížeči.\"}");
-        return;
-    }
-
-    await next();
-});
-
+// /api nic neblokuje podle User-Agenta ani podle Refereru. WebView v mobilní appce
+// a obecně jakýkoli jiný klient posílá jiné (nebo žádné) hlavičky než prohlížeč a blokace
+// mu vracela 403, takže se aplikace tvářila jako rozbitá. Zůstávají jen limity výš -
+// ty platí na IP a jsou nastavené tak, aby běžnému divákovi nepřekážely.
 app.UseRateLimiter();
 app.UseDefaultFiles();
 app.UseStaticFiles();
