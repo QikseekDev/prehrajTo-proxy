@@ -108,11 +108,9 @@
             // PROXY-SERVERS:END
         ];
         const SETTINGS_KEY = 'wflix-settings';
-        // Knihovna diváka (jen v tomhle prohlížeči): rozehrané filmy a oblíbené.
-        const HISTORY_KEY = 'wflix-history';
+        // Knihovna diváka (jen v tomhle prohlížeči): oblíbené.
         const FAVS_KEY = 'wflix-favs';
-        const HISTORY_MAX = 40;
-        let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: true, theme: 'dark', subSize: 'm', subBg: 'dark', historyOn: true };
+        let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: true, theme: 'dark', subSize: 'm', subBg: 'dark' };
         try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) {}
         // Starší verze ukládaly volby, které už v panelu nejsou (vypnuté náhledy, zdroj
         // náhledů, proxy). Zahodit, ať se v localStorage nevrátí zpátky do oběhu.
@@ -303,8 +301,8 @@
             return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         }
 
-        // ===== Knihovna diváka: rozehrané, nedávno sledované a oblíbené =====
-        // Všechno zůstává jen v prohlížeči (localStorage) - stejně jako Nastavení, žádný účet.
+        // ===== Knihovna diváka: oblíbené =====
+        // Zůstává jen v prohlížeči (localStorage) - stejně jako Nastavení, žádný účet.
         // Klíčem je adresa stránky na prehraj.to; katalog bez odkazu se drží jako 'q:<dotaz>'.
         function readList(key) {
             try {
@@ -316,11 +314,8 @@
             try { localStorage.setItem(key, JSON.stringify(list)); } catch (e) {}
         }
 
-        let history = readList(HISTORY_KEY).filter(x => x.url);
         let favorites = readList(FAVS_KEY).filter(x => x.key);
-        let lastHistoryWrite = 0;
 
-        const saveHistory = () => writeList(HISTORY_KEY, history);
         const saveFavorites = () => writeList(FAVS_KEY, favorites);
 
         const fmtClock = secs => {
@@ -336,41 +331,6 @@
             if (min < 60) return `${min} min`;
             return `${Math.floor(min / 60)} h ${min % 60} min`;
         }
-        const histDone = h => h.d > 0 && h.t >= h.d - 30;
-
-        // Uloží pozici přehrávání. Během hraní se volá nejvýš každé 4 s, na pauze/odchodu
-        // hned - localStorage se tak nezapisuje po každé vteřině.
-        function historySave(force) {
-            const page = player.page;
-            if (!page) return;
-            // Vypnutá historie v Knihovně: nic se neukládá, ani pozice rozehraných filmů.
-            if (settings.historyOn === false) return;
-            const now = Date.now();
-            if (!force && now - lastHistoryWrite < 4000) return;
-            const dur = isFinite(videoPlayer.duration) && videoPlayer.duration > 0 ? Math.round(videoPlayer.duration) : 0;
-            const t = Math.round(videoPlayer.currentTime || 0);
-            if (t < 2) return;   // začátek nemá smysl ukládat a nesmí přepsat uloženou pozici
-            const rec = history.find(x => x.url === page) || { url: page };
-            rec.title = player.title || rec.title || 'Video';
-            rec.poster = player.poster || rec.poster || '';
-            rec.t = t;
-            rec.d = dur || rec.d || 0;
-            rec.at = now;
-            history = [rec, ...history.filter(x => x.url !== page)].slice(0, HISTORY_MAX);
-            lastHistoryWrite = now;
-            saveHistory();
-        }
-
-        // Kde navázat. První půlminuta ani poslední půlminuta nemá smysl.
-        function historyResume(page) {
-            const h = history.find(x => x.url === page);
-            if (!h || !h.t) return 0;
-            if (histDone(h)) return 0;
-            if (h.t < 30) return 0;
-            if (h.d > 0 && h.d - h.t < 30) return 0;
-            return h.t;
-        }
-
         const favKeyOf = it => it && it.url ? it.url : (it && it.q ? 'q:' + it.q : '');
         const isFav = key => !!key && favorites.some(f => f.key === key);
 
@@ -791,8 +751,8 @@
                     <h2>Přehrávač a klávesy</h2>
                     <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ PiP</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa).</p>
                     <p>Velikost a pozadí titulků se nastavují v Nastavení (avatar vpravo nahoře).</p>
-                    <h2>Knihovna: oblíbené a historie</h2>
-                    <p>Hvězdička na kartě přidá titul do oblíbených, stejně jako tlačítko u přehrávače. Odkaz <b>Knihovna</b> v liště (před Živě) ukazuje historii přehrávání i oblíbené. U historie jde každý film odebrat křížkem, celou ji smažeš tlačítkem <b>Vymazat historii</b> a přepínačem <b>Ukládat historii přehrávání</b> ji můžeš úplně vypnout. Filmy se po otevření samy pustí od místa, kde jsi skončil. Vše se ukládá jen v tvém prohlížeči.</p>
+                    <h2>Knihovna: oblíbené</h2>
+                    <p>Hvězdička na kartě přidá titul do oblíbených, stejně jako tlačítko u přehrávače. Odkaz <b>Knihovna</b> v liště (před Živě) ukazuje oblíbené. Každý titul jde odebrat hvězdičkou. Appka si historii přehrávání neukládá. Vše se ukládá jen v tvém prohlížeči.</p>
                     <h2>Chyba 429 (Too Many Requests)</h2>
                     <p>Prehraj.to limituje počet dotazů. Když se to objeví, dej appce minutu pauzu a v Nastavení (avatar vpravo nahoře) zapni „Omezit souběžné dotazy na náhledy“ – načítání náhledů je nejčastější příčina.</p>
                     <h2>Proxy servery</h2>
@@ -815,7 +775,7 @@
                         <li>Přehrávání zajišťuje HTML5 přehrávač. Video se primárně přehrává přímo z CDN; server přes <code>/api/stream</code> nastupuje při chybách (nebo ručně tlačítkem) a vždy při stahování.</li>
                     </ul>
                     <h2>Co tady nenajdeš</h2>
-                    <p>Žádná videa se na serveru neukládají ani nehostují. Appka jen zprostředkuje požadavek a přehraje to, co je veřejně dostupné. Účty ani profily nevedeme; rozehrané filmy a oblíbené si appka pamatuje jen v tvém prohlížeči.</p>
+                    <p>Žádná videa se na serveru neukládají ani nehostují. Appka jen zprostředkuje požadavek a přehraje to, co je veřejně dostupné. Účty ani profily nevedeme; oblíbené si appka pamatuje jen v tvém prohlížeči.</p>
                     <p>Nápady a chyby posílej na <a href="mailto:${CONTACT_MAIL}">${CONTACT_MAIL}</a>.</p>
                 `,
             },
@@ -860,7 +820,7 @@
                 body: `
                     <p>Wflix nemá registraci, přihlášení ani uživatelské účty. Žádná analytika, reklamní skripty ani sledovací cookies.</p>
                     <h2>Co se ukládá u tebe v prohlížeči</h2>
-                    <p>Jen nastavení, cache náhledů, rozehrané filmy a oblíbené (localStorage) – podrobnosti a tlačítko na smazání najdeš v <button type="button" class="f-link" onclick="openPage('cookies')" style="color:#fff;text-decoration:underline">Předvolbách cookies</button>.</p>
+                    <p>Jen nastavení, cache náhledů a oblíbené (localStorage) – podrobnosti a tlačítko na smazání najdeš v <button type="button" class="f-link" onclick="openPage('cookies')" style="color:#fff;text-decoration:underline">Předvolbách cookies</button>.</p>
                     <h2>Co projde serverem</h2>
                     <ul>
                         <li>Hledání a náhledy jdou z našeho serveru na PHP proxy a odtud na prehraj.to – prehraj.to vidí adresu proxy serveru, ne tvou.</li>
@@ -875,11 +835,10 @@
             cookies: {
                 title: 'Předvolby cookies',
                 body: `
-                    <p>Wflix nepoužívá cookies pro sledování ani reklamu a nemá žádnou přihlášenou relaci. Místo cookies si do prohlížeče ukládá čtyři věci přes <code>localStorage</code>:</p>
+                    <p>Wflix nepoužívá cookies pro sledování ani reklamu a nemá žádnou přihlášenou relaci. Místo cookies si do prohlížeče ukládá tři věci přes <code>localStorage</code>:</p>
                     <ul>
                         <li><code>${SETTINGS_KEY}</code> – tvoje nastavení (katalog na úvodní stránce, limit náhledů, přímé přehrávání, světlý režim, styl titulků).</li>
                         <li><code>${THUMB_KEY}</code> – cache náhledů, aby se stejné obrázky nenačítaly pořád dokola.</li>
-                        <li><code>${HISTORY_KEY}</code> – rozehrané a nedávno sledované filmy (název, pozice, čas).</li>
                         <li><code>${FAVS_KEY}</code> – oblíbené filmy (název a odkaz).</li>
                     </ul>
                     <p>Obě položky zůstávají jen v tvém prohlížeči, na server se neposílají. Smazat je můžeš tlačítkem níž nebo v prohlížeči (Nastavení → Ochrana soukromí → Data stránek).</p>
@@ -943,7 +902,6 @@
             try {
                 localStorage.removeItem(SETTINGS_KEY);
                 localStorage.removeItem(THUMB_KEY);
-                localStorage.removeItem(HISTORY_KEY);
                 localStorage.removeItem(FAVS_KEY);
             } catch (e) {}
             thumbCache = {};
@@ -1238,7 +1196,6 @@
 
         // Načte video a spustí ho. Přímé přehrávání (výchozí) zkusí CDN; když je vypnuté,
         // jde rovnou přes server. beforePlay se zavolá, jakmile je možné pustit přehrávač.
-        // Když má film v prohlížeči uloženou pozici (Watch history), naváže se tam.
         async function loadAndPlay(page, title, beforePlay, poster) {
             const useDirect = directPreferred();
             player.page = page; player.cdn = ''; player.title = title || 'video';
@@ -1265,15 +1222,7 @@
             player.mode = src === url ? 'direct' : 'relay';
             setPlayerSource(player.mode);
             updateFavBtn();
-            const resume = historyResume(page);
             if (beforePlay) beforePlay();
-            if (resume > 1) {
-                videoPlayer.addEventListener('loadedmetadata', () => {
-                    if (player.page !== page) return;
-                    try { videoPlayer.currentTime = resume; } catch (e) {}
-                    notice('⏱ Pokračuji od ' + fmtClock(resume));
-                }, { once: true });
-            }
             videoPlayer.src = src;
             try {
                 await videoPlayer.play();
@@ -1361,7 +1310,6 @@
             if (!videoPlayer.seeking && videoPlayer.currentTime > 0) player.lastTime = videoPlayer.currentTime;
             // po minutě a půl bez problému počítadlo pokusů vynulujeme (odkaz vyprší klidně víckrát)
             if (player.fixes > 0 && videoPlayer.currentTime - player.resumeAt > 90) player.fixes = 0;
-            historySave(false);   // pozice pro "Pokračovat ve sledování" (nejvýš 1× za 4 s)
         });
         videoPlayer.addEventListener('error', () => {
             if (!player.page || !videoPlayer.getAttribute('src')) return;
@@ -1377,9 +1325,6 @@
         ['playing', 'pause', 'seeking'].forEach(ev => videoPlayer.addEventListener(ev, () => {
             clearTimeout(player.stallTimer); player.stallTimer = null;
         }));
-        // Na pauze a po přetočení se pozice uloží hned - kdyby divák odešel, nesmí se ztratit.
-        videoPlayer.addEventListener('pause', () => historySave(true));
-        videoPlayer.addEventListener('seeked', () => historySave(true));
         // spojení, co se utrhlo uprostřed, se občas tváří jako "konec" videa
         videoPlayer.addEventListener('ended', () => {
             if (player.page && isFinite(videoPlayer.duration) && videoPlayer.duration - videoPlayer.currentTime > 10) {
@@ -1387,7 +1332,6 @@
                 return;
             }
             msSetState('paused');
-            historySave(true);   // dohrané = z "Pokračovat ve sledování" zmizí, v "Nedávno" zůstane
             if (player.page) showPlayerEnd();
         });
 
@@ -1816,10 +1760,6 @@
         videoPlayer.addEventListener('enterpictureinpicture', () => { pipBtn.textContent = '⧉ Zavřít PiP'; });
         videoPlayer.addEventListener('leavepictureinpicture', () => { pipBtn.textContent = '⧉ PiP'; });
 
-        // Pozice se uloží hned i při zavření tabu / přepnutí appky, ne až při pauze.
-        window.addEventListener('pagehide', () => historySave(true));
-        document.addEventListener('visibilitychange', () => { if (document.hidden) historySave(true); });
-
         // ===== Klávesové zkratky přehrávače =====
         // Jen když je otevřený přehrávač a fokus není ve formulářovém prvku - jinak by
         // mezerník a šipky kradly psaní do hledání i Enter na tlačítkách.
@@ -1917,7 +1857,7 @@
 
         // Přehrání z osobní řady: adresa na prehraj.to je uložená, takže se nehledá znovu.
         function playFromLibrary(url) {
-            const h = history.find(x => x.url === url);
+            const h = favorites.find(x => x.url === url);
             const title = h ? h.title : 'Video';
             window.history.pushState({}, '', `?watch=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`);
             showStatus('🔄 Načítám video...', 'loading');
@@ -1977,7 +1917,6 @@
         // Stop and cleanup video player
         function stopVideo() {
             if (videoPlayer) {
-                historySave(true);   // poslední pozice před odchodem z přehrávače
                 player.page = ''; player.cdn = '';
                 proxyBtn.hidden = true;
                 if (favBtn) favBtn.hidden = true;
@@ -2320,53 +2259,27 @@
 
         }
 
-        // ===== Knihovna: historie a oblíbené na vlastní stránce =====
-        // Dřív to byly řady na úvodní stránce. S mazáním a vypínáním historie se to tam
-        // nevešlo, takže je z toho stránka v liště (před Živě), stejná jako Nastavení.
-        function fmtSeen(ts) {
-            if (!ts) return '';
-            const days = Math.floor((Date.now() - ts) / 86400000);
-            if (days <= 0) return 'dnes';
-            if (days === 1) return 'včera';
-            if (days < 5) return days + ' dny zpět';
-            if (days < 7) return days + ' dní zpět';
-            const d = new Date(ts);
-            return d.getDate() + '. ' + (d.getMonth() + 1) + '.';
-        }
-
+        // ===== Knihovna: oblíbené na vlastní stránce =====
         // Klikací atributy nesou jen číslo - pořadí se po každé změně překreslí, takže
         // se do onclick nedostane adresa s apostrofem nebo ampersandem.
         let libOrder = [];
         let libFilterText = '';
 
-        function libMeta(it, kind) {
-            if (kind === 'fav') return 'Oblíbené';
-            const bits = [];
-            if (it.t > 0 && it.d > 0) bits.push(histDone(it) ? 'Dohráno' : 'Zbývá ' + fmtRemain(it.d - it.t));
-            if (it.at) bits.push('Sledováno ' + fmtSeen(it.at));
-            return bits.join(' · ') || 'Rozehrané';
-        }
-
         function libRowHtml(entry, i) {
             const it = entry.item;
-            const kind = entry.kind;
-            const pct = (it.t > 0 && it.d > 0) ? Math.min(100, Math.max(2, Math.round((it.t / it.d) * 100))) : 0;
             const title = escapeHtml(it.title || 'Video');
             const art = it.poster
                 ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(it.poster)}" onerror="this.remove()">`
                 : '<span class="emoji">🎬</span>';
-            const del = kind === 'fav'
-                ? `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">★</button>`
-                : `<button class="lib-del" type="button" onclick="libDelHist(${i})" aria-label="Odebrat z historie" title="Odebrat z historie">✕</button>`;
+            const del = `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">★</button>`;
             return `<div class="lib-item" data-name="${escapeHtml(norm(it.title))}">
                 <button class="lib-open" type="button" onclick="libPlay(${i})" aria-label="Přehrát ${title}">
                     <span class="lib-art" style="background:${posterGradient(it.title || '')}">
                         ${art}
-                        ${pct ? `<span class="progress"><i style="width:${pct}%"></i></span>` : ''}
                     </span>
                     <span class="lib-info">
                         <b>${title}</b>
-                        <span class="lib-meta">${escapeHtml(libMeta(it, kind))}</span>
+                        <span class="lib-meta">Oblíbené</span>
                     </span>
                 </button>
                 ${del}
@@ -2375,20 +2288,8 @@
 
         function libraryPageHtml() {
             return `
-                    <div class="set-row">
-                        <label for="histToggle">Ukládat historii přehrávání</label>
-                        <label class="switch"><input type="checkbox" id="histToggle"><span></span></label>
-                    </div>
-                    <div class="set-hint">Zapnuto (výchozí): rozehrané filmy se ukládají a po otevření se pustí od místa, kde jsi skončil. Vypnuto: nic nového se neukládá - co už v knihovně je, zůstane, dokud to nesmažeš.</div>
-
-                    <div class="lib-head">
-                        <h2>Historie</h2>
-                        <button class="lib-clear" type="button" id="libClearHist" onclick="libClearHistory()">Vymazat historii</button>
-                    </div>
                     <input class="row-filter lib-filter" id="libFilter" type="search" autocomplete="off"
                         placeholder="Filtrovat knihovnu…" aria-label="Filtrovat knihovnu">
-                    <div class="lib-list" id="libHistList"></div>
-
                     <h2>Oblíbené</h2>
                     <div class="lib-list" id="libFavList"></div>
                     <div class="set-hint">Hvězdička na kartě filmu titul přidá sem, hvězdička tady ho zase odebere. Knihovna je jen v tomhle prohlížeči - nikam se neposílá.</div>
@@ -2403,34 +2304,17 @@
         }
 
         function renderLibraryBody() {
-            const histEl = document.getElementById('libHistList');
             const favEl = document.getElementById('libFavList');
-            if (!histEl || !favEl) return;
-            libOrder = history.map(h => ({ kind: 'hist', item: h }))
-                              .concat(favorites.map(f => ({ kind: 'fav', item: f })));
+            if (!favEl) return;
+            libOrder = favorites.map(f => ({ kind: 'fav', item: f }));
             const rows = libOrder.map(libRowHtml);
-            const histRows = rows.slice(0, history.length);
-            histEl.innerHTML = histRows.length
-                ? histRows.join('')
-                : '<div class="lib-empty">Zatím nic přehraného. Pusť si film a objeví se tady i s místem, kde jsi skončil.</div>';
-            favEl.innerHTML = rows.length > history.length
-                ? rows.slice(history.length).join('')
+            favEl.innerHTML = rows.length
+                ? rows.join('')
                 : '<div class="lib-empty">Zatím žádné oblíbené. Hvězdička na kartě filmu ho přidá sem.</div>';
-            const clearBtn = document.getElementById('libClearHist');
-            if (clearBtn) clearBtn.disabled = history.length === 0;
             applyLibFilter();
         }
 
         function bindLibrary(root) {
-            const tog = root.querySelector('#histToggle');
-            if (tog) {
-                tog.checked = settings.historyOn !== false;
-                tog.addEventListener('change', () => {
-                    settings.historyOn = tog.checked;
-                    saveSettings();
-                    notice(tog.checked ? 'Historie je zapnutá' : 'Historie je vypnutá - nová přehrávání se neukládají');
-                });
-            }
             const filter = root.querySelector('#libFilter');
             if (filter) {
                 filter.value = libFilterText;
@@ -2447,15 +2331,6 @@
             notice('Tenhle titul nemá odkaz - zkus ho najít hledáním.', 'error');
         }
 
-        function libDelHist(i) {
-            const e = libOrder[i];
-            if (!e || e.kind !== 'hist') return;
-            history = history.filter(x => x !== e.item && x.url !== e.item.url);
-            saveHistory();
-            renderLibraryBody();
-            notice('Odebráno z historie');
-        }
-
         function libDelFav(i) {
             const e = libOrder[i];
             if (!e || e.kind !== 'fav') return;
@@ -2466,22 +2341,10 @@
             notice('Odebráno z oblíbených');
         }
 
-        function libClearHistory() {
-            if (!history.length) return;
-            if (!window.confirm('Smazat celou historii přehrávání? Rozehrané filmy pak začnou od začátku.')) return;
-            const n = history.length;
-            history = [];
-            saveHistory();
-            renderLibraryBody();
-            notice('Historie smazána (' + n + (n === 1 ? ' film)' : ' filmů)'));
-        }
-
         function openLibrary() { openPage('library'); }
         window.openLibrary = openLibrary;
         window.libPlay = libPlay;
-        window.libDelHist = libDelHist;
         window.libDelFav = libDelFav;
-        window.libClearHistory = libClearHistory;
 
         function openSettings() { openPage('settings'); }
         window.openSettings = openSettings;
