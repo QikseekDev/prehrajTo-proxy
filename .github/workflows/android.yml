@@ -2,8 +2,8 @@ name: Android APK build
 
 on:
   push:
-    # Bez "paths" - filtr cest by jinak mohl zablokovat spuštění na tagu v* a job release by se nikdy nespustil.
     branches: [ main ]
+    paths: [ 'apk/**', '.github/workflows/android.yml' ]
     tags: [ 'v*' ]
   pull_request:
     paths: [ 'apk/**', '.github/workflows/android.yml' ]
