@@ -26,6 +26,8 @@ jobs:
       version: ${{ steps.ver.outputs.name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
@@ -47,6 +49,18 @@ jobs:
           # "Failed to find package 'tools'". Instaluje se proto jen to, co build
           # potřebuje: compileSdk 34, build-tools 34.0.0 (apksigner) a platform-tools.
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Bump version (push to main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          F=apk/app/build.gradle
+          CODE=$(grep -oP "versionCode \K[0-9]+" "$F")
+          NAME=$(grep -oP "versionName '\K[^']+" "$F")
+          NEW_CODE=$((CODE + 1))
+          NEW_NAME="${NAME%.*}.$(( ${NAME##*.} + 1 ))"
+          sed -i "s/versionCode $CODE\$/versionCode $NEW_CODE/; s/versionName '$NAME'/versionName '$NEW_NAME'/" "$F"
+          echo "BUMPED_VERSION=$NEW_NAME" >> "$GITHUB_ENV"
+          echo "Verze $NAME ($CODE) -> $NEW_NAME ($NEW_CODE)"
 
       - name: Read version
         id: ver
@@ -110,3 +124,19 @@ jobs:
             apk/Wflix-${{ steps.ver.outputs.name }}.apk
             apk/Wflix-${{ steps.ver.outputs.name }}.apk.sha256
           generate_release_notes: true
+
+      # Verze se do repa zapíše až po úspěšném buildu, takže neúspěšný build nic nezvýší.
+      # Push přes GITHUB_TOKEN další workflow nespouští, takže to nezacyklí.
+      - name: Commit version bump
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apk/app/build.gradle
+          git commit -m "chore(apk): verze $BUMPED_VERSION [skip ci]"
+          for n in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep 5
+          done
+          echo "::error::Nepodařilo se zapsat zvýšenou verzi do main"
+          exit 1
