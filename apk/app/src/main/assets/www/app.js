@@ -1377,6 +1377,7 @@
   }
 
   function resetVideo() {
+    player.allowPause = true;          // zavření přehrávače smí video zastavit i u živého vysílání
     destroyHls();
     try { video.pause(); } catch (e) { }
     video.removeAttribute('src');
@@ -1391,6 +1392,7 @@
 
   function openPlayer(kind, title) {
     player.kind = kind;
+    player.allowPause = false;
     player.title = title || '';
     player.mode = settings.direct ? 'direct' : 'relay';
     player.triedRelay = false;
@@ -1402,6 +1404,8 @@
     // Přehrát na TV: jen v mobilní/tabletové aplikaci (na TV samotné nemá smysl).
     $('pCast').style.display = canCast() ? '' : 'none';
     $('pPlay').textContent = 'Pozastavit';
+    // Živé vysílání se nedá pozastavit - tlačítko Pozastavit se vůbec nezobrazí.
+    $('pPlay').style.display = kind === 'live' ? 'none' : '';
     $('pRelay').textContent = (settings.direct && kind === 'movie') ? 'Přes server' : 'Znovu načíst';
     setPlayerState(null);
     show($('player'));
@@ -1510,7 +1514,16 @@
   video.addEventListener('progress', updateProgress);
   video.addEventListener('durationchange', updateProgress);
   video.addEventListener('play', function () { $('pPlay').textContent = 'Pozastavit'; bumpIdle(); });
+  // Živé vysílání nejde pozastavit (ani tlačítkem, klepnutím, ani klávesou na ovladači).
+  function liveLocked() {
+    return player.kind === 'live' && !player.allowPause && !$('player').hidden;
+  }
+
   video.addEventListener('pause', function () {
+    if (liveLocked()) {          // pojistka: cokoli video zastaví, hned se znovu rozběhne
+      play();
+      return;
+    }
     $('pPlay').textContent = 'Přehrát';
     $('player').classList.remove('idle');
   });
@@ -1545,12 +1558,13 @@
   // Klik/tap do obrazu (ne na ovládací prvky) přehraje nebo pozastaví.
   $('player').addEventListener('click', function (e) {
     if (e.target === $('player') || e.target === video) {
-      if (video.paused) play(); else video.pause();
+      if (video.paused) play(); else if (!liveLocked()) video.pause();
       bumpIdle();
     }
   });
 
   $('pPlay').addEventListener('click', function () {
+    if (liveLocked()) return;
     if (video.ended) { video.currentTime = 0; }
     if (video.paused) play(); else video.pause();
     bumpIdle();
@@ -1851,7 +1865,8 @@
     if (!$('kbd').hidden && kbdPhysicalKey(e)) return;
     var typing = isTextField(e.target) || isTextField(document.activeElement);
     if (code === 415) { e.preventDefault(); if (!$('player').hidden) play(); return; }
-    if (code === 19) { e.preventDefault(); if (!$('player').hidden) video.pause(); return; }
+    if (code === 19) { e.preventDefault(); if (!$('player').hidden && !liveLocked()) video.pause(); return; }
+    if (liveLocked() && (code === 179 || k === 'MediaPause' || k === 'MediaPlayPause' || k === 'Pause')) { e.preventDefault(); return; }
     if (code === 412) { e.preventDefault(); if (!$('player').hidden) seekBy(-10); return; }
     if (code === 417) { e.preventDefault(); if (!$('player').hidden) seekBy(10); return; }
 
@@ -1932,8 +1947,12 @@
   /* Android: když appka jde do pozadí, uložíme pozici a video pozastavíme,
      aby zvuk nehrál přes jiné aplikace. */
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) return;
+    if (!document.hidden) {
+      if (!$('player').hidden && player.kind === 'live') { player.allowPause = false; play(); }
+      return;
+    }
     if (!$('player').hidden) {
+      player.allowPause = true;         // v pozadí smí video stát, aby nehrál zvuk přes jiné aplikace
       try { if (!video.paused) video.pause(); } catch (e) { }
     }
   });
