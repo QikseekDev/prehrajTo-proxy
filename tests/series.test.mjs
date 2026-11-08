@@ -8,6 +8,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const scriptPath = join(root, 'azure-app/PrehrajtoProxy/wwwroot/script.js');
 const cssPath = join(root, 'azure-app/PrehrajtoProxy/wwwroot/styles.css');
 const src = readFileSync(scriptPath, 'utf8');
+const appPath = join(root, 'ipk/app/app.js');
+const appSrc = readFileSync(appPath, 'utf8');
 
 // Stejné skládání názvů jako norm()/tokens() v script.js - testy si je definují samy,
 // aby nezávisely na zbytku prohlížečového kódu.
@@ -31,6 +33,20 @@ function loadSeriesPage() {
     const parser = loadParser();
     const escapeHtml = str => String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     return new Function('escapeHtml', 'czCount', 'seriesMeta', block + '\nreturn { seriesPageHtml };')(escapeHtml, parser.czCount, parser.seriesMeta);
+}
+
+// Klientská appka (ipk/app = webOS i APK) má vlastní kopii parseru; testy ji načtou
+// ze stejných značek, aby se obě implementace nerozešly.
+function appNormText(str) {
+    return norm(str).replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function loadAppParser() {
+    const start = appSrc.indexOf('// ===== Seriály =====');
+    const end = appSrc.indexOf('// ===== Konec seriálů =====', start + 1);
+    if (start < 0 || end < 0) throw new Error('blok seriálů v ipk/app/app.js nenalezen');
+    return new Function('normText', appSrc.slice(start, end)
+        + '\nreturn { parseEpisodeTitle, groupSearchResults, seriesMeta };')(appNormText);
 }
 
 const { parseEpisodeTitle, groupSearchResults, mergeSeriesMovies, seriesMeta, czCount } = loadParser();
@@ -136,6 +152,41 @@ test('S02E02-12 je jen díl 2, ne rozsah ani kopie pro každý díl', () => {
     assert.ok(!season.episodes.some(e => e.label === 'S02E05'), 'žádné rozkopírování');
 });
 
+test('klientská appka parsuje díly stejně jako web', () => {
+    const app = loadAppParser();
+    for (const [title, base, season, episode, label] of parsed) {
+        const got = app.parseEpisodeTitle(title);
+        assert.ok(got, `appka neparsovala: ${title}`);
+        assert.equal(got.base, base, title);
+        assert.equal(got.season, season, title);
+        assert.deepEqual(got.episodes, [episode], title);
+        assert.equal(got.label, label, title);
+    }
+});
+
+test('appka slije S01E02-09 s dílem 2 a neudělá z něj rozsah', () => {
+    const app = loadAppParser();
+    const mm = (title, url) => ({ title, url, thumbnail: '', year: '2025' });
+    const show = app.groupSearchResults([
+        mm('TO Vítejte v Derry S01E01 CZ dabing 2025', 'a1'),
+        mm('TO Vítejte v Derry S01E02 ULTRA HD KVALITA', 'a2'),
+        mm('TO - Vítejte v Derry S01E03 2160p CZ SK Dabing', 'a3'),
+        mm('TO - Vítejte v Derry S01E02-09 2025 CZ dabing 1080p FHD - Věc ve tmě', 'a4'),
+    ]).find(e => e.type === 'series').series;
+    const season = show.seasons[0];
+    assert.deepEqual(season.episodes.map(e => e.label), ['S01E01', 'S01E02', 'S01E03']);
+    assert.equal(season.episodes[1].variants.length, 2, 'upload s -09 je jen další zdroj dílu 2');
+    assert.equal(app.seriesMeta(show), '1 série · 3 díly');
+});
+
+test('klient v APK assets je synchronní s ipk/app', () => {
+    for (const f of ['app.js', 'index.html', 'styles.css', 'hls.min.js']) {
+        const a = readFileSync(join(root, 'ipk/app', f));
+        const b = readFileSync(join(root, 'apk/app/src/main/assets/www', f));
+        assert.ok(a.equals(b), `${f} v apk/app/src/main/assets/www není kopie z ipk/app`);
+    }
+});
+
 test('stránka 2+ přidá jen epizody stejného seriálu a zbytek ignoruje', () => {
     const page1 = [
         m('Mr. Robot S01E01', 'u1'),
@@ -206,6 +257,24 @@ test('stránka seriálu: popisek = číslo dílu, jedna řada na díl, escapová
     assert.ok(!html.includes('<b>&</b>'), 'název musí být escapovaný');
     assert.match(html, /&lt;b&gt;&amp;&lt;\/b&gt;/);
     assert.match(html, /a=1&amp;b=2/, 'URL plakátu musí být escapovaná');
+});
+
+test('klientská appka má obrazovku seriálu a styly', () => {
+    const html = readFileSync(join(root, 'ipk/app/index.html'), 'utf8');
+    for (const id of ['series', 'seriesBg', 'seriesTitle', 'seriesMeta', 'seriesPoster', 'seriesBody', 'seriesNote', 'seriesClose']) {
+        assert.ok(html.includes('id="' + id + '"'), `chybí #${id} v ipk/app/index.html`);
+    }
+    const css = readFileSync(join(root, 'ipk/app/styles.css'), 'utf8');
+    let depth = 0;
+    for (const ch of css) {
+        if (ch === '{') depth++;
+        else if (ch === '}') depth--;
+        assert.ok(depth >= 0, 'CSS appky má uzavírací závorku navíc');
+    }
+    assert.equal(depth, 0, 'CSS appky nemá vyvážené závorky');
+    for (const sel of ['.series-panel', '.series-body', '.ep-row', '.ep-src', '.ep-num']) {
+        assert.ok(css.includes(sel), `chybí styl ${sel} v ipk/app/styles.css`);
+    }
 });
 
 test('styly pro seriály existují a CSS je vyvážené', () => {
