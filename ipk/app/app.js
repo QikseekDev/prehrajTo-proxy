@@ -1403,6 +1403,7 @@
     $('pSub').style.display = kind === 'live' ? 'none' : '';
     // Přehrát na TV: jen v mobilní/tabletové aplikaci (na TV samotné nemá smysl).
     $('pCast').style.display = canCast() ? '' : 'none';
+    if ($('pSend')) $('pSend').style.display = canCast() ? '' : 'none';
     // Živě: „Přehrát“ se nabízí jen dokud video nenaběhlo (blokovaný autoplay), „Pozastavit“ nikdy.
     $('pPlay').textContent = kind === 'live' ? 'Přehrát' : 'Pozastavit';
     $('pPlay').style.display = '';
@@ -1582,18 +1583,62 @@
   $('pBack').addEventListener('click', function () { closePlayer(); renderRows(); focusAfterOverlay(); });
   $('pRelay').addEventListener('click', function () { switchToRelay(video.currentTime); });
 
-  // Přehrát na TV: otevře systémové "Přenést obrazovku" (Google Cast / Miracast / Smart View).
-  // Video pak hraje dál v aplikaci a zrcadlí se na vybranou TV.
+  // Přehrát na TV (telefon / tablet). Dvě cesty, aby to šlo na jakémkoli zařízení a TV:
+  //  1) Přenést obrazovku – systémové zrcadlení (Google Cast, Miracast, Smart View, Screen Share u LG).
+  //     Video pak hraje dál v aplikaci a zrcadlí se na vybranou TV.
+  //  2) Poslat do aplikace – adresu videa dostane jiná aplikace (Web Video Caster, LG ThinQ, VLC, …),
+  //     která ho pustí přímo na TV. Funguje i tam, kde telefon zrcadlení obrazovky nemá.
   function canCast() {
     if (!Native || typeof Native.castScreen !== 'function') return false;
     try { if (typeof Native.isTV === 'function' && Native.isTV()) return false; } catch (e) { }
     return true;
   }
+
+  function castableUrl() {
+    var s = video.currentSrc || video.src || '';
+    if (/^https?:/i.test(s)) return s;                       // mp4 / nativní HLS
+    if (player.kind === 'live') {                            // hls.js hraje z blob: → pošleme adresu kanálu
+      var ch = player.page && (state.channels[player.page.channelIndex] || player.page.channel);
+      if (!ch) return '';
+      return (ch.ua || ch.referrer || !settings.direct) ? liveRelayUrl(ch) : ch.url;
+    }
+    if (player.page) return streamUrl(player.page, false, player.title, player.cdn || '');
+    return '';
+  }
+
+  function copyToClipboard(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) { }
+    return false;
+  }
+
+  function sendToApp() {
+    var u = castableUrl();
+    if (!u) { toast('Video zatím nemá adresu, kterou by šlo odeslat.', 3500); return; }
+    var ok = false;
+    if (Native && typeof Native.sendToApp === 'function') {
+      try { ok = !!Native.sendToApp(u, player.title || ''); } catch (e) { }
+    }
+    if (ok) return;
+    if (copyToClipboard(u)) toast('Odkaz na video je zkopírovaný – vlož ho do aplikace, která umí TV.', 5000);
+    else toast(u, 9000);
+  }
+
   $('pCast').addEventListener('click', function () {
     var ok = false;
     try { ok = !!Native.castScreen(); } catch (e) { }
-    toast(ok ? 'Vyber TV v nabídce Přenést obrazovku a vrať se do aplikace.' : 'Tohle zařízení přenos obrazovky nepodporuje.', 4000);
+    if (ok) {
+      toast('Vyber TV v nabídce (Přenést obrazovku, Smart View, Screen Share) a vrať se do aplikace.', 5000);
+    } else {
+      toast('Tenhle telefon nemá přenos obrazovky, nabízím odeslání videa do jiné aplikace.', 3500);
+      sendToApp();
+    }
   });
+  if ($('pSend')) $('pSend').addEventListener('click', sendToApp);
 
   $('pBar').addEventListener('click', function (e) {
     var r = $('pBar').getBoundingClientRect();

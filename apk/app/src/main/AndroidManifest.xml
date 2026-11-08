@@ -8,6 +8,12 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <!-- Android 11+: bez <queries> by appka neviděla aplikace pro zrcadlení obrazovky (castScreen). -->
+    <queries>
+        <package android:name="com.samsung.android.smartmirroring" />
+        <package android:name="com.google.android.apps.chromecast.app" />
+    </queries>
+
     <!-- allowBackup=false: v localStorage je historie sledování a adresa serveru, nechceme je
          posílat do cloudových záloh. usesCleartextTraffic zůstává kvůli Androidu 6 (API 23),
          kde network_security_config neplatí; backend na LAN často běží přes http://. -->
