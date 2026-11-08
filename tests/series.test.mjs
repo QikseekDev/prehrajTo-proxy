@@ -23,55 +23,61 @@ function slice(startMarker, endMarker, what) {
 
 function loadParser() {
     const block = slice('// ===== Seriály =====', '        function saveThumbs() {', 'parser');
-    return new Function('norm', 'tokens', block + '\nreturn { parseEpisodeTitle, groupSearchResults, mergeSeriesMovies, seriesMeta, czCount, episodeSpanCount };')(norm, tokens);
+    return new Function('norm', 'tokens', block + '\nreturn { parseEpisodeTitle, groupSearchResults, mergeSeriesMovies, seriesMeta, czCount };')(norm, tokens);
 }
 
 function loadSeriesPage() {
     const block = slice('        function seriesPageHtml(', '        // Klik na epizodu', 'stránka seriálu');
     const parser = loadParser();
     const escapeHtml = str => String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    return new Function('escapeHtml', 'czCount', 'seriesMeta', 'episodeSpanCount', block + '\nreturn { seriesPageHtml };')(escapeHtml, parser.czCount, parser.seriesMeta, parser.episodeSpanCount);
+    return new Function('escapeHtml', 'czCount', 'seriesMeta', block + '\nreturn { seriesPageHtml };')(escapeHtml, parser.czCount, parser.seriesMeta);
 }
 
 const { parseEpisodeTitle, groupSearchResults, mergeSeriesMovies, seriesMeta, czCount } = loadParser();
 
-// [název, base, sezóna, první díl, koncový díl (null = jeden díl)]
+// [název, očekávaný seriál, sezóna, první díl, popisek přesně z názvu]
 const parsed = [
-    ['Mr. Robot S01E01', 'Mr. Robot', 1, 1, null],
-    ['Mr. Robot - S01E02 CZ tit', 'Mr. Robot', 1, 2, null],
-    ['Mr. Robot 1x03', 'Mr. Robot', 1, 3, null],
-    ['Mr. Robot (2015) 1. série 2. díl', 'Mr. Robot', 1, 2, null],
-    ['Mr. Robot 2. série - 1. díl CZ dabing', 'Mr. Robot', 2, 1, null],
-    ['Rodina Sopránů S01E01 CZ tit', 'Rodina Sopránů', 1, 1, null],
-    ['Pobřežní Hlídka - S01E01', 'Pobřežní Hlídka', 1, 1, null],
-    ['Mr. Robot S01E01-E02', 'Mr. Robot', 1, 1, 2],
-    ['Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc', 'Mr. Robot', 2, 2, 12],
-    ['Mr. Robot Epizoda 5', 'Mr. Robot', null, 5, null],
-    ['Mr. Robot 3. díl', 'Mr. Robot', null, 3, null],
-    ['Na vejšce (Off Campus) S01E01 CZ TITULKY.mkv', 'Na vejšce (Off Campus)', 1, 1, null],
-    ['The Office US S02E06 1080p WEB-DL', 'The Office US', 2, 6, null],
-    ['Mr.Robot.S01E05.1080p', 'Mr.Robot', 1, 5, null],
-    ['Mr. Robot S1 E1', 'Mr. Robot', 1, 1, null],
-    ['Mr. Robot Season 2 Episode 4', 'Mr. Robot', 2, 4, null],
+    ['Mr. Robot S01E01', 'Mr. Robot', 1, 1, 'S01E01'],
+    ['Mr. Robot - S01E02 CZ tit', 'Mr. Robot', 1, 2, 'S01E02'],
+    ['Mr. Robot 1x03', 'Mr. Robot', 1, 3, '1x03'],
+    ['Mr. Robot (2015) 1. série 2. díl', 'Mr. Robot', 1, 2, 'S1E2'],
+    ['Mr. Robot 2. série - 1. díl CZ dabing', 'Mr. Robot', 2, 1, 'S2E1'],
+    ['Rodina Sopránů S01E01 CZ tit', 'Rodina Sopránů', 1, 1, 'S01E01'],
+    ['Pobřežní Hlídka - S01E01', 'Pobřežní Hlídka', 1, 1, 'S01E01'],
+    // tady je číslo za pomlčkou součástí názvu, ne "poslední díl"
+    ['Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc', 'Mr. Robot', 2, 2, 'S02E02-12'],
+    ['Mr. Robot Epizoda 5', 'Mr. Robot', null, 5, 'Díl 5'],
+    ['Mr. Robot 3. díl', 'Mr. Robot', null, 3, 'Díl 3'],
+    ['Na vejšce (Off Campus) S01E01 CZ TITULKY.mkv', 'Na vejšce (Off Campus)', 1, 1, 'S01E01'],
+    ['The Office US S02E06 1080p WEB-DL', 'The Office US', 2, 6, 'S02E06'],
+    ['Mr.Robot.S01E05.1080p', 'Mr.Robot', 1, 5, 'S01E05'],
+    ['Mr. Robot S1 E1', 'Mr. Robot', 1, 1, 'S1E1'],
+    ['Mr. Robot Season 2 Episode 4', 'Mr. Robot', 2, 4, 'S2E4'],
 ];
 
-test('parser rozpozná sezónu a díl z názvů', async t => {
-    for (const [title, base, season, episode, episodeEnd] of parsed) {
+test('parser vezme popisek přímo z názvu', async t => {
+    for (const [title, base, season, episode, label] of parsed) {
         await t.test(title, () => {
             const got = parseEpisodeTitle(title);
             assert.ok(got, 'mělo se parsovat');
             assert.equal(got.base, base);
             assert.equal(got.season, season);
             assert.deepEqual(got.episodes, [episode]);
-            assert.equal(got.episodeEnd, episodeEnd);
+            assert.equal(got.label, label);
         });
     }
+});
+
+test('číslo před SxxExx ani za ním popisek nerozhodí', () => {
+    assert.equal(parseEpisodeTitle('Mr. Robot 2016 S02E05 CZ').label, 'S02E05');
+    assert.equal(parseEpisodeTitle('Mr. Robot S02E05 (1080p) 2016 CZ').label, 'S02E05');
+    assert.equal(parseEpisodeTitle('Mr. Robot 2016 S02E05 1080p CZ').label, 'S02E05');
+    assert.equal(parseEpisodeTitle('Mr. Robot 2016 S02E05 1080p CZ').name, '2016 1080p CZ');
 });
 
 test('název pro řádek epizody je bez značky a bez názvu seriálu', () => {
     assert.equal(parseEpisodeTitle('Mr Robot S01E01 (1080p) CZ').name, '(1080p) CZ');
     assert.equal(parseEpisodeTitle('Mr.Robot S01E03 CZ Dab 1080p Full HD').name, 'CZ Dab 1080p Full HD');
-    assert.equal(parseEpisodeTitle('Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc').name, '2016 CZ dab - d2.0_odkr7ti2');
 });
 
 test('filmy a názvy bez epizody zůstanou kartou', () => {
@@ -111,7 +117,7 @@ test('seskupení slije epizody, dedupuje URL i stejné názvy a nechá filmy', (
     assert.equal(seriesMeta(show), '2 série · 4 díly');
 });
 
-test('soubor S02E02-12 je jeden řádek, ne kopie pro každý díl', () => {
+test('S02E02-12 je jeden řádek s popiskem z názvu, ne kopie pro každý díl', () => {
     const show = groupSearchResults([
         m('Mr. Robot S02E01', 'u1', '2016'),
         m('Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc', 'u2', '2016'),
@@ -120,12 +126,12 @@ test('soubor S02E02-12 je jeden řádek, ne kopie pro každý díl', () => {
     ]).find(e => e.type === 'series').series;
 
     const season = show.seasons[0];
-    assert.equal(season.episodes.length, 3, 'E01, kompilace E02-E12, E03');
-    const pack = season.episodes.find(e => e.episodeEnd);
-    assert.deepEqual({ episode: pack.episode, episodeEnd: pack.episodeEnd }, { episode: 2, episodeEnd: 12 });
+    assert.equal(season.episodes.length, 3, 'E01, soubor E02-12, E03');
+    const pack = season.episodes.find(e => e.label === 'S02E02-12');
+    assert.ok(pack, 'popisek musí zůstat S02E02-12');
     assert.equal(pack.variants.length, 1, 'duplicitní upload se nesmí přidat dvakrát');
-    assert.equal(show.episodeCount, 12, 'pokryté díly: 1 + 2-12');
-    assert.equal(season.episodes.filter(e => e.episodeEnd).length, 1, 'žádné rozkopírování');
+    assert.equal(show.episodeCount, 3, 'počítají se řádky, ne čísla za pomlčkou');
+    assert.ok(!season.episodes.some(e => e.label === 'S02E05'), 'žádné rozkopírování');
 });
 
 test('stránka 2+ přidá jen epizody stejného seriálu a zbytek ignoruje', () => {
@@ -146,11 +152,11 @@ test('stránka 2+ přidá jen epizody stejného seriálu a zbytek ignoruje', () 
     assert.equal(res.addedMovies.length, 2);
     assert.deepEqual(res.series.seasons.map(s => s.season), [1, 2]);
     assert.equal(res.series.seasonCount, 2);
-    assert.equal(res.series.episodeCount, 14, '2 díly S1 + 12 pokrytých dílů S2 (E01 + E02-E12)');
+    assert.equal(res.series.episodeCount, 4, '2 řádky z první stránky + 2 z druhé');
 
     const again = mergeSeriesMovies(res.series, page2);
     assert.equal(again.added, 0, 'stejná stránka podruhé nic nepřidá');
-    assert.equal(again.series.episodeCount, 14);
+    assert.equal(again.series.episodeCount, 4);
 });
 
 test('jediná epizoda se neseskupuje', () => {
@@ -162,25 +168,24 @@ test('číslování dílů česky', () => {
     assert.equal(czCount(1, 'díl', 'díly', 'dílů'), '1 díl');
     assert.equal(czCount(3, 'díl', 'díly', 'dílů'), '3 díly');
     assert.equal(czCount(9, 'díl', 'díly', 'dílů'), '9 dílů');
-    assert.equal(czCount(2, 'soubor', 'soubory', 'souborů'), '2 soubory');
 });
 
-test('stránka seriálu: jedna řada na soubor, kompilace označená, escapování', () => {
+test('stránka seriálu: popisek z názvu, jedna řada na soubor, escapování', () => {
     const { seriesPageHtml } = loadSeriesPage();
     const v = (title, url, name) => ({ title, url, thumbnail: '', year: '2015', name });
-    const ep = (season, episode, variants, episodeEnd = null) => ({ season, episode, episodeEnd, variants });
+    const ep = (season, episode, label, variants) => ({ season, episode, label, variants });
     const series = {
         key: 'mr robot', title: 'Mr. Robot & <b>', year: '2015', poster: 'https://x/y.jpg?a=1&b=2',
-        episodeCount: 13, seasonCount: 2,
+        episodeCount: 3, seasonCount: 2,
         seasons: [
             {
                 season: 1,
                 episodes: [
-                    ep(1, 1, [v('Mr. Robot S01E01 <b>&</b>', 'https://prehraj.to/a/1', '1080p CZ'), v('Mr. Robot S01E01 druhý zdroj', 'https://prehraj.to/b/2', 'CZ dab')]),
-                    ep(1, 2, [v('Mr. Robot S01E02', 'https://prehraj.to/c/3', 'CZ dab')]),
+                    ep(1, 1, 'S01E01', [v('Mr. Robot S01E01 <b>&</b>', 'https://prehraj.to/a/1', '1080p CZ'), v('Mr. Robot S01E01 druhý zdroj', 'https://prehraj.to/b/2', 'CZ dab')]),
+                    ep(1, 2, 'S01E02', [v('Mr. Robot S01E02', 'https://prehraj.to/c/3', 'CZ dab')]),
                 ],
             },
-            { season: 2, episodes: [ep(2, 2, [v('Mr. Robot S02E02-12 CZ dab', 'https://prehraj.to/d/4', '2016 CZ dab')], 12)] },
+            { season: 2, episodes: [ep(2, 2, 'S02E02-12', [v('Mr. Robot S02E02-12 CZ dab', 'https://prehraj.to/d/4', '2016 CZ dab')])] },
         ],
     };
 
@@ -188,12 +193,12 @@ test('stránka seriálu: jedna řada na soubor, kompilace označená, escapován
     assert.equal((html.match(/class="ep-row"/g) || []).length, 3);
     assert.equal((html.match(/class="ep-variant"/g) || []).length, 1, 'select jen u dílu s více zdroji');
     assert.match(html, /S01E01/);
-    assert.match(html, /S02E02–E12/, 'kompilace má rozsah, ne jeden díl');
-    assert.ok(!html.includes('S02E05'), 'kompilace se nesmí rozkopírovat na jednotlivé díly');
+    assert.match(html, /S02E02-12/, 'popisek přesně jako v názvu');
+    assert.ok(!html.includes('S02E05'), 'soubor s více díly se nesmí rozkopírovat');
     assert.match(html, /soubor s více díly/);
     assert.match(html, /1\. série/);
     assert.match(html, /2 díly/);
-    assert.match(html, /1 soubor · 11 dílů/, 'počet souborů vs. pokrytých dílů');
+    assert.match(html, /1 díl/);
     assert.match(html, /1080p CZ/, 'řádek používá očištěný název');
     assert.ok(!html.includes('<b>&</b>'), 'název musí být escapovaný');
     assert.match(html, /&lt;b&gt;&amp;&lt;\/b&gt;/);
