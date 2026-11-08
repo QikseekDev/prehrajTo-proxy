@@ -924,3 +924,8 @@
             .ep-num { min-width: 62px; }
             .ep-variant { max-width: 108px; }
         }
+        .ep-flag {
+            flex: none; padding: 1px 5px; border-radius: 3px;
+            font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+            color: #f5c518; border: 1px solid rgba(245,197,24,0.4); white-space: nowrap;
+        }

@@ -249,6 +249,19 @@
             return b.replace(/^[\s._\-–—:]+|[\s._\-–—:]+$/g, '').trim();
         }
 
+        // Název pro řádek epizody: bez značky SxxExx, bez přípony souboru a bez názvu seriálu
+        // na začátku (ten je v nadpisu stránky). Značky kvality zůstávají - podle nich se
+        // poznají varianty téhož dílu.
+        function cleanEpisodeName(s, base) {
+            let n = String(s || '').replace(/\.[a-z0-9]{2,4}\s*$/i, '').replace(/\s+/g, ' ').trim();
+            n = n.replace(/^[\s._\-–—:]+|[\s._\-–—:]+$/g, '').trim();
+            if (base && n.toLowerCase().startsWith(base.toLowerCase())) {
+                const rest = n.slice(base.length).replace(/^[\s._\-–—:]+/, '').trim();
+                if (rest) n = rest;
+            }
+            return n || base || '';
+        }
+
         // Pořadí je důležité: nejdřív nejspolehlivější tvary, pak české slovní a nakonec
         // samotné číslo dílu (to nezná sezónu, proto season = null).
         const EP_PATTERNS = [
@@ -273,13 +286,13 @@
 
                 let season = null;
                 let episodes = [];
+                let episodeEnd = null;
                 if (p.kind === 'sxxexx') {
                     season = Number(m[2]);
                     episodes = [Number(m[3])];
                     const end = Number(m[4] || m[5] || 0);
-                    if (end > episodes[0] && end - episodes[0] <= 10) {
-                        for (let e = episodes[0] + 1; e <= end; e++) episodes.push(e);
-                    }
+                    // S02E02-12 je jeden soubor s díly 2-12, ne 11 samostatných epizod
+                    if (end > episodes[0]) episodeEnd = end;
                 } else if (p.kind === 'nxnn' || p.kind === 'worded' || p.kind === 'worded2') {
                     season = Number(m[2]);
                     episodes = [Number(m[3])];
@@ -289,10 +302,12 @@
                 if (!episodes.length || episodes.some(n => !Number.isFinite(n))) continue;
 
                 const baseStart = m.index + (m[1] ? m[1].length : 0);
+                const markerEnd = m.index + m[0].length;
                 const base = cleanSeriesBase(s.slice(0, baseStart));
                 // bez použitelného názvu seriálu (např. značka na začátku) to nemá cenu
                 if (base.length < 2 || !/[a-zá-ž]/i.test(base)) continue;
-                return { base, season, episodes };
+                const name = cleanEpisodeName(s.slice(0, baseStart) + ' ' + s.slice(markerEnd), base);
+                return { base, season, episodes, episodeEnd, name };
             }
             return null;
         }
@@ -343,12 +358,19 @@
                     const sKey = parsed.season == null ? '?' : String(parsed.season);
                     let eps = seasons.get(sKey);
                     if (!eps) { eps = new Map(); seasons.set(sKey, eps); }
-                    let ep = eps.get(String(epNum));
+                    // soubor s více díly má vlastní klíč, takže se neslévá s jedním dílem
+                    const epKey = epNum + (parsed.episodeEnd ? '-' + parsed.episodeEnd : '');
+                    let ep = eps.get(epKey);
                     if (!ep) {
-                        ep = { season: parsed.season, episode: epNum, variants: [], seen: new Set() };
-                        eps.set(String(epNum), ep);
+                        ep = { season: parsed.season, episode: epNum, episodeEnd: parsed.episodeEnd || null, variants: [], urls: new Set(), titles: new Set() };
+                        eps.set(epKey, ep);
                     }
-                    if (!ep.seen.has(movie.url)) { ep.seen.add(movie.url); ep.variants.push(movie); }
+                    // stejný soubor nebo přesně stejný název podruhé = duplikát, ne varianta
+                    const titleKey = seriesKeyOf(movie.title);
+                    if (ep.urls.has(movie.url) || (titleKey && ep.titles.has(titleKey))) return;
+                    ep.urls.add(movie.url);
+                    if (titleKey) ep.titles.add(titleKey);
+                    ep.variants.push({ ...movie, name: parsed.name });
                 });
             });
 
@@ -362,13 +384,23 @@
                 return a.season - b.season;
             });
 
-            const episodeCount = seasonList.reduce((n, s) => n + s.episodes.length, 0);
+            const episodeCount = seasonList.reduce((n, s) => n + episodeSpanCount(s), 0);
             return {
                 ...raw,
                 seasons: seasonList,
                 episodeCount,
                 seasonCount: seasonList.filter(s => s.season != null).length,
             };
+        }
+
+        // kolik různých dílů sezóna pokrývá (soubor S02E02-12 počítá díly 2-12)
+        function episodeSpanCount(season) {
+            const nums = new Set();
+            (season.episodes || []).forEach(e => {
+                const end = e.episodeEnd && e.episodeEnd > e.episode ? e.episodeEnd : e.episode;
+                for (let n = e.episode; n <= end && n < e.episode + 1000; n++) nums.add(n);
+            });
+            return nums.size;
         }
 
         function seriesMeta(series) {
@@ -1231,18 +1263,26 @@
 
         function seriesSeasonHtml(season) {
             const title = season.season == null ? 'Nezařazené epizody' : `${season.season}. série`;
+            const files = season.episodes.length;
+            const cover = episodeSpanCount(season);
+            // soubor s více díly: počet souborů a počet pokrytých dílů není totéž
+            const count = files !== cover
+                ? `${czCount(files, 'soubor', 'soubory', 'souborů')} · ${czCount(cover, 'díl', 'díly', 'dílů')}`
+                : czCount(files, 'díl', 'díly', 'dílů');
             return `
                 <section class="series-season">
-                    <h2>${escapeHtml(title)} <span class="season-count">${czCount(season.episodes.length, 'díl', 'díly', 'dílů')}</span></h2>
+                    <h2>${escapeHtml(title)} <span class="season-count">${count}</span></h2>
                     <div class="ep-list">${season.episodes.map(episodeHtml).join('')}</div>
                 </section>`;
         }
 
         function episodeHtml(ep) {
             const first = ep.variants[0];
+            const pad2 = n => String(n).padStart(2, '0');
+            const range = ep.episodeEnd && ep.episodeEnd > ep.episode;
             const num = ep.season == null
-                ? `Díl ${ep.episode}`
-                : `S${String(ep.season).padStart(2, '0')}E${String(ep.episode).padStart(2, '0')}`;
+                ? `Díl ${ep.episode}${range ? '–' + ep.episodeEnd : ''}`
+                : `S${pad2(ep.season)}E${pad2(ep.episode)}${range ? '–E' + pad2(ep.episodeEnd) : ''}`;
             const variants = ep.variants.length > 1
                 ? `<select class="ep-variant" aria-label="Zdroj epizody">${ep.variants.map((v, i) =>
                     `<option value="${escapeHtml(v.url)}"${i === 0 ? ' selected' : ''}>${escapeHtml(variantLabel(v))}</option>`).join('')}</select>`
@@ -1251,7 +1291,8 @@
                 <div class="ep-row">
                     <button type="button" class="ep-play" data-ep-url="${escapeHtml(first.url)}" title="${escapeHtml(first.title)}">
                         <span class="ep-num">${escapeHtml(num)}</span>
-                        <span class="ep-name">${escapeHtml(first.title)}</span>
+                        <span class="ep-name">${escapeHtml(first.name || first.title)}</span>
+                        ${range ? '<span class="ep-flag">soubor s více díly</span>' : ''}
                     </button>
                     ${variants}
                 </div>`;
