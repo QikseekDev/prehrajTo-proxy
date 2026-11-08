@@ -992,18 +992,34 @@
     show(el);
   }
 
-  function episodeHtml(ep) {
-    var num = ep.label || (ep.season == null ? 'Díl ' + ep.episode : 'S' + ep.season + 'E' + ep.episode);
-    var html = '<div class="ep-row"><span class="ep-num">' + esc(num) + '</span><div class="ep-srcs">';
-    for (var i = 0; i < ep.variants.length; i++) {
-      var v = ep.variants[i];
-      var label = String(v.name || v.title || '').replace(/\s+/g, ' ').trim();
-      if (label.length > 58) label = label.slice(0, 55) + '…';
-      html += '<button class="f ep-src" type="button" data-ep-url="' + esc(v.url) + '"'
-        + ' data-fk="' + esc(String(ep.season == null ? 'x' : ep.season) + 'e' + ep.episode + '-' + i) + '"'
-        + ' title="' + esc(v.title || '') + '">' + esc(label) + '</button>';
+  // Jeden díl = jedno video: z uploadů téhož dílu vybereme nejlepší (kvalita, pak CZ dabing).
+  function variantScore(v) {
+    var t = String(v.title || '').toLowerCase();
+    var q = 1;
+    if (/2160p|\b4k\b|uhd|ultra\s*hd/.test(t)) q = 4;
+    else if (/1080p|full\s*hd|\bfhd\b/.test(t)) q = 3;
+    else if (/720p/.test(t)) q = 2;
+    var cz = /dabing|dab\b|\bcz\b/.test(t) ? 1 : 0;
+    return q * 10 + cz;
+  }
+
+  function bestVariant(ep) {
+    var best = ep.variants[0];
+    for (var i = 1; i < ep.variants.length; i++) {
+      if (variantScore(ep.variants[i]) > variantScore(best)) best = ep.variants[i];
     }
-    return html + '</div></div>';
+    return best;
+  }
+
+  function episodeHtml(ep) {
+    var v = bestVariant(ep);
+    var label = String(v.name || v.title || '').replace(/\s+/g, ' ').trim();
+    if (label.length > 58) label = label.slice(0, 55) + '…';
+    return '<div class="ep-row"><span class="ep-num">' + esc('Epizoda ' + ep.episode) + '</span><div class="ep-srcs">'
+      + '<button class="f ep-src" type="button" data-ep-url="' + esc(v.url) + '"'
+      + ' data-fk="' + esc(String(ep.season == null ? 'x' : ep.season) + 'e' + ep.episode + '-0') + '"'
+      + ' title="' + esc(v.title || '') + '">' + esc(label) + '</button>'
+      + '</div></div>';
   }
 
   function seriesPageHtml(series) {
