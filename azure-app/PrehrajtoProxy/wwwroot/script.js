@@ -34,7 +34,8 @@
         // PiP umí Chrome/Edge; tlačítko se ukáže až u načteného videa (viz updateFavBtn).
         const pipSupported = !!(document.pictureInPictureEnabled && HTMLVideoElement.prototype.requestPictureInPicture);
         const castBtn = document.getElementById('castBtn');
-        const castHelpBtn = document.getElementById('castHelpBtn');
+        // Odeslání na TV: Chrome/Edge (Chromecast) přes Remote Playback API, Safari přes AirPlay.
+        const castSupported = !!(('remote' in HTMLMediaElement.prototype) || window.WebKitPlaybackTargetAvailabilityEvent);
 
         let currentResults = [];
         // Výsledky hledání po seskupení epizod do seriálů (viz "Seriály" níže).
@@ -962,7 +963,7 @@
                     <h2>Titulky</h2>
                     <p>Když má soubor titulky, objeví se pod přehrávačem nabídka „Titulky“ s volbami Vypnuto a jazyky. Načítá je server, takže fungují i u zdrojů, které je prohlížeči přímo nedovolí. Ne každý soubor titulky má – český dabing bývá bez nich.</p>
                     <h2>Přehrávač a klávesy</h2>
-                    <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ Obraz v obraze</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa). Tlačítko <b>📺 Přehrát na TV</b> odešle video na Chromecast nebo TV s Google Cast (Chrome, Edge) či přes AirPlay (Safari); jinde nabídne odkaz na video a postup pro zrcadlení obrazovky (Miracast, Smart View, Screen Share u LG).</p>
+                    <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ Obraz v obraze</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa). Tlačítko <b>📺 Přehrát na TV</b> odešle video na Chromecast nebo TV s Google Cast (Chrome, Edge) či přes AirPlay (Safari).</p>
                     <p>Velikost a pozadí titulků se nastavují v Nastavení (avatar vpravo nahoře).</p>
                     <h2>Knihovna: oblíbené</h2>
                     <p>Hvězdička na kartě přidá titul do oblíbených, stejně jako tlačítko u přehrávače. Odkaz <b>Knihovna</b> v liště (před Živě) ukazuje oblíbené. Každý titul jde odebrat hvězdičkou. Appka si historii přehrávání neukládá. Vše se ukládá jen v tvém prohlížeči.</p>
@@ -2146,14 +2147,12 @@
                 favBtn.hidden = true;
                 if (pipBtn) pipBtn.hidden = true;   // PiP nemá smysl bez videa
                 if (castBtn) castBtn.hidden = true;
-                if (castHelpBtn) castHelpBtn.hidden = true;
                 return;
             }
             const on = isFav(player.page);
             favBtn.hidden = false;
             if (pipBtn && pipSupported) pipBtn.hidden = false;
-            if (castBtn) castBtn.hidden = false;           // tlačítko je vidět vždy, viz "Přehrát na TV"
-            if (castHelpBtn) castHelpBtn.hidden = false;
+            if (castBtn && castSupported) castBtn.hidden = false;
             favBtn.textContent = on ? '★ V oblíbených' : '☆ Do oblíbených';
             favBtn.classList.toggle('on', on);
             favBtn.title = on ? 'Odebrat z oblíbených' : 'Přidat do oblíbených';
@@ -2210,97 +2209,23 @@
         videoPlayer.addEventListener('enterpictureinpicture', () => { pipBtn.textContent = '⧉ Zavřít obraz v obraze'; });
         videoPlayer.addEventListener('leavepictureinpicture', () => { pipBtn.textContent = '⧉ Obraz v obraze'; });
 
-        // ===== Přehrát na TV =====
-        // Tlačítko je vidět v každém prohlížeči, liší se jen cesta, kterou se video na TV dostane:
-        //  1) Chrome, Edge, Opera, Samsung Internet (Chromecast, TV s Google Cast): Remote Playback API,
-        //     video.remote.prompt() otevře výběr zařízení a na TV se pošle adresa videa.
-        //  2) Safari na iPhonu, iPadu a Macu (AirPlay): webkitShowPlaybackTargetPicker().
-        //  3) Všechno ostatní (Firefox, TV bez Google Cast a AirPlay, třeba starší LG webOS) a případ, kdy
-        //     prohlížeč žádnou TV nenajde: okno s odkazem na video, sdílením a postupem pro zrcadlení obrazovky.
-        // Z webové stránky nejde televizi LG "najít" ani ovládat napřímo (Cast ani AirPlay tam být nemusí),
-        // proto je poslední cesta vždy po ruce (tlačítko ⓘ).
+        // ===== Přehrát na TV (Chromecast / AirPlay) =====
+        // Chrome a Edge: Remote Playback API (video.remote.prompt() otevře výběr zařízení).
+        // Safari: AirPlay přes webkitShowPlaybackTargetPicker(). Firefox to neumí, tlačítko se tam nezobrazí.
+        // Na TV se pošle adresa videa, takže se přehrává přímo tam (telefon/počítač může zůstat v klidu).
         if (castBtn) {
-            videoPlayer.disableRemotePlayback = false;
             const castLabel = (on) => { castBtn.textContent = on ? '📺 Přehrává se na TV' : '📺 Přehrát na TV'; castBtn.classList.toggle('on', !!on); };
-            const castLink = () => {
-                try { return new URL(videoPlayer.currentSrc || videoPlayer.getAttribute('src') || '', location.href).href; }
-                catch (e) { return ''; }
-            };
-            const copyText = async (text) => {
-                try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* http nebo starší prohlížeč */ }
-                try {
-                    const ta = document.createElement('textarea');
-                    ta.value = text;
-                    ta.setAttribute('readonly', '');
-                    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
-                    document.body.appendChild(ta);
-                    ta.select();
-                    const ok = document.execCommand('copy');
-                    ta.remove();
-                    return ok;
-                } catch (e) { return false; }
-            };
-            let castDlg = null;
-            const castEsc = (e) => { if (e.key === 'Escape') closeCastHelp(); };
-            function closeCastHelp() {
-                if (castDlg) { castDlg.remove(); castDlg = null; }
-                document.removeEventListener('keydown', castEsc);
-            }
-            const openCastHelp = (reason) => {
-                closeCastHelp();
-                const link = castLink();
-                castDlg = document.createElement('div');
-                castDlg.className = 'cast-dlg';
-                castDlg.innerHTML = `
-                    <div class="cast-card" role="dialog" aria-modal="true" aria-label="Přehrát na TV">
-                        <h3>📺 Přehrát na TV</h3>
-                        ${reason ? `<p class="cast-reason">${esc(reason)}</p>` : ''}
-                        <div class="cast-actions">
-                            <button type="button" class="dl-btn" data-act="copy">📋 Zkopírovat odkaz na video</button>
-                            ${navigator.share ? '<button type="button" class="dl-btn" data-act="share">↗ Sdílet…</button>' : ''}
-                            <button type="button" class="dl-btn" data-act="close">Zavřít</button>
-                        </div>
-                        ${link ? `<input class="cast-link" type="text" readonly value="${esc(link)}" aria-label="Odkaz na video">` : '<p class="cast-reason">Video se ještě nenačetlo, odkaz bude k dispozici po spuštění.</p>'}
-                        <ul class="cast-tips">
-                            <li><b>Chromecast, TV s Google Cast:</b> otevři Wflix v Chrome nebo Edge a použij 📺 Přehrát na TV. Telefon i TV musí být ve stejné Wi‑Fi.</li>
-                            <li><b>iPhone, iPad, Mac (AirPlay):</b> otevři Wflix v Safari. AirPlay umí řada novějších TV (LG, Samsung, Sony).</li>
-                            <li><b>TV bez Cast a AirPlay (třeba LG webOS):</b> na TV zapni Sdílení obrazovky (Screen Share, Miracast), v telefonu pak Přenést obrazovku / Smart View. Případně otevři adresu Wflixu v prohlížeči TV nebo nainstaluj Wflix pro webOS.</li>
-                            <li><b>Cokoli jiného:</b> zkopíruj odkaz výše a vlož ho do aplikace, která umí přehrát video z adresy (VLC, Web Video Caster).</li>
-                        </ul>
-                    </div>`;
-                castDlg.addEventListener('click', async (e) => {
-                    if (e.target === castDlg) { closeCastHelp(); return; }
-                    const act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
-                    if (act === 'close') closeCastHelp();
-                    else if (act === 'copy') {
-                        notice(await copyText(link) ? 'Odkaz na video je zkopírovaný.' : 'Odkaz se nepodařilo zkopírovat, označ ho a zkopíruj ručně.', 'success', 3000);
-                    } else if (act === 'share') {
-                        try { await navigator.share({ title: document.title, url: link }); } catch (err) { /* zavřeno */ }
-                    }
-                });
-                const input = castDlg.querySelector('.cast-link');
-                if (input) input.addEventListener('focus', () => input.select());
-                document.addEventListener('keydown', castEsc);
-                document.body.appendChild(castDlg);
-                const first = castDlg.querySelector('button');
-                if (first) first.focus();
-            };
-            if (castHelpBtn) castHelpBtn.addEventListener('click', () => openCastHelp(''));
             castBtn.addEventListener('click', async () => {
                 try {
                     if (videoPlayer.remote && typeof videoPlayer.remote.prompt === 'function') {
                         await videoPlayer.remote.prompt();
                     } else if (typeof videoPlayer.webkitShowPlaybackTargetPicker === 'function') {
                         videoPlayer.webkitShowPlaybackTargetPicker();
-                    } else {
-                        openCastHelp('Tenhle prohlížeč neumí video poslat na TV přímo.');
                     }
                 } catch (err) {
-                    const name = err && err.name;
-                    if (name === 'NotAllowedError') return;   // výběr zařízení jen zavřel
-                    if (name === 'InvalidStateError') notice('Počkej, až se video načte, a zkus to znovu.', 'error', 4000);
-                    else if (name === 'NotFoundError') openCastHelp('V síti se nenašla žádná TV s Google Cast ani AirPlay.');
-                    else openCastHelp('Prohlížeč odmítl poslat tohle video na TV.');
+                    if (err && err.name === 'NotAllowedError') return;   // výběr zařízení jen zavřel
+                    if (err && err.name === 'NotFoundError') notice('V síti nebyla nalezena žádná TV ani přehrávač.', 'error', 4000);
+                    else notice('Video se nepodařilo odeslat na TV.', 'error', 4000);
                 }
             });
             if (videoPlayer.remote && typeof videoPlayer.remote.addEventListener === 'function') {
@@ -2483,7 +2408,6 @@
                 if (favBtn) favBtn.hidden = true;
                 if (pipBtn) pipBtn.hidden = true;
                 if (castBtn) castBtn.hidden = true;
-                if (castHelpBtn) castHelpBtn.hidden = true;
                 if (srcMode) srcMode.hidden = true;
                 clearSubtitles();
                 refreshDl();
