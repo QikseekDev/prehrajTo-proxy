@@ -1387,7 +1387,7 @@
 
         function episodeHtml(ep) {
             const first = bestVariant(ep);
-            const num = ep.label || (ep.season == null ? `Díl ${ep.episode}` : `S${ep.season}E${ep.episode}`);
+            const num = `Epizoda ${ep.episode}`;
             return `
                 <div class="ep-row">
                     <button type="button" class="ep-play" data-ep-url="${escapeHtml(first.url)}" title="${escapeHtml(first.title)}">
