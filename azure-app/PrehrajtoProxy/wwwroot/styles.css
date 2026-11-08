@@ -907,7 +907,7 @@
             color: inherit; font: inherit; text-align: left; cursor: pointer;
         }
         .ep-play:hover, .ep-play:focus-visible { background: rgba(255,255,255,0.06); }
-        .ep-num { flex: none; min-width: 78px; color: #46d369; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+        .ep-num { flex: none; min-width: 96px; color: #46d369; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
         .ep-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cfcfcf; font-size: 14px; }
         .ep-variant {
             flex: none; max-width: 230px; padding: 6px 8px; border-radius: 4px; font-size: 12px;
@@ -921,7 +921,7 @@
         @media (max-width: 640px) {
             .series-head { gap: 12px; }
             .series-poster { width: 110px; }
-            .ep-num { min-width: 62px; }
+            .ep-num { min-width: 80px; }
             .ep-variant { max-width: 108px; }
         }
         .series-load { margin: 12px 0 4px; font-size: 13px; color: #9a9a9a; }
