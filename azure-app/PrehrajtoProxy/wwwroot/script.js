@@ -1368,20 +1368,32 @@
                 </section>`;
         }
 
+        // Jeden díl = jedno video: z uploadů téhož dílu vybereme nejlepší (kvalita, pak CZ dabing).
+        function variantScore(v) {
+            const t = String(v.title || '').toLowerCase();
+            let q = 1;
+            if (/2160p|\b4k\b|uhd|ultra\s*hd/.test(t)) q = 4;
+            else if (/1080p|full\s*hd|\bfhd\b/.test(t)) q = 3;
+            else if (/720p/.test(t)) q = 2;
+            const cz = /dabing|dab\b|\bcz\b/.test(t) ? 1 : 0;
+            return q * 10 + cz;
+        }
+
+        function bestVariant(ep) {
+            let best = ep.variants[0];
+            ep.variants.forEach(v => { if (variantScore(v) > variantScore(best)) best = v; });
+            return best;
+        }
+
         function episodeHtml(ep) {
-            const first = ep.variants[0];
+            const first = bestVariant(ep);
             const num = ep.label || (ep.season == null ? `Díl ${ep.episode}` : `S${ep.season}E${ep.episode}`);
-            const variants = ep.variants.length > 1
-                ? `<select class="ep-variant" aria-label="Zdroj epizody">${ep.variants.map((v, i) =>
-                    `<option value="${escapeHtml(v.url)}"${i === 0 ? ' selected' : ''}>${escapeHtml(variantLabel(v))}</option>`).join('')}</select>`
-                : '';
             return `
                 <div class="ep-row">
                     <button type="button" class="ep-play" data-ep-url="${escapeHtml(first.url)}" title="${escapeHtml(first.title)}">
                         <span class="ep-num">${escapeHtml(num)}</span>
                         <span class="ep-name">${escapeHtml(first.name || first.title)}</span>
                     </button>
-                    ${variants}
                 </div>`;
         }
 
