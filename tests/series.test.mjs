@@ -132,6 +132,7 @@ test('S02E02-12 je jeden řádek s popiskem z názvu, ne kopie pro každý díl'
     assert.equal(pack.variants.length, 1, 'duplicitní upload se nesmí přidat dvakrát');
     assert.equal(show.episodeCount, 3, 'počítají se řádky, ne čísla za pomlčkou');
     assert.ok(!season.episodes.some(e => e.label === 'S02E05'), 'žádné rozkopírování');
+    assert.equal(season.episodes[season.episodes.length - 1].label, 'S02E02-12', 'balík patří na konec sezóny');
 });
 
 test('stránka 2+ přidá jen epizody stejného seriálu a zbytek ignoruje', () => {
