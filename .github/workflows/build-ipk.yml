@@ -11,8 +11,12 @@ permissions:
 jobs:
   package:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # jen kvůli zápisu zvýšené verze zpět do main
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -21,6 +25,24 @@ jobs:
 
       - name: Install webOS CLI
         run: npm install -g @webos-tools/cli
+
+      - name: Bump version (push to main)
+        id: bump
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # verze se zvyšuje jen když se změnila appka (ne jen appinfo.json)
+          if [ -z "$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- ipk/app ':!ipk/app/appinfo.json' 2>/dev/null)" ]; then
+            echo "Žádná změna v ipk/app - verze zůstává"
+            exit 0
+          fi
+          F=ipk/app/appinfo.json
+          VER=$(jq -r .version "$F")
+          NEW="${VER%.*}.$(( ${VER##*.} + 1 ))"
+          sed -i "s/\"version\": \"$VER\"/\"version\": \"$NEW\"/" "$F"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Verze $VER -> $NEW"
 
       - name: Read version
         id: ver
@@ -38,3 +60,17 @@ jobs:
           path: ipk/cz.qikseek.wflix_${{ steps.ver.outputs.name }}_all.ipk
           archive: false
           if-no-files-found: error
+
+      - name: Commit version bump
+        if: success() && steps.bump.outputs.new != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ipk/app/appinfo.json
+          git commit -m "chore(ipk): verze ${{ steps.bump.outputs.new }} [skip ci]"
+          for n in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep 5
+          done
+          echo "::error::Nepodařilo se zapsat zvýšenou verzi do main"
+          exit 1
