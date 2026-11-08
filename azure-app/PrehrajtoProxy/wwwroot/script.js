@@ -43,6 +43,10 @@
         let activeSeries = null;      // otevřený seriál (pro návrat z přehrávače)
         let seriesReturn = false;     // do přehrávače se šlo z epizody seriálu
         let lastQuery = '';
+        // Dotahování dalších stránek hledání pro otevřený seriál (klíč = series.key):
+        // pages = poslední načtená stránka, done = víc už není, busy = právě běží.
+        const seriesLoad = new Map();
+        const SERIES_MAX_PAGES = 10;
         // Stránkování hledání: první stránka se ověřuje (mrtvé kusy zmizí), další se jen
         // přidají - ověřování je to pomalé a naráží na 429, a videa většinou fungují i bez něj.
 
@@ -249,6 +253,19 @@
             return b.replace(/^[\s._\-–—:]+|[\s._\-–—:]+$/g, '').trim();
         }
 
+        // Název pro řádek epizody: bez značky SxxExx, bez přípony souboru a bez názvu seriálu
+        // na začátku (ten je v nadpisu stránky). Značky kvality zůstávají - podle nich se
+        // poznají varianty téhož dílu.
+        function cleanEpisodeName(s, base) {
+            let n = String(s || '').replace(/\.[a-z0-9]{2,4}\s*$/i, '').replace(/\s+/g, ' ').trim();
+            n = n.replace(/^[\s._\-–—:]+|[\s._\-–—:]+$/g, '').trim();
+            if (base && n.toLowerCase().startsWith(base.toLowerCase())) {
+                const rest = n.slice(base.length).replace(/^[\s._\-–—:]+/, '').trim();
+                if (rest) n = rest;
+            }
+            return n || base || '';
+        }
+
         // Pořadí je důležité: nejdřív nejspolehlivější tvary, pak české slovní a nakonec
         // samotné číslo dílu (to nezná sezónu, proto season = null).
         const EP_PATTERNS = [
@@ -273,13 +290,13 @@
 
                 let season = null;
                 let episodes = [];
+                let episodeEnd = null;
                 if (p.kind === 'sxxexx') {
                     season = Number(m[2]);
                     episodes = [Number(m[3])];
                     const end = Number(m[4] || m[5] || 0);
-                    if (end > episodes[0] && end - episodes[0] <= 10) {
-                        for (let e = episodes[0] + 1; e <= end; e++) episodes.push(e);
-                    }
+                    // S02E02-12 je jeden soubor s díly 2-12, ne 11 samostatných epizod
+                    if (end > episodes[0]) episodeEnd = end;
                 } else if (p.kind === 'nxnn' || p.kind === 'worded' || p.kind === 'worded2') {
                     season = Number(m[2]);
                     episodes = [Number(m[3])];
@@ -289,10 +306,12 @@
                 if (!episodes.length || episodes.some(n => !Number.isFinite(n))) continue;
 
                 const baseStart = m.index + (m[1] ? m[1].length : 0);
+                const markerEnd = m.index + m[0].length;
                 const base = cleanSeriesBase(s.slice(0, baseStart));
                 // bez použitelného názvu seriálu (např. značka na začátku) to nemá cenu
                 if (base.length < 2 || !/[a-zá-ž]/i.test(base)) continue;
-                return { base, season, episodes };
+                const name = cleanEpisodeName(s.slice(0, baseStart) + ' ' + s.slice(markerEnd), base);
+                return { base, season, episodes, episodeEnd, name };
             }
             return null;
         }
@@ -343,12 +362,19 @@
                     const sKey = parsed.season == null ? '?' : String(parsed.season);
                     let eps = seasons.get(sKey);
                     if (!eps) { eps = new Map(); seasons.set(sKey, eps); }
-                    let ep = eps.get(String(epNum));
+                    // soubor s více díly má vlastní klíč, takže se neslévá s jedním dílem
+                    const epKey = epNum + (parsed.episodeEnd ? '-' + parsed.episodeEnd : '');
+                    let ep = eps.get(epKey);
                     if (!ep) {
-                        ep = { season: parsed.season, episode: epNum, variants: [], seen: new Set() };
-                        eps.set(String(epNum), ep);
+                        ep = { season: parsed.season, episode: epNum, episodeEnd: parsed.episodeEnd || null, variants: [], urls: new Set(), titles: new Set() };
+                        eps.set(epKey, ep);
                     }
-                    if (!ep.seen.has(movie.url)) { ep.seen.add(movie.url); ep.variants.push(movie); }
+                    // stejný soubor nebo přesně stejný název podruhé = duplikát, ne varianta
+                    const titleKey = seriesKeyOf(movie.title);
+                    if (ep.urls.has(movie.url) || (titleKey && ep.titles.has(titleKey))) return;
+                    ep.urls.add(movie.url);
+                    if (titleKey) ep.titles.add(titleKey);
+                    ep.variants.push({ ...movie, name: parsed.name });
                 });
             });
 
@@ -362,13 +388,42 @@
                 return a.season - b.season;
             });
 
-            const episodeCount = seasonList.reduce((n, s) => n + s.episodes.length, 0);
+            const episodeCount = seasonList.reduce((n, s) => n + episodeSpanCount(s), 0);
             return {
                 ...raw,
                 seasons: seasonList,
                 episodeCount,
                 seasonCount: seasonList.filter(s => s.season != null).length,
             };
+        }
+
+        // Stránka 2+ hledání: připojí jen epizody stejného seriálu, ostatní výsledky ignoruje.
+        // Vrací nový finalizovaný seriál a nově přidané filmy (kvůli přehrávání z currentResults).
+        function mergeSeriesMovies(series, movies) {
+            const known = new Set(series.raw.map(r => r.movie.url));
+            const addedMovies = [];
+            (movies || []).forEach(movie => {
+                if (!movie || !movie.url || known.has(movie.url)) return;
+                const parsed = parseEpisodeTitle(movie.title);
+                if (!parsed || seriesKeyOf(parsed.base) !== series.key) return;
+                known.add(movie.url);
+                series.raw.push({ movie, parsed });
+                addedMovies.push(movie);
+                if (!series.poster && movie.thumbnail) series.poster = movie.thumbnail;
+                if (!series.year && movie.year) series.year = movie.year;
+            });
+            if (!addedMovies.length) return { added: 0, series, addedMovies };
+            return { added: addedMovies.length, series: finalizeSeries(series), addedMovies };
+        }
+
+        // kolik různých dílů sezóna pokrývá (soubor S02E02-12 počítá díly 2-12)
+        function episodeSpanCount(season) {
+            const nums = new Set();
+            (season.episodes || []).forEach(e => {
+                const end = e.episodeEnd && e.episodeEnd > e.episode ? e.episodeEnd : e.episode;
+                for (let n = e.episode; n <= end && n < e.episode + 1000; n++) nums.add(n);
+            });
+            return nums.size;
         }
 
         function seriesMeta(series) {
@@ -703,6 +758,7 @@
             activeSeries = null;
             seriesReturn = false;
             searchEntries = [];
+            seriesLoad.clear();
             lastQuery = '';
             searchInput.value = '';
             // Vždy překreslit: osobní řady se mezitím mohly změnit (dozrál postup, přibyl oblíbený).
@@ -1103,6 +1159,7 @@
             activeSeries = null;
             seriesReturn = false;
             searchEntries = [];
+            seriesLoad.clear();
             resultsLoading(`Hledám „${query}" …`);
 
             try {
@@ -1183,7 +1240,9 @@
             card.onclick = (e) => {
                 if (e.ctrlKey || e.metaKey || e.button !== 0) return;   // nechat otevřít v nové kartě
                 e.preventDefault();
-                openSeriesPage(series, true);
+                // podle klíče, ne podle uzavřeného objektu - po dotažení dalších stránek
+                // je v searchEntries novější verze seriálu s víc epizodami
+                openSeriesByKey(series.key, true);
             };
             card.innerHTML = `
                     <div class="card-play"><i>▶</i></div>
@@ -1207,13 +1266,92 @@
             stopVideo();
             hideStatus();
             pageTitle.textContent = series.title;
-            pageBody.innerHTML = seriesPageHtml(series);
+            pageBody.innerHTML = seriesPageHtml(series, seriesLoadNote(series));
             showSection('page');
             if (push !== false) window.history.pushState({}, '', seriesUrl(series.key));
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            loadMoreEpisodes(series);
         }
 
-        function seriesPageHtml(series) {
+        // ===== Dotahování epizod (stránky 2+) =====
+        // Není to stránkování v UI: appka jen dohledá další výsledky hledání pro otevřený
+        // seriál, dokud stránka něco vrací (max SERIES_MAX_PAGES kvůli limitu prehraj.to).
+
+        function seriesLoadNote(series) {
+            const st = seriesLoad.get(series.key);
+            if (!st) return '';
+            if (st.busy) return 'Načítám další epizody…';
+            if (st.error) return 'Další epizody se nepodařilo načíst.';
+            if (st.done && st.pages > 1) return 'Načteno vše dostupné.';
+            return '';
+        }
+
+        function refreshSeriesPage() {
+            if (!activeSeries || pageSection.style.display !== 'block') return;
+            pageBody.innerHTML = seriesPageHtml(activeSeries, seriesLoadNote(activeSeries));
+        }
+
+        function seriesLoadState(key) {
+            let st = seriesLoad.get(key);
+            if (!st) {
+                st = { pages: 1, done: false, busy: false, error: '', emptyStreak: 0 };
+                seriesLoad.set(key, st);
+            }
+            return st;
+        }
+
+        function updateSeriesCard(series) {
+            const card = Array.from(resultsGrid.querySelectorAll('.series-card'))
+                .find(c => c.dataset.seriesKey === series.key);
+            const meta = card && card.querySelector('.year');
+            if (meta) meta.textContent = seriesMeta(series);
+        }
+
+        async function loadMoreEpisodes(startSeries) {
+            const st = seriesLoadState(startSeries.key);
+            if (st.busy || st.done || !lastQuery) return;
+            st.busy = true;
+            st.error = '';
+            refreshSeriesPage();
+            try {
+                while (!st.done) {
+                    // uživatel odešel jinam (jiný seriál, přehrávač, domovská stránka)
+                    if (!activeSeries || activeSeries.key !== startSeries.key) break;
+                    if (pageSection.style.display !== 'block') break;
+                    if (st.pages >= SERIES_MAX_PAGES) { st.done = true; break; }
+
+                    const page = st.pages + 1;
+                    const { data, rateLimited } = await apiJson(
+                        `/api/search?q=${encodeURIComponent(lastQuery)}&page=${page}${proxyQS()}`,
+                        { retries: 1 });
+                    if (rateLimited || !data || !data.success || !Array.isArray(data.movies)) { st.done = true; break; }
+                    // prázdná stránka = konec výsledků
+                    if (data.movies.length === 0) { st.done = true; break; }
+                    st.pages = page;
+
+                    const res = mergeSeriesMovies(activeSeries, data.movies);
+                    if (res.added) {
+                        st.emptyStreak = 0;
+                        currentResults.push(...res.addedMovies);
+                        const entry = searchEntries.find(x => x.type === 'series' && x.series.key === res.series.key);
+                        if (entry) entry.series = res.series;
+                        activeSeries = res.series;
+                        updateSeriesCard(res.series);
+                        refreshSeriesPage();
+                    } else if (++st.emptyStreak >= 2) {
+                        // dvě stránky v řadě bez nových epizod = další nemá smysl zkoušet
+                        st.done = true;
+                    }
+                }
+            } catch (e) {
+                st.error = (e && e.message) ? e.message : 'chyba';
+            } finally {
+                st.busy = false;
+                refreshSeriesPage();
+            }
+        }
+
+        function seriesPageHtml(series, loadNote) {
             const poster = series.poster
                 ? `<div class="series-poster"><img src="${escapeHtml(series.poster)}" alt=""></div>`
                 : '';
@@ -1222,27 +1360,36 @@
                     ${poster}
                     <div class="series-head-text">
                         <div class="series-sub">${escapeHtml([series.year, seriesMeta(series)].filter(Boolean).join(' · '))}</div>
-                        <p class="series-note">Epizody jsou poskládané z výsledků hledání – prehraj.to nevede stránku seriálu, takže seznam nemusí být úplný.</p>
+                        <p class="series-note">Epizody se skládají z výsledků hledání – prehraj.to nevede stránku seriálu. Appka u otevřeného seriálu dotahuje další stránky, dokud něco vrací.</p>
                     </div>
                 </div>
+                ${loadNote ? `<div class="series-load">${escapeHtml(loadNote)}</div>` : ''}
                 ${series.seasons.map(seriesSeasonHtml).join('')}
             `;
         }
 
         function seriesSeasonHtml(season) {
             const title = season.season == null ? 'Nezařazené epizody' : `${season.season}. série`;
+            const files = season.episodes.length;
+            const cover = episodeSpanCount(season);
+            // soubor s více díly: počet souborů a počet pokrytých dílů není totéž
+            const count = files !== cover
+                ? `${czCount(files, 'soubor', 'soubory', 'souborů')} · ${czCount(cover, 'díl', 'díly', 'dílů')}`
+                : czCount(files, 'díl', 'díly', 'dílů');
             return `
                 <section class="series-season">
-                    <h2>${escapeHtml(title)} <span class="season-count">${czCount(season.episodes.length, 'díl', 'díly', 'dílů')}</span></h2>
+                    <h2>${escapeHtml(title)} <span class="season-count">${count}</span></h2>
                     <div class="ep-list">${season.episodes.map(episodeHtml).join('')}</div>
                 </section>`;
         }
 
         function episodeHtml(ep) {
             const first = ep.variants[0];
+            const pad2 = n => String(n).padStart(2, '0');
+            const range = ep.episodeEnd && ep.episodeEnd > ep.episode;
             const num = ep.season == null
-                ? `Díl ${ep.episode}`
-                : `S${String(ep.season).padStart(2, '0')}E${String(ep.episode).padStart(2, '0')}`;
+                ? `Díl ${ep.episode}${range ? '–' + ep.episodeEnd : ''}`
+                : `S${pad2(ep.season)}E${pad2(ep.episode)}${range ? '–E' + pad2(ep.episodeEnd) : ''}`;
             const variants = ep.variants.length > 1
                 ? `<select class="ep-variant" aria-label="Zdroj epizody">${ep.variants.map((v, i) =>
                     `<option value="${escapeHtml(v.url)}"${i === 0 ? ' selected' : ''}>${escapeHtml(variantLabel(v))}</option>`).join('')}</select>`
@@ -1251,7 +1398,8 @@
                 <div class="ep-row">
                     <button type="button" class="ep-play" data-ep-url="${escapeHtml(first.url)}" title="${escapeHtml(first.title)}">
                         <span class="ep-num">${escapeHtml(num)}</span>
-                        <span class="ep-name">${escapeHtml(first.title)}</span>
+                        <span class="ep-name">${escapeHtml(first.name || first.title)}</span>
+                        ${range ? '<span class="ep-flag">soubor s více díly</span>' : ''}
                     </button>
                     ${variants}
                 </div>`;

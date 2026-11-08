@@ -47,7 +47,11 @@ if ($action === 'search') {
  */
 function handleSearch() {
     $query = isset($_GET['q']) ? trim($_GET['q']) : '';
-    
+    // Stránkování: 1 = první stránka, 2+ = další výsledky (appka si je dotahuje u seriálů)
+    $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+    if ($page < 1) $page = 1;
+    if ($page > 50) $page = 50;
+
     if (empty($query)) {
         echo json_encode([
             'success' => false,
@@ -57,7 +61,7 @@ function handleSearch() {
         exit;
     }
     
-    $r = searchPrehraj($query);
+    $r = searchPrehraj($query, $page);
     if ($r['error']) {
         wflixFail(['success' => false, 'error' => $r['error']], $r['status'] ?? 0);
     }
@@ -65,6 +69,7 @@ function handleSearch() {
     echo json_encode([
         'success' => true,
         'query' => $query,
+        'page' => $page,
         'count' => count($r['movies']),
         'movies' => $r['movies']
     ]);
@@ -72,11 +77,14 @@ function handleSearch() {
 
 /**
  * Search prehraj.to (shared by search and thumb).
+ * $page > 1 používá stejný parametr, kterým stránkuje ArchivCZSK doplněk
+ * (videoListing-visualPaginator-page). Šablona stránky je stejná jako u první strany.
  * Returns ['error' => string|null, 'movies' => [...]]
  */
-function searchPrehraj($query) {
+function searchPrehraj($query, $page = 1) {
     // URL encode the query.
     $searchUrl = 'https://prehraj.to/hledej/' . rawurlencode($query);
+    if ($page > 1) $searchUrl .= '?videoListing-visualPaginator-page=' . (int)$page;
 
     // Fetch search results
     $ch = curl_init();

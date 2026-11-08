@@ -591,23 +591,27 @@ static bool IsPrivateHost(string host)
 }
 
 // ------------------------------------------------------------------ /api/search
-app.MapGet("/api/search", async (string q, string[]? proxy, IHttpClientFactory f, IMemoryCache cache) =>
+app.MapGet("/api/search", async (string q, int? page, string[]? proxy, IHttpClientFactory f, IMemoryCache cache) =>
 {
     q = (q ?? "").Trim();
     if (q.Length == 0)
         return Results.BadRequest(new { success = false, error = "Missing search query (q parameter)" });
 
+    // Stránkování výsledků (pro dotahování epizod seriálů). 1 = první stránka, 2+ = další.
+    var pg = Math.Clamp(page.GetValueOrDefault(1), 1, 50);
+
     // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nikdy nechodí (datacentrová IP
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
-    var query = $"action=search&q={Uri.EscapeDataString(q)}";
+    var query = $"action=search&q={Uri.EscapeDataString(q)}" + (pg > 1 ? $"&page={pg}" : "");
     var sources = OrderedProxies(EffectiveProxies(proxy, serverProxies))
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
 
     // Sdílená cache: normalizovaný dotaz (malá písmena, jedny mezery), jen bez vlastního ?proxy=.
     var norm = Regex.Replace(q.ToLowerInvariant(), @"\s+", " ");
+    var cacheKey = "search:" + norm + (pg > 1 ? ":" + pg : "");
     var (ok, body, errors) = CanShareCache(proxy) && norm.Length <= 100
-        ? await CachedFetch(cache, "search:" + norm, SearchTtl, () => FirstWorking(sources))
+        ? await CachedFetch(cache, cacheKey, SearchTtl, () => FirstWorking(sources))
         : await FirstWorking(sources);
     if (!ok) return AllFailed(errors);
     return Results.Content(body, "application/json");
