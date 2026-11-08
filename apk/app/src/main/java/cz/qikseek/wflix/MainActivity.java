@@ -573,16 +573,12 @@ public class MainActivity extends Activity {
             }
         }
 
-        /**
-         * Otevře systémové přenášení obrazovky (Google Cast / Miracast / Smart View / Screen Share).
-         * Názvy nastavení se mezi výrobci liší, proto se zkouší víc cest. Když žádná nejde,
-         * vrací false a appka nabídne odeslání videa do jiné aplikace (sendToApp).
-         */
+        /** Otevře systémové "Přenést obrazovku" (Google Cast / Miracast / Smart View). */
         @JavascriptInterface
         public boolean castScreen() {
             String[] actions = {
                     "android.settings.CAST_SETTINGS",
-                    "android.settings.WIFI_DISPLAY_SETTINGS"
+                    "android.settings.WIRELESS_SETTINGS"
             };
             for (String action : actions) {
                 try {
@@ -594,41 +590,7 @@ public class MainActivity extends Activity {
                     // zkusí další variantu
                 }
             }
-            String[] packages = {
-                    "com.samsung.android.smartmirroring",
-                    "com.google.android.apps.chromecast.app"
-            };
-            for (String pkg : packages) {
-                try {
-                    Intent launch = getPackageManager().getLaunchIntentForPackage(pkg);
-                    if (launch != null) {
-                        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(launch);
-                        return true;
-                    }
-                } catch (Exception ignored) {
-                    // zkusí další balíček
-                }
-            }
             return false;
-        }
-
-        /** Nabídne systémový výběr aplikace, která video z adresy pustí na TV (Web Video Caster, ThinQ, VLC …). */
-        @JavascriptInterface
-        public boolean sendToApp(String url, String title) {
-            try {
-                if (url == null || url.length() == 0) return false;
-                String type = url.toLowerCase(Locale.ROOT).contains(".m3u8") ? "application/x-mpegURL" : "video/*";
-                Intent view = new Intent(Intent.ACTION_VIEW);
-                view.setDataAndType(Uri.parse(url), type);
-                if (title != null) view.putExtra("title", title);
-                Intent chooser = Intent.createChooser(view, "Přehrát na TV pomocí…");
-                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(chooser);
-                return true;
-            } catch (Exception e) {
-                return false;
-            }
         }
 
         @JavascriptInterface
