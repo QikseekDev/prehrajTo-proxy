@@ -381,7 +381,12 @@
             const seasonList = [...seasons.entries()].map(([key, eps]) => ({
                 key,
                 season: key === '?' ? null : Number(key),
-                episodes: [...eps.values()].sort((a, b) => a.episode - b.episode),
+                episodes: [...eps.values()].sort((a, b) => {
+                    // soubory s více díly (S01E02-09) patří na konec sezóny, ne mezi jednotlivé díly
+                    const ar = /\d\s*[-–]\s*e?\d/i.test(a.label || '') ? 1 : 0;
+                    const br = /\d\s*[-–]\s*e?\d/i.test(b.label || '') ? 1 : 0;
+                    return (ar - br) || (a.episode - b.episode);
+                }),
             })).sort((a, b) => {
                 if (a.season == null) return b.season == null ? 0 : 1;
                 if (b.season == null) return -1;
