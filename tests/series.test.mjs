@@ -8,6 +8,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const scriptPath = join(root, 'azure-app/PrehrajtoProxy/wwwroot/script.js');
 const cssPath = join(root, 'azure-app/PrehrajtoProxy/wwwroot/styles.css');
 const src = readFileSync(scriptPath, 'utf8');
+const appPath = join(root, 'ipk/app/app.js');
+const appSrc = readFileSync(appPath, 'utf8');
 
 // Stejné skládání názvů jako norm()/tokens() v script.js - testy si je definují samy,
 // aby nezávisely na zbytku prohlížečového kódu.
@@ -33,9 +35,23 @@ function loadSeriesPage() {
     return new Function('escapeHtml', 'czCount', 'seriesMeta', block + '\nreturn { seriesPageHtml };')(escapeHtml, parser.czCount, parser.seriesMeta);
 }
 
+// Klientská appka (ipk/app = webOS i APK) má vlastní kopii parseru; testy ji načtou
+// ze stejných značek, aby se obě implementace nerozešly.
+function appNormText(str) {
+    return norm(str).replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function loadAppParser() {
+    const start = appSrc.indexOf('// ===== Seriály =====');
+    const end = appSrc.indexOf('// ===== Konec seriálů =====', start + 1);
+    if (start < 0 || end < 0) throw new Error('blok seriálů v ipk/app/app.js nenalezen');
+    return new Function('normText', appSrc.slice(start, end)
+        + '\nreturn { parseEpisodeTitle, groupSearchResults, seriesMeta };')(appNormText);
+}
+
 const { parseEpisodeTitle, groupSearchResults, mergeSeriesMovies, seriesMeta, czCount } = loadParser();
 
-// [název, očekávaný seriál, sezóna, první díl, popisek přesně z názvu]
+// [název, očekávaný seriál, sezóna, první díl, popisek = SxxExx bez čísla za pomlčkou]
 const parsed = [
     ['Mr. Robot S01E01', 'Mr. Robot', 1, 1, 'S01E01'],
     ['Mr. Robot - S01E02 CZ tit', 'Mr. Robot', 1, 2, 'S01E02'],
@@ -44,8 +60,9 @@ const parsed = [
     ['Mr. Robot 2. série - 1. díl CZ dabing', 'Mr. Robot', 2, 1, 'S2E1'],
     ['Rodina Sopránů S01E01 CZ tit', 'Rodina Sopránů', 1, 1, 'S01E01'],
     ['Pobřežní Hlídka - S01E01', 'Pobřežní Hlídka', 1, 1, 'S01E01'],
-    // tady je číslo za pomlčkou součástí názvu, ne "poslední díl"
-    ['Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc', 'Mr. Robot', 2, 2, 'S02E02-12'],
+    // číslo za pomlčkou není jiný díl ani konec rozsahu, je to pořád díl 2
+    ['Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc', 'Mr. Robot', 2, 2, 'S02E02'],
+    ['Mr. Robot S01E04-09 CZ dab', 'Mr. Robot', 1, 4, 'S01E04'],
     ['Mr. Robot Epizoda 5', 'Mr. Robot', null, 5, 'Díl 5'],
     ['Mr. Robot 3. díl', 'Mr. Robot', null, 3, 'Díl 3'],
     ['Na vejšce (Off Campus) S01E01 CZ TITULKY.mkv', 'Na vejšce (Off Campus)', 1, 1, 'S01E01'],
@@ -55,7 +72,7 @@ const parsed = [
     ['Mr. Robot Season 2 Episode 4', 'Mr. Robot', 2, 4, 'S2E4'],
 ];
 
-test('parser vezme popisek přímo z názvu', async t => {
+test('parser si vezme jen číslo dílu ze značky SxxExx', async t => {
     for (const [title, base, season, episode, label] of parsed) {
         await t.test(title, () => {
             const got = parseEpisodeTitle(title);
@@ -117,22 +134,57 @@ test('seskupení slije epizody, dedupuje URL i stejné názvy a nechá filmy', (
     assert.equal(seriesMeta(show), '2 série · 4 díly');
 });
 
-test('S02E02-12 je jeden řádek s popiskem z názvu, ne kopie pro každý díl', () => {
+test('S02E02-12 je jen díl 2, ne rozsah ani kopie pro každý díl', () => {
     const show = groupSearchResults([
         m('Mr. Robot S02E01', 'u1', '2016'),
         m('Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc', 'u2', '2016'),
         m('Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc', 'u2', '2016'),   // stejná URL
+        m('Mr. Robot S02E02 ULTRA HD', 'u4', '2016'),                            // jiný zdroj téhož dílu
         m('Mr. Robot S02E03', 'u3', '2016'),
     ]).find(e => e.type === 'series').series;
 
     const season = show.seasons[0];
-    assert.equal(season.episodes.length, 3, 'E01, soubor E02-12, E03');
-    const pack = season.episodes.find(e => e.label === 'S02E02-12');
-    assert.ok(pack, 'popisek musí zůstat S02E02-12');
-    assert.equal(pack.variants.length, 1, 'duplicitní upload se nesmí přidat dvakrát');
-    assert.equal(show.episodeCount, 3, 'počítají se řádky, ne čísla za pomlčkou');
+    assert.equal(season.episodes.length, 3, 'E01, E02, E03');
+    assert.deepEqual(season.episodes.map(e => e.label), ['S02E01', 'S02E02', 'S02E03']);
+    assert.equal(season.episodes[1].variants.length, 2, 'soubor S02E02-12 je jen další zdroj dílu 2');
+    assert.equal(show.episodeCount, 3, 'počítají se skutečné díly');
+    assert.ok(!season.episodes.some(e => e.label === 'S02E12'), 'číslo za pomlčkou není díl');
     assert.ok(!season.episodes.some(e => e.label === 'S02E05'), 'žádné rozkopírování');
-    assert.equal(season.episodes[season.episodes.length - 1].label, 'S02E02-12', 'balík patří na konec sezóny');
+});
+
+test('klientská appka parsuje díly stejně jako web', () => {
+    const app = loadAppParser();
+    for (const [title, base, season, episode, label] of parsed) {
+        const got = app.parseEpisodeTitle(title);
+        assert.ok(got, `appka neparsovala: ${title}`);
+        assert.equal(got.base, base, title);
+        assert.equal(got.season, season, title);
+        assert.deepEqual(got.episodes, [episode], title);
+        assert.equal(got.label, label, title);
+    }
+});
+
+test('appka slije S01E02-09 s dílem 2 a neudělá z něj rozsah', () => {
+    const app = loadAppParser();
+    const mm = (title, url) => ({ title, url, thumbnail: '', year: '2025' });
+    const show = app.groupSearchResults([
+        mm('TO Vítejte v Derry S01E01 CZ dabing 2025', 'a1'),
+        mm('TO Vítejte v Derry S01E02 ULTRA HD KVALITA', 'a2'),
+        mm('TO - Vítejte v Derry S01E03 2160p CZ SK Dabing', 'a3'),
+        mm('TO - Vítejte v Derry S01E02-09 2025 CZ dabing 1080p FHD - Věc ve tmě', 'a4'),
+    ]).find(e => e.type === 'series').series;
+    const season = show.seasons[0];
+    assert.deepEqual(season.episodes.map(e => e.label), ['S01E01', 'S01E02', 'S01E03']);
+    assert.equal(season.episodes[1].variants.length, 2, 'upload s -09 je jen další zdroj dílu 2');
+    assert.equal(app.seriesMeta(show), '1 série · 3 díly');
+});
+
+test('klient v APK assets je synchronní s ipk/app', () => {
+    for (const f of ['app.js', 'index.html', 'styles.css', 'hls.min.js']) {
+        const a = readFileSync(join(root, 'ipk/app', f));
+        const b = readFileSync(join(root, 'apk/app/src/main/assets/www', f));
+        assert.ok(a.equals(b), `${f} v apk/app/src/main/assets/www není kopie z ipk/app`);
+    }
 });
 
 test('stránka 2+ přidá jen epizody stejného seriálu a zbytek ignoruje', () => {
@@ -144,7 +196,7 @@ test('stránka 2+ přidá jen epizody stejného seriálu a zbytek ignoruje', () 
     const page2 = [
         m('Mr. Robot S01E01', 'u1'),                       // už známá URL
         m('Mr. Robot S02E01', 'u9', '2016'),               // nová epizoda
-        m('Mr. Robot S02E02-12 CZ dab', 'u10', '2016'),    // nový soubor s více díly
+        m('Mr. Robot S02E02-12 CZ dab', 'u10', '2016'),    // nový díl 2 (jiný upload)
         m('Duna 2', 'u5', '2024'),                         // jiný titul -> ignorovat
     ];
 
@@ -171,7 +223,7 @@ test('číslování dílů česky', () => {
     assert.equal(czCount(9, 'díl', 'díly', 'dílů'), '9 dílů');
 });
 
-test('stránka seriálu: popisek z názvu, jedna řada na soubor, escapování', () => {
+test('stránka seriálu: popisek = číslo dílu, jedna řada na díl, escapování', () => {
     const { seriesPageHtml } = loadSeriesPage();
     const v = (title, url, name) => ({ title, url, thumbnail: '', year: '2015', name });
     const ep = (season, episode, label, variants) => ({ season, episode, label, variants });
@@ -186,7 +238,7 @@ test('stránka seriálu: popisek z názvu, jedna řada na soubor, escapování',
                     ep(1, 2, 'S01E02', [v('Mr. Robot S01E02', 'https://prehraj.to/c/3', 'CZ dab')]),
                 ],
             },
-            { season: 2, episodes: [ep(2, 2, 'S02E02-12', [v('Mr. Robot S02E02-12 CZ dab', 'https://prehraj.to/d/4', '2016 CZ dab')])] },
+            { season: 2, episodes: [ep(2, 2, 'S02E02', [v('Mr. Robot S02E02-12 CZ dab', 'https://prehraj.to/d/4', '2016 CZ dab')])] },
         ],
     };
 
@@ -194,9 +246,10 @@ test('stránka seriálu: popisek z názvu, jedna řada na soubor, escapování',
     assert.equal((html.match(/class="ep-row"/g) || []).length, 3);
     assert.equal((html.match(/class="ep-variant"/g) || []).length, 1, 'select jen u dílu s více zdroji');
     assert.match(html, /S01E01/);
-    assert.match(html, /S02E02-12/, 'popisek přesně jako v názvu');
+    assert.match(html, /ep-num">S02E02</, 'popisek je číslo dílu');
+    assert.ok(!html.includes('S02E12'), 'číslo za pomlčkou není díl');
     assert.ok(!html.includes('S02E05'), 'soubor s více díly se nesmí rozkopírovat');
-    assert.match(html, /soubor s více díly/);
+    assert.ok(!html.includes('ep-flag'), 'žádný štítek o více dílech');
     assert.match(html, /1\. série/);
     assert.match(html, /2 díly/);
     assert.match(html, /1 díl/);
@@ -204,6 +257,24 @@ test('stránka seriálu: popisek z názvu, jedna řada na soubor, escapování',
     assert.ok(!html.includes('<b>&</b>'), 'název musí být escapovaný');
     assert.match(html, /&lt;b&gt;&amp;&lt;\/b&gt;/);
     assert.match(html, /a=1&amp;b=2/, 'URL plakátu musí být escapovaná');
+});
+
+test('klientská appka má obrazovku seriálu a styly', () => {
+    const html = readFileSync(join(root, 'ipk/app/index.html'), 'utf8');
+    for (const id of ['series', 'seriesBg', 'seriesTitle', 'seriesMeta', 'seriesPoster', 'seriesBody', 'seriesNote', 'seriesClose']) {
+        assert.ok(html.includes('id="' + id + '"'), `chybí #${id} v ipk/app/index.html`);
+    }
+    const css = readFileSync(join(root, 'ipk/app/styles.css'), 'utf8');
+    let depth = 0;
+    for (const ch of css) {
+        if (ch === '{') depth++;
+        else if (ch === '}') depth--;
+        assert.ok(depth >= 0, 'CSS appky má uzavírací závorku navíc');
+    }
+    assert.equal(depth, 0, 'CSS appky nemá vyvážené závorky');
+    for (const sel of ['.series-panel', '.series-body', '.ep-row', '.ep-src', '.ep-num']) {
+        assert.ok(css.includes(sel), `chybí styl ${sel} v ipk/app/styles.css`);
+    }
 });
 
 test('styly pro seriály existují a CSS je vyvážené', () => {
@@ -215,7 +286,7 @@ test('styly pro seriály existují a CSS je vyvážené', () => {
         assert.ok(depth >= 0, 'CSS má uzavírací závorku navíc');
     }
     assert.equal(depth, 0, 'CSS nemá vyvážené závorky');
-    for (const sel of ['.series-card', '.series-badge', '.ep-row', '.ep-play', '.ep-variant', '.ep-flag']) {
+    for (const sel of ['.series-card', '.series-badge', '.ep-row', '.ep-play', '.ep-variant']) {
         assert.ok(css.includes(sel), `chybí styl ${sel}`);
     }
 });

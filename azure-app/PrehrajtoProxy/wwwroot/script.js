@@ -303,10 +303,10 @@
                 const base = cleanSeriesBase(s.slice(0, baseStart));
                 // bez použitelného názvu seriálu (např. značka na začátku) to nemá cenu
                 if (base.length < 2 || !/[a-zá-ž]/i.test(base)) continue;
-                // Popisek bereme přímo z názvu: "S02E02-12" zůstane "S02E02-12",
-                // nic se nedopočítává a číslo za pomlčkou se nepovažuje za poslední díl.
+                // Popisek končí číslem dílu: "S01E04-09" je prostě díl 4, "-09" není
+                // rozsah ani jiný díl. Padding z názvu zůstává ("S01E04"), nic se nedopočítává.
                 const marker = s.slice(baseStart, markerEnd).replace(/\s+/g, '');
-                const label = (p.kind === 'sxxexx') ? marker.toUpperCase()
+                const label = (p.kind === 'sxxexx') ? `S${m[2]}E${m[3]}`.toUpperCase()
                     : (p.kind === 'nxnn') ? marker
                     : (p.kind === 'worded' || p.kind === 'worded2') ? `S${season}E${episodes[0]}`
                     : `Díl ${episodes[0]}`;
@@ -362,8 +362,8 @@
                     const sKey = parsed.season == null ? '?' : String(parsed.season);
                     let eps = seasons.get(sKey);
                     if (!eps) { eps = new Map(); seasons.set(sKey, eps); }
-                    // řádek se pozná podle popisku z názvu ("S02E02-12" je jiný řádek než "S02E02")
-                    const epKey = parsed.label || String(epNum);
+                    // řádek = jedno číslo dílu; jiný upload téhož dílu je jen varianta
+                    const epKey = 'e' + epNum;
                     let ep = eps.get(epKey);
                     if (!ep) {
                         ep = { season: parsed.season, episode: epNum, label: parsed.label, variants: [], urls: new Set(), titles: new Set() };
@@ -381,12 +381,7 @@
             const seasonList = [...seasons.entries()].map(([key, eps]) => ({
                 key,
                 season: key === '?' ? null : Number(key),
-                episodes: [...eps.values()].sort((a, b) => {
-                    // soubory s více díly (S01E02-09) patří na konec sezóny, ne mezi jednotlivé díly
-                    const ar = /\d\s*[-–]\s*e?\d/i.test(a.label || '') ? 1 : 0;
-                    const br = /\d\s*[-–]\s*e?\d/i.test(b.label || '') ? 1 : 0;
-                    return (ar - br) || (a.episode - b.episode);
-                }),
+                episodes: [...eps.values()].sort((a, b) => a.episode - b.episode),
             })).sort((a, b) => {
                 if (a.season == null) return b.season == null ? 0 : 1;
                 if (b.season == null) return -1;
@@ -1376,7 +1371,6 @@
         function episodeHtml(ep) {
             const first = ep.variants[0];
             const num = ep.label || (ep.season == null ? `Díl ${ep.episode}` : `S${ep.season}E${ep.episode}`);
-            const range = /\d\s*[-–]\s*e?\d/i.test(num);   // "S02E02-12" = soubor s víc díly
             const variants = ep.variants.length > 1
                 ? `<select class="ep-variant" aria-label="Zdroj epizody">${ep.variants.map((v, i) =>
                     `<option value="${escapeHtml(v.url)}"${i === 0 ? ' selected' : ''}>${escapeHtml(variantLabel(v))}</option>`).join('')}</select>`
@@ -1386,7 +1380,6 @@
                     <button type="button" class="ep-play" data-ep-url="${escapeHtml(first.url)}" title="${escapeHtml(first.title)}">
                         <span class="ep-num">${escapeHtml(num)}</span>
                         <span class="ep-name">${escapeHtml(first.name || first.title)}</span>
-                        ${range ? '<span class="ep-flag">soubor s více díly</span>' : ''}
                     </button>
                     ${variants}
                 </div>`;

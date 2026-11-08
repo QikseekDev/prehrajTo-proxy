@@ -257,6 +257,48 @@ body.touch .f:focus:not(.search-input):not(.p-bar){outline:none}
 .detail-actions{display:flex;gap:.6rem;flex-wrap:wrap}
 
 /* ==========================================================================
+   Překryvy: seriál
+   ========================================================================== */
+.series{background:var(--bg);align-items:stretch;justify-content:center;overflow:hidden}
+.series-bg{
+  position:absolute;inset:0;background-size:cover;background-position:center 25%;
+  opacity:.28;filter:blur(40px) brightness(.5) saturate(.7);transform:scale(1.2);
+}
+.series-bg::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,var(--bg) 10%,rgba(11,12,15,.6) 75%)}
+.series-panel{
+  position:relative;display:flex;flex-direction:column;min-height:0;
+  width:min(80rem,100%);max-height:100%;padding:2.2rem var(--gutter) 2rem;
+}
+.series-head{display:flex;gap:1.6rem;align-items:flex-end;flex:0 0 auto;margin-bottom:1.2rem}
+.series-poster{width:8.4rem;aspect-ratio:2/3;object-fit:cover;border-radius:4px;background:var(--surface);flex:0 0 auto}
+.series-info{flex:1;min-width:0}
+.series-info h1{font-size:2rem;margin:0 0 .4rem;line-height:1.1;letter-spacing:-.02em}
+.series-info .meta{margin-bottom:1rem}
+.series-body{overflow-y:auto;min-height:0;padding:.2rem .4rem 1rem 0;scrollbar-width:thin}
+.season{margin-bottom:1.2rem}
+.season-head{display:flex;align-items:baseline;gap:.7rem;margin-bottom:.5rem}
+.season-head h2{font-size:1rem;margin:0;letter-spacing:-.005em}
+.season-head span{font-size:.78rem;color:var(--muted)}
+.ep-row{display:flex;align-items:center;gap:.9rem;padding:.22rem 0}
+.ep-num{flex:0 0 5.4rem;font-size:.9rem;font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums}
+.ep-srcs{display:flex;flex-wrap:wrap;gap:.4rem;min-width:0}
+.ep-src{
+  max-width:36rem;min-height:2.3rem;padding:0 .9rem;border-radius:var(--radius);
+  background:var(--surface-2);border:1px solid var(--line);
+  font-size:.85rem;font-weight:600;color:var(--text-2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.ep-src:hover{color:var(--text)}
+.ep-src:focus{color:var(--text);background:var(--surface-3)}
+.series-note{flex:0 0 auto;font-size:.82rem;color:var(--muted);padding-top:.4rem}
+body.touch .series-panel{padding:1.1rem 1.1rem calc(1.2rem + env(safe-area-inset-bottom))}
+body.touch .series-head{gap:1rem;margin-bottom:.8rem}
+body.touch .series-poster{width:5.6rem}
+body.touch .series-info h1{font-size:1.35rem}
+body.touch .ep-num{flex-basis:4.2rem;font-size:.8rem}
+body.touch .ep-src{font-size:.78rem;max-width:100%}
+
+/* ==========================================================================
    Přehrávač
    ========================================================================== */
 .player{background:#000;flex-direction:column;align-items:stretch;justify-content:center}
