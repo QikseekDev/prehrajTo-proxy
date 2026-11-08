@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#141414">
     <title>Wflix – filmy a seriály</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%23141414'/><text x='50' y='72' font-size='64' font-weight='900' text-anchor='middle' fill='%23e50914' font-family='Arial'>W</text></svg>">
-    <link rel="stylesheet" href="styles.css?v=20261108-5">
+    <link rel="stylesheet" href="styles.css?v=20261108-6">
     <link rel="stylesheet" href="intro.css?v=20261104-15">
     <noscript><style>.intro { display: none !important; }</style></noscript>
     <!-- Světlý režim se musí zapnout dřív než první vykreslení, jinak stránka blikne tmavě. -->
@@ -255,7 +255,7 @@
                 <button type="button" id="proxyBtn" class="dl-btn" hidden>▶ Přehrát přes server</button>
                 <button type="button" id="favBtn" class="dl-btn" hidden>☆ Do oblíbených</button>
                 <button type="button" id="pipBtn" class="dl-btn" hidden title="Obraz v obraze">⧉ Obraz v obraze</button>
-                <button type="button" id="castBtn" class="dl-btn" hidden title="Přehrát video na TV (Chromecast / AirPlay)">📺 Přehrát na TV</button>
+                <button type="button" id="castBtn" class="dl-btn" hidden title="Přehrát video na TV (Chromecast, AirPlay, odkaz)">📺 Přehrát na TV</button>
                 <span class="sub-pick" id="subtitleBar" hidden>
                     <label for="subtitleSelect">Titulky</label>
                     <select id="subtitleSelect" class="set-select" aria-label="Titulky"></select>
@@ -336,7 +336,30 @@
         </div>
         <div class="f-copy">© 2026 Wflix · Proxy pro přehrávání videí z prehraj.to</div>
     </footer>
+    <div id="castDlg" class="cast-dlg" hidden role="dialog" aria-modal="true" aria-labelledby="castTitle">
+        <div class="cast-box">
+            <h2 id="castTitle">📺 Přehrát na TV</h2>
+            <p class="cast-note">Telefon (nebo počítač) i TV musí být ve stejné Wi-Fi síti. Bluetooth na přenos videa nestačí.</p>
+            <div class="cast-actions">
+                <button type="button" id="castNative" class="dl-btn">📡 Najít zařízení v síti (Chromecast, AirPlay)</button>
+                <button type="button" id="castShare" class="dl-btn" hidden>📤 Sdílet odkaz</button>
+                <button type="button" id="castCopy" class="dl-btn">🔗 Zkopírovat odkaz pro TV</button>
+            </div>
+            <input id="castLink" class="cast-link" type="text" readonly aria-label="Odkaz na video pro TV">
+            <p id="castMsg" class="cast-msg" role="status"></p>
+            <details class="cast-help">
+                <summary>Jak na to u LG webOS televize</summary>
+                <ul>
+                    <li><b>Nejjistější u každé TV:</b> na TV otevři Webový prohlížeč (nebo aplikaci Wflix) a zadej zkopírovaný odkaz. Funguje z jakéhokoli telefonu i prohlížeče.</li>
+                    <li><b>iPhone, iPad, Mac (Safari):</b> tlačítko „Najít zařízení“ ukáže AirPlay. Na TV ho zapni v nastavení (Připojení, AirPlay).</li>
+                    <li><b>Android:</b> zrcadlení obrazovky (Smart View, Přenést obrazovku, Screen Cast) přes Miracast. Na LG TV spusť aplikaci Sdílení obrazovky.</li>
+                    <li>LG televize nemají Chromecast, proto je tam v prohlížeči nenajdeš. Chromecast se hodí pro Google TV a Chromecast klíčenky.</li>
+                </ul>
+            </details>
+            <button type="button" id="castClose" class="dl-btn cast-close">Zavřít</button>
+        </div>
+    </div>
 
-    <script src="script.js?v=20261108-5"></script>
+    <script src="script.js?v=20261108-6"></script>
 </body>
 </html>

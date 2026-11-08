@@ -1568,7 +1568,7 @@
   $('pCast').addEventListener('click', function () {
     var ok = false;
     try { ok = !!Native.castScreen(); } catch (e) { }
-    toast(ok ? 'Vyber TV v nabídce Přenést obrazovku a vrať se do aplikace.' : 'Tohle zařízení přenos obrazovky nepodporuje.', 4000);
+    toast(ok ? 'Zapni Přenést obrazovku (Smart View, Screen Cast) a vyber TV. U LG televize spusť aplikaci Sdílení obrazovky. Pak se vrať sem.' : 'Tohle zařízení přenos obrazovky nepodporuje. Otevři Wflix v prohlížeči na TV.', 6000);
   });
 
   $('pBar').addEventListener('click', function (e) {

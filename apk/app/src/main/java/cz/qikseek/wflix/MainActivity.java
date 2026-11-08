@@ -576,13 +576,16 @@ public class MainActivity extends Activity {
         /** Otevře systémové "Přenést obrazovku" (Google Cast / Miracast / Smart View). */
         @JavascriptInterface
         public boolean castScreen() {
-            String[] actions = {
-                    "android.settings.CAST_SETTINGS",
-                    "android.settings.WIRELESS_SETTINGS"
+            // Každý výrobce má přenos obrazovky jinde, proto víc pokusů od nejpřesnějšího.
+            Intent[] intents = new Intent[] {
+                    new Intent("android.settings.CAST_SETTINGS"),
+                    new Intent().setClassName("com.android.settings",
+                            "com.android.settings.Settings$WifiDisplaySettingsActivity"),
+                    new Intent("android.settings.DISPLAY_SETTINGS"),
+                    new Intent("android.settings.WIRELESS_SETTINGS")
             };
-            for (String action : actions) {
+            for (Intent i : intents) {
                 try {
-                    Intent i = new Intent(action);
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(i);
                     return true;

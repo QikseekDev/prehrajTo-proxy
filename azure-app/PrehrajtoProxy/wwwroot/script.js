@@ -963,7 +963,7 @@
                     <h2>Titulky</h2>
                     <p>Když má soubor titulky, objeví se pod přehrávačem nabídka „Titulky“ s volbami Vypnuto a jazyky. Načítá je server, takže fungují i u zdrojů, které je prohlížeči přímo nedovolí. Ne každý soubor titulky má – český dabing bývá bez nich.</p>
                     <h2>Přehrávač a klávesy</h2>
-                    <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ Obraz v obraze</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa). Tlačítko <b>📺 Přehrát na TV</b> odešle video na Chromecast nebo TV s Google Cast (Chrome, Edge) či přes AirPlay (Safari).</p>
+                    <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ Obraz v obraze</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa). Tlačítko <b>📺 Přehrát na TV</b> otevře možnosti: Chromecast (Chrome, Edge), AirPlay (Safari, iPhone, LG webOS) nebo odkaz, který otevřeš v prohlížeči na jakékoli TV. Video se do TV posílá přes Wi-Fi, Bluetooth na to nestačí.</p>
                     <p>Velikost a pozadí titulků se nastavují v Nastavení (avatar vpravo nahoře).</p>
                     <h2>Knihovna: oblíbené</h2>
                     <p>Hvězdička na kartě přidá titul do oblíbených, stejně jako tlačítko u přehrávače. Odkaz <b>Knihovna</b> v liště (před Živě) ukazuje oblíbené. Každý titul jde odebrat hvězdičkou. Appka si historii přehrávání neukládá. Vše se ukládá jen v tvém prohlížeči.</p>
@@ -2152,7 +2152,7 @@
             const on = isFav(player.page);
             favBtn.hidden = false;
             if (pipBtn && pipSupported) pipBtn.hidden = false;
-            if (castBtn && castSupported) castBtn.hidden = false;
+            if (castBtn) castBtn.hidden = false;   // okno s možnostmi se hodí v každém prohlížeči
             favBtn.textContent = on ? '★ V oblíbených' : '☆ Do oblíbených';
             favBtn.classList.toggle('on', on);
             favBtn.title = on ? 'Odebrat z oblíbených' : 'Přidat do oblíbených';
@@ -2209,25 +2209,94 @@
         videoPlayer.addEventListener('enterpictureinpicture', () => { pipBtn.textContent = '⧉ Zavřít obraz v obraze'; });
         videoPlayer.addEventListener('leavepictureinpicture', () => { pipBtn.textContent = '⧉ Obraz v obraze'; });
 
-        // ===== Přehrát na TV (Chromecast / AirPlay) =====
-        // Chrome a Edge: Remote Playback API (video.remote.prompt() otevře výběr zařízení).
-        // Safari: AirPlay přes webkitShowPlaybackTargetPicker(). Firefox to neumí, tlačítko se tam nezobrazí.
-        // Na TV se pošle adresa videa, takže se přehrává přímo tam (telefon/počítač může zůstat v klidu).
+        // ===== Přehrát na TV =====
+        // Žádný jediný způsob nefunguje všude, proto tlačítko otevře okno s možnostmi:
+        //  1) zařízení v síti: Chrome/Edge (Chromecast, Google TV) přes Remote Playback API,
+        //     Safari/iOS přes AirPlay (umí ho i LG webOS 2019+),
+        //  2) odkaz na video: otevře se v prohlížeči nebo aplikaci na TV (funguje všude),
+        //  3) návod na zrcadlení obrazovky (Miracast / Smart View).
+        // Video se do TV posílá přes Wi-Fi - Bluetooth na přenos videa nestačí.
         if (castBtn) {
+            const castDlg = document.getElementById('castDlg');
+            const castNative = document.getElementById('castNative');
+            const castShare = document.getElementById('castShare');
+            const castCopy = document.getElementById('castCopy');
+            const castLink = document.getElementById('castLink');
+            const castMsg = document.getElementById('castMsg');
+            const castClose = document.getElementById('castClose');
             const castLabel = (on) => { castBtn.textContent = on ? '📺 Přehrává se na TV' : '📺 Přehrát na TV'; castBtn.classList.toggle('on', !!on); };
-            castBtn.addEventListener('click', async () => {
+            let castOpener = null;
+
+            const tvLink = () => `${location.origin}${location.pathname}?watch=${encodeURIComponent(player.page)}&title=${encodeURIComponent(player.title || 'Video')}`;
+            const setMsg = (text) => { castMsg.textContent = text || ''; };
+            const closeCast = () => {
+                castDlg.hidden = true;
+                if (castOpener && typeof castOpener.focus === 'function') castOpener.focus();
+            };
+
+            castBtn.addEventListener('click', () => {
+                if (!player.page) return;
+                castOpener = castBtn;
+                castLink.value = tvLink();
+                setMsg('');
+                castNative.disabled = !castSupported;
+                castNative.textContent = castSupported
+                    ? '📡 Najít zařízení v síti (Chromecast, AirPlay)'
+                    : '📡 Zařízení v síti (tenhle prohlížeč to neumí)';
+                castShare.hidden = typeof navigator.share !== 'function';
+                castDlg.hidden = false;
+                (castSupported ? castNative : castCopy).focus();
+            });
+
+            castNative.addEventListener('click', async () => {
+                setMsg('');
                 try {
                     if (videoPlayer.remote && typeof videoPlayer.remote.prompt === 'function') {
                         await videoPlayer.remote.prompt();
+                        closeCast();
                     } else if (typeof videoPlayer.webkitShowPlaybackTargetPicker === 'function') {
                         videoPlayer.webkitShowPlaybackTargetPicker();
+                        closeCast();
                     }
                 } catch (err) {
                     if (err && err.name === 'NotAllowedError') return;   // výběr zařízení jen zavřel
-                    if (err && err.name === 'NotFoundError') notice('V síti nebyla nalezena žádná TV ani přehrávač.', 'error', 4000);
-                    else notice('Video se nepodařilo odeslat na TV.', 'error', 4000);
+                    setMsg(err && err.name === 'NotFoundError'
+                        ? 'V síti se nenašel Chromecast ani AirPlay. LG televize Chromecast nemají - použij AirPlay (iPhone, Mac) nebo odkaz pro TV níže.'
+                        : 'Video se nepodařilo odeslat. Zkus odkaz pro TV níže.');
                 }
             });
+
+            castShare.addEventListener('click', async () => {
+                try {
+                    await navigator.share({ title: player.title || 'Wflix', url: castLink.value });
+                } catch (err) {
+                    if (!err || err.name !== 'AbortError') setMsg('Sdílení se nepodařilo. Zkopíruj odkaz.');
+                }
+            });
+
+            castCopy.addEventListener('click', async () => {
+                const link = castLink.value;
+                try {
+                    await navigator.clipboard.writeText(link);
+                    setMsg('Odkaz je zkopírovaný. Otevři ho v prohlížeči na TV.');
+                } catch (err) {
+                    castLink.focus();
+                    castLink.select();
+                    let ok = false;
+                    try { ok = document.execCommand('copy'); } catch (e2) {}
+                    setMsg(ok ? 'Odkaz je zkopírovaný. Otevři ho v prohlížeči na TV.' : 'Označ odkaz výše a zkopíruj ho ručně.');
+                }
+            });
+            castLink.addEventListener('focus', () => castLink.select());
+
+            castClose.addEventListener('click', closeCast);
+            castDlg.addEventListener('click', (e) => { if (e.target === castDlg) closeCast(); });
+            // Klávesy v okně nesmí ovládat přehrávač (mezerník, šipky).
+            castDlg.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+                if (e.key === 'Escape') closeCast();
+            });
+
             if (videoPlayer.remote && typeof videoPlayer.remote.addEventListener === 'function') {
                 videoPlayer.remote.addEventListener('connect', () => castLabel(true));
                 videoPlayer.remote.addEventListener('disconnect', () => castLabel(false));
