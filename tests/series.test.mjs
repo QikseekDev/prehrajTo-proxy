@@ -244,7 +244,7 @@ test('stránka seriálu: popisek = číslo dílu, jedna řada na díl, escapová
 
     const html = seriesPageHtml(series);
     assert.equal((html.match(/class="ep-row"/g) || []).length, 3);
-    assert.equal((html.match(/class="ep-variant"/g) || []).length, 1, 'select jen u dílu s více zdroji');
+    assert.equal((html.match(/class="ep-variant"/g) || []).length, 0, 'žádný výběr zdroje - jeden díl = jedno video');
     assert.match(html, /S01E01/);
     assert.match(html, /ep-num">S02E02</, 'popisek je číslo dílu');
     assert.ok(!html.includes('S02E12'), 'číslo za pomlčkou není díl');
