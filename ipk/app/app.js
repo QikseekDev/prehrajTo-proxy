@@ -1357,6 +1357,7 @@
     hls: null,
     subs: [], subIndex: -1,
     triedRelay: false,
+    liveLock: false,      // živé vysílání nejde pozastavit (jen zavřít nebo přepnout kanál)
     idleTimer: null
   };
 
@@ -1377,6 +1378,7 @@
   }
 
   function resetVideo() {
+    player.liveLock = false;   // zavření přehrávače nebo přepnutí kanálu video smí zastavit
     destroyHls();
     try { video.pause(); } catch (e) { }
     video.removeAttribute('src');
@@ -1401,7 +1403,10 @@
     $('pSub').style.display = kind === 'live' ? 'none' : '';
     // Přehrát na TV: jen v mobilní/tabletové aplikaci (na TV samotné nemá smysl).
     $('pCast').style.display = canCast() ? '' : 'none';
-    $('pPlay').textContent = 'Pozastavit';
+    if ($('pSend')) $('pSend').style.display = canCast() ? '' : 'none';
+    // Živě: „Přehrát“ se nabízí jen dokud video nenaběhlo (blokovaný autoplay), „Pozastavit“ nikdy.
+    $('pPlay').textContent = kind === 'live' ? 'Přehrát' : 'Pozastavit';
+    $('pPlay').style.display = '';
     $('pRelay').textContent = (settings.direct && kind === 'movie') ? 'Přes server' : 'Znovu načíst';
     setPlayerState(null);
     show($('player'));
@@ -1440,6 +1445,7 @@
   function attachSource(src, isHls, opts) {
     opts = opts || {};
     destroyHls();
+    player.liveLock = player.kind === 'live';
     setPlayerState(null);
     if (isHls && window.Hls && window.Hls.isSupported()) {
       var hls = new window.Hls({
@@ -1463,6 +1469,14 @@
     // nativní HLS (Safari/iOS) i běžné mp4
     video.src = src;
     play();
+  }
+
+  function syncPlayBtn() {
+    var b = $('pPlay');
+    if (player.kind !== 'live') { b.style.display = ''; return; }
+    var hideIt = !video.paused;
+    b.style.display = hideIt ? 'none' : '';
+    if (hideIt && document.activeElement === b) focusEl($('pRelay'));
   }
 
   function play() {
@@ -1509,9 +1523,20 @@
   video.addEventListener('timeupdate', updateProgress);
   video.addEventListener('progress', updateProgress);
   video.addEventListener('durationchange', updateProgress);
-  video.addEventListener('play', function () { $('pPlay').textContent = 'Pozastavit'; bumpIdle(); });
+  video.addEventListener('play', function () {
+    $('pPlay').textContent = player.kind === 'live' ? 'Přehrát' : 'Pozastavit';
+    syncPlayBtn();
+    bumpIdle();
+  });
   video.addEventListener('pause', function () {
+    // Živé vysílání se nesmí pozastavit (tlačítko, ovladač, klepnutí ani systém): hned se pustí dál.
+    // Výjimka je appka na pozadí, tam se zvuk zastavit má (viz visibilitychange).
+    if (player.liveLock && !$('player').hidden && !document.hidden && !video.ended) {
+      play();
+      return;
+    }
     $('pPlay').textContent = 'Přehrát';
+    syncPlayBtn();
     $('player').classList.remove('idle');
   });
   video.addEventListener('waiting', function () { setPlayerState('Načítám stream…'); });
@@ -1545,31 +1570,75 @@
   // Klik/tap do obrazu (ne na ovládací prvky) přehraje nebo pozastaví.
   $('player').addEventListener('click', function (e) {
     if (e.target === $('player') || e.target === video) {
-      if (video.paused) play(); else video.pause();
+      if (video.paused) play(); else if (player.kind !== 'live') video.pause();
       bumpIdle();
     }
   });
 
   $('pPlay').addEventListener('click', function () {
     if (video.ended) { video.currentTime = 0; }
-    if (video.paused) play(); else video.pause();
+    if (video.paused) play(); else if (player.kind !== 'live') video.pause();
     bumpIdle();
   });
   $('pBack').addEventListener('click', function () { closePlayer(); renderRows(); focusAfterOverlay(); });
   $('pRelay').addEventListener('click', function () { switchToRelay(video.currentTime); });
 
-  // Přehrát na TV: otevře systémové "Přenést obrazovku" (Google Cast / Miracast / Smart View).
-  // Video pak hraje dál v aplikaci a zrcadlí se na vybranou TV.
+  // Přehrát na TV (telefon / tablet). Dvě cesty, aby to šlo na jakémkoli zařízení a TV:
+  //  1) Přenést obrazovku – systémové zrcadlení (Google Cast, Miracast, Smart View, Screen Share u LG).
+  //     Video pak hraje dál v aplikaci a zrcadlí se na vybranou TV.
+  //  2) Poslat do aplikace – adresu videa dostane jiná aplikace (Web Video Caster, LG ThinQ, VLC, …),
+  //     která ho pustí přímo na TV. Funguje i tam, kde telefon zrcadlení obrazovky nemá.
   function canCast() {
     if (!Native || typeof Native.castScreen !== 'function') return false;
     try { if (typeof Native.isTV === 'function' && Native.isTV()) return false; } catch (e) { }
     return true;
   }
+
+  function castableUrl() {
+    var s = video.currentSrc || video.src || '';
+    if (/^https?:/i.test(s)) return s;                       // mp4 / nativní HLS
+    if (player.kind === 'live') {                            // hls.js hraje z blob: → pošleme adresu kanálu
+      var ch = player.page && (state.channels[player.page.channelIndex] || player.page.channel);
+      if (!ch) return '';
+      return (ch.ua || ch.referrer || !settings.direct) ? liveRelayUrl(ch) : ch.url;
+    }
+    if (player.page) return streamUrl(player.page, false, player.title, player.cdn || '');
+    return '';
+  }
+
+  function copyToClipboard(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) { }
+    return false;
+  }
+
+  function sendToApp() {
+    var u = castableUrl();
+    if (!u) { toast('Video zatím nemá adresu, kterou by šlo odeslat.', 3500); return; }
+    var ok = false;
+    if (Native && typeof Native.sendToApp === 'function') {
+      try { ok = !!Native.sendToApp(u, player.title || ''); } catch (e) { }
+    }
+    if (ok) return;
+    if (copyToClipboard(u)) toast('Odkaz na video je zkopírovaný – vlož ho do aplikace, která umí TV.', 5000);
+    else toast(u, 9000);
+  }
+
   $('pCast').addEventListener('click', function () {
     var ok = false;
     try { ok = !!Native.castScreen(); } catch (e) { }
-    toast(ok ? 'Vyber TV v nabídce Přenést obrazovku a vrať se do aplikace.' : 'Tohle zařízení přenos obrazovky nepodporuje.', 4000);
+    if (ok) {
+      toast('Vyber TV v nabídce (Přenést obrazovku, Smart View, Screen Share) a vrať se do aplikace.', 5000);
+    } else {
+      toast('Tenhle telefon nemá přenos obrazovky, nabízím odeslání videa do jiné aplikace.', 3500);
+      sendToApp();
+    }
   });
+  if ($('pSend')) $('pSend').addEventListener('click', sendToApp);
 
   $('pBar').addEventListener('click', function (e) {
     var r = $('pBar').getBoundingClientRect();
@@ -1850,8 +1919,15 @@
 
     if (!$('kbd').hidden && kbdPhysicalKey(e)) return;
     var typing = isTextField(e.target) || isTextField(document.activeElement);
-    if (code === 415) { e.preventDefault(); if (!$('player').hidden) play(); return; }
-    if (code === 19) { e.preventDefault(); if (!$('player').hidden) video.pause(); return; }
+    if (code === 415 || k === 'MediaPlay') { e.preventDefault(); if (!$('player').hidden) play(); return; }
+    if (code === 19 || k === 'MediaPause') { e.preventDefault(); if (!$('player').hidden && player.kind !== 'live') video.pause(); return; }
+    if (k === 'MediaPlayPause' || code === 179) {
+      e.preventDefault();
+      if (!$('player').hidden) { if (video.paused) play(); else if (player.kind !== 'live') video.pause(); }
+      return;
+    }
+    if (k === 'MediaFastForward') { e.preventDefault(); if (!$('player').hidden) seekBy(10); return; }
+    if (k === 'MediaRewind') { e.preventDefault(); if (!$('player').hidden) seekBy(-10); return; }
     if (code === 412) { e.preventDefault(); if (!$('player').hidden) seekBy(-10); return; }
     if (code === 417) { e.preventDefault(); if (!$('player').hidden) seekBy(10); return; }
 
@@ -1932,9 +2008,11 @@
   /* Android: když appka jde do pozadí, uložíme pozici a video pozastavíme,
      aby zvuk nehrál přes jiné aplikace. */
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) return;
-    if (!$('player').hidden) {
+    if ($('player').hidden) return;
+    if (document.hidden) {
       try { if (!video.paused) video.pause(); } catch (e) { }
+    } else if (player.kind === 'live' && video.paused) {
+      play();                                   // živé vysílání po návratu samo naběhne
     }
   });
 
