@@ -290,3 +290,26 @@ test('styly pro seriály existují a CSS je vyvážené', () => {
         assert.ok(css.includes(sel), `chybí styl ${sel}`);
     }
 });
+
+test('appka: živé vysílání nejde pozastavit', () => {
+    assert.match(appSrc, /function liveLocked\(\)/);
+    // klik do obrazu, tlačítko, klávesy i systémové pozastavení kontrolují zámek
+    const uses = (appSrc.match(/liveLocked\(\)/g) || []).length;
+    assert.ok(uses >= 6, 'liveLocked se používá u všech cest k pauze: ' + uses);
+    assert.match(appSrc, /MediaPlayPause/);
+    assert.match(appSrc, /pPlay'\)\.style\.display = kind === 'live'/);
+});
+
+test('appka: levý panel s kategoriemi a hledání s klávesnicí vedle výsledků', () => {
+    const html = readFileSync(join(root, 'ipk/app/index.html'), 'utf8');
+    const rail = html.slice(html.indexOf('id="rail"'), html.indexOf('</nav>'));
+    for (const n of ['data-nav="search"', 'data-nav="home"', 'data-nav="live"', 'data-cat="České"', 'data-nav="settings"']) {
+        assert.ok(rail.includes(n), 'v panelu chybí ' + n);
+    }
+    assert.ok(html.includes('id="skeys"') && html.includes('id="searchField"') && html.includes('id="searchHint"'));
+    assert.match(appSrc, /function searchKey\(/);
+    assert.match(appSrc, /function scheduleSearch\(/);
+    const css = readFileSync(join(root, 'ipk/app/styles.css'), 'utf8');
+    assert.match(css, /\.skeys\{/);
+    assert.match(css, /body:not\(\.touch\) \.navbtn/);
+});

@@ -622,6 +622,12 @@
     if (list.length) focusEl(list[0]);
   }
 
+  function firstVisibleFocusable(root) {
+    var n = root.querySelectorAll('.f');
+    for (var i = 0; i < n.length; i++) if (isVisible(n[i])) return n[i];
+    return null;
+  }
+
   function currentFocus() {
     var a = document.activeElement;
     if (a && a.classList && a.classList.contains('f')) return a;
@@ -761,7 +767,11 @@
     }
     $('main').scrollTop = 0;
     if (name === 'live' && !state.channels.length) loadLive();
-    if (name === 'search' && isTouch) setTimeout(function () { $('searchInput').focus(); }, 60);
+    if (name === 'search') {
+      setSearchText($('searchInput').value);
+      renderSearchHint();
+      if (isTouch) setTimeout(function () { $('searchInput').focus(); }, 60);
+    }
   }
 
   /* ------------------------------------------------------------------ *
@@ -877,6 +887,7 @@
       state.heroIndex = Math.floor(Date.now() / 3600000) % Math.max(1, state.catalog.length);
       renderHero();
       renderRows();
+      renderSearchHint();
       if (state.view === 'home' && !currentFocus()) {
         var b = $('hero').querySelector('.btn.primary');
         if (b) focusEl(b);
@@ -899,22 +910,102 @@
     return movies.slice().sort(function (a, b) { return score(a) - score(b); });
   }
 
-  function doSearch(q) {
+  /* ------------------------------------------------------------------ *
+   *  Hledání jako na Netflixu / Oneplay: vlevo pole + klávesnice, vpravo výsledky
+   *  (na TV se výsledky ukazují za pochodu, při psaní)
+   * ------------------------------------------------------------------ */
+  var SK_ROWS = ['abcdef', 'ghijkl', 'mnopqr', 'stuvwx', 'yz0123', '456789'];
+  var searchTimer = null;
+  var searchToken = 0;
+
+  function renderSearchKeys() {
+    var html = '';
+    for (var r = 0; r < SK_ROWS.length; r++) {
+      for (var c = 0; c < SK_ROWS[r].length; c++) {
+        var ch = SK_ROWS[r].charAt(c);
+        html += '<button class="skey f" type="button" data-sk="' + ch + '">' + ch + '</button>';
+      }
+    }
+    html += '<button class="skey wide f" type="button" data-sk=" ">mezera</button>'
+      + '<button class="skey wide f" type="button" data-sk="__back">smazat</button>'
+      + '<button class="skey wide f" type="button" data-sk="__clear">vymazat</button>'
+      + '<button class="skey full f" type="button" data-sk="__go">Hledat</button>';
+    $('skeys').innerHTML = html;
+  }
+
+  /* Text v poli vlevo (zdroj pravdy je skrytý #searchInput, ten používá i mobil). */
+  function setSearchText(v) {
+    v = String(v || '');
+    $('searchInput').value = v;
+    $('searchText').textContent = v;
+    $('searchField').classList.toggle('empty', !v);
+    $('searchHint').hidden = !!v;
+  }
+
+  function renderSearchHint() {
+    var box = $('searchHint');
+    var items = state.catalog.slice(0, 10);
+    if (!items.length) { box.innerHTML = ''; return; }
+    var html = '<div class="hint-title">Oblíbená hledání</div><div class="hint-list">';
+    for (var i = 0; i < items.length; i++) {
+      html += '<button class="f hint" type="button" data-q="' + esc(itemQuery(items[i])) + '">'
+        + icon('search') + '<span>' + esc(itemTitle(items[i])) + '</span></button>';
+    }
+    box.innerHTML = html + '</div>';
+    var btns = box.querySelectorAll('.hint');
+    for (var b = 0; b < btns.length; b++) {
+      (function (el) {
+        el.addEventListener('click', function () { doSearch(el.getAttribute('data-q')); });
+      })(btns[b]);
+    }
+  }
+
+  function scheduleSearch(v) {
+    clearTimeout(searchTimer);
+    v = String(v || '').trim();
+    if (!v) {                                     // smazáno vše: výsledky pryč, zase nabídka
+      searchToken++;
+      state.results = []; state.entries = [];
+      $('searchGrid').innerHTML = '';
+      $('searchState').className = 'state';
+      $('searchState').textContent = '';
+      return;
+    }
+    if (v.length < 2) return;
+    searchTimer = setTimeout(function () { doSearch(v, true); }, 700);
+  }
+
+  function searchKey(k) {
+    var v = $('searchInput').value;
+    if (k === '__go') { clearTimeout(searchTimer); doSearch(v); return; }
+    if (k === '__back') v = v.slice(0, -1);
+    else if (k === '__clear') v = '';
+    else { if (v.length >= 60) return; v += k; }
+    setSearchText(v);
+    scheduleSearch(v);
+  }
+
+  function doSearch(q, quiet) {
     q = String(q || '').trim();
-    if (!q) { toast('Zadej název filmu nebo seriálu.'); return Promise.resolve(); }
+    clearTimeout(searchTimer);
+    if (!q) { if (!quiet) toast('Zadej název filmu nebo seriálu.'); return Promise.resolve(); }
+    var token = ++searchToken;
     state.query = q;
-    $('searchInput').value = q;
-    $('searchGrid').innerHTML = '';
+    setSearchText(q);
     var st = $('searchState');
+    if (!quiet) $('searchGrid').innerHTML = '';
     st.className = 'state show';
     st.textContent = 'Hledám „' + q + '“ …';
-    loading('Hledám „' + q + '“ …');
+    if (!quiet) loading('Hledám „' + q + '“ …');
     return apiJson('/api/search?q=' + encodeURIComponent(q)).then(function (d) {
-      loading(null);
+      if (!quiet) loading(null);
+      if (token !== searchToken) return;          // mezitím se psalo dál
       if (!d) { st.className = 'state show err'; st.textContent = 'Server nevrátil platnou odpověď.'; return; }
       if (!d.success) { st.className = 'state show err'; st.textContent = d.error || 'Chyba při vyhledávání.'; return; }
       var movies = d.movies || [];
       if (!movies.length) {
+        state.results = []; state.entries = [];
+        $('searchGrid').innerHTML = '';
         st.className = 'state show';
         st.textContent = 'Nic jsme nenašli pro „' + q + '“. Zkus jiný název nebo jiný pravopis.';
         return;
@@ -925,7 +1016,8 @@
       st.textContent = 'Nalezeno ' + state.entries.length + ' výsledků pro „' + q + '“';
       renderResults();
     }).catch(function (e) {
-      loading(null);
+      if (!quiet) loading(null);
+      if (token !== searchToken) return;
       st.className = 'state show err';
       st.textContent = 'Chyba: ' + e.message;
     });
@@ -1213,7 +1305,7 @@
       state.query = q;
       closeDetail();
       setView('search');
-      $('searchInput').value = q;
+      setSearchText(q);
       $('searchState').className = 'state show';
       $('searchState').textContent = 'Nalezeno ' + state.entries.length + ' výsledků pro „' + q + '“';
       renderResults();
@@ -1377,7 +1469,6 @@
   }
 
   function resetVideo() {
-    player.allowPause = true;          // zavření přehrávače smí video zastavit i u živého vysílání
     destroyHls();
     try { video.pause(); } catch (e) { }
     video.removeAttribute('src');
@@ -1392,20 +1483,18 @@
 
   function openPlayer(kind, title) {
     player.kind = kind;
-    player.allowPause = false;
     player.title = title || '';
     player.mode = settings.direct ? 'direct' : 'relay';
     player.triedRelay = false;
     $('pTitle').textContent = title || '';
     $('pLive').hidden = kind !== 'live';
+    $('pPlay').style.display = kind === 'live' ? 'none' : '';
     $('pBar').style.display = kind === 'live' ? 'none' : '';
     $('pTime').style.display = kind === 'live' ? 'none' : '';
     $('pSub').style.display = kind === 'live' ? 'none' : '';
     // Přehrát na TV: jen v mobilní/tabletové aplikaci (na TV samotné nemá smysl).
     $('pCast').style.display = canCast() ? '' : 'none';
     $('pPlay').textContent = 'Pozastavit';
-    // Živé vysílání se nedá pozastavit - tlačítko Pozastavit se vůbec nezobrazí.
-    $('pPlay').style.display = kind === 'live' ? 'none' : '';
     $('pRelay').textContent = (settings.direct && kind === 'movie') ? 'Přes server' : 'Znovu načíst';
     setPlayerState(null);
     show($('player'));
@@ -1476,6 +1565,9 @@
     }
   }
 
+  /* Živé vysílání se nedá pozastavit (tlačítko, dotyk, dálkové ovládání, systém). */
+  function liveLocked() { return player.kind === 'live' && !$('player').hidden; }
+
   function updateProgress() {
     if (player.kind === 'live') return;
     var d = video.duration;
@@ -1514,18 +1606,16 @@
   video.addEventListener('progress', updateProgress);
   video.addEventListener('durationchange', updateProgress);
   video.addEventListener('play', function () { $('pPlay').textContent = 'Pozastavit'; bumpIdle(); });
-  // Živé vysílání nejde pozastavit (ani tlačítkem, klepnutím, ani klávesou na ovladači).
-  function liveLocked() {
-    return player.kind === 'live' && !player.allowPause && !$('player').hidden;
-  }
-
   video.addEventListener('pause', function () {
-    if (liveLocked()) {          // pojistka: cokoli video zastaví, hned se znovu rozběhne
-      play();
-      return;
-    }
     $('pPlay').textContent = 'Přehrát';
     $('player').classList.remove('idle');
+  });
+  // Kdyby live stream pozastavilo něco jiného (systém, tlačítko na ovladači), hned se rozběhne.
+  video.addEventListener('pause', function () {
+    if (!liveLocked() || document.hidden || video.ended) return;
+    setTimeout(function () {
+      if (liveLocked() && video.paused && !document.hidden && video.currentSrc) play();
+    }, 60);
   });
   video.addEventListener('waiting', function () { setPlayerState('Načítám stream…'); });
   video.addEventListener('playing', function () { setPlayerState(null); bumpIdle(); });
@@ -1558,7 +1648,8 @@
   // Klik/tap do obrazu (ne na ovládací prvky) přehraje nebo pozastaví.
   $('player').addEventListener('click', function (e) {
     if (e.target === $('player') || e.target === video) {
-      if (video.paused) play(); else if (!liveLocked()) video.pause();
+      if (liveLocked()) { bumpIdle(); return; }
+      if (video.paused) play(); else video.pause();
       bumpIdle();
     }
   });
@@ -1864,14 +1955,23 @@
 
     if (!$('kbd').hidden && kbdPhysicalKey(e)) return;
     var typing = isTextField(e.target) || isTextField(document.activeElement);
+    if (liveLocked() && (k === 'MediaPause' || k === 'MediaPlayPause' || k === 'Pause' || code === 19 || code === 179)) {
+      e.preventDefault(); bumpIdle(); return;   // živé vysílání nejde pozastavit
+    }
     if (code === 415) { e.preventDefault(); if (!$('player').hidden) play(); return; }
-    if (code === 19) { e.preventDefault(); if (!$('player').hidden && !liveLocked()) video.pause(); return; }
-    if (liveLocked() && (code === 179 || k === 'MediaPause' || k === 'MediaPlayPause' || k === 'Pause')) { e.preventDefault(); return; }
+    if (code === 19) { e.preventDefault(); if (!$('player').hidden) video.pause(); return; }
     if (code === 412) { e.preventDefault(); if (!$('player').hidden) seekBy(-10); return; }
     if (code === 417) { e.preventDefault(); if (!$('player').hidden) seekBy(10); return; }
 
     var playerOpen = !$('player').hidden;
     var kbdOpen = !$('kbd').hidden;
+
+    // Na TV v hledání píše i fyzická klávesnice; Backspace maže znak, dokud je co mazat.
+    if (state.view === 'search' && !isTouch && !typing && !playerOpen && !kbdOpen
+        && $('detail').hidden && $('series').hidden && k && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (k === 'Backspace' && $('searchInput').value) { e.preventDefault(); searchKey('__back'); return; }
+      if (k.length === 1 && k !== ' ') { e.preventDefault(); searchKey(k.toLowerCase()); return; }
+    }
 
     if (k) {
       // Backspace je „zpět“ jen mimo textové pole; v poli maže znaky.
@@ -1948,11 +2048,10 @@
      aby zvuk nehrál přes jiné aplikace. */
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) {
-      if (!$('player').hidden && player.kind === 'live') { player.allowPause = false; play(); }
+      if (liveLocked() && video.paused && video.currentSrc) play();   // live po návratu hned pokračuje
       return;
     }
     if (!$('player').hidden) {
-      player.allowPause = true;         // v pozadí smí video stát, aby nehrál zvuk přes jiné aplikace
       try { if (!video.paused) video.pause(); } catch (e) { }
     }
   });
@@ -1960,6 +2059,26 @@
   /* ------------------------------------------------------------------ *
    *  Start
    * ------------------------------------------------------------------ */
+  /* Levý panel: kategorie skočí na řadu na úvodní stránce. */
+  function openCategory(name, btn) {
+    setView('home');
+    var rows = $('rows').querySelectorAll('.row');
+    var target = null;
+    for (var i = 0; i < rows.length; i++) {
+      var t = rows[i].querySelector('.row-title');
+      if (t && t.textContent === name) { target = rows[i]; break; }
+    }
+    if (!target) {
+      toast(name === 'Moje oblíbené' ? 'Zatím nemáš nic v oblíbených.' : 'V téhle kategorii zatím nic není.');
+      return;
+    }
+    var main = $('main');
+    main.scrollTop += target.getBoundingClientRect().top - main.getBoundingClientRect().top - 16;
+    if (btn) btn.classList.add('active');
+    var card = target.querySelector('.f');
+    if (card) focusEl(card);
+  }
+
   function startApp() {
     show($('shell'));
     setView('home');
@@ -1971,11 +2090,13 @@
 
   function boot() {
     document.body.classList.toggle('touch', isTouch);
+    document.documentElement.classList.toggle('touch', isTouch);
+    renderSearchKeys();
     loadSettings();
     applyCueStyle();
     $('verLine').textContent = VERSION;
 
-    var navs = document.querySelectorAll('.navbtn');
+    var navs = document.querySelectorAll('.navbtn[data-nav]');
     for (var i = 0; i < navs.length; i++) {
       (function (el) {
         el.addEventListener('click', function () {
@@ -1985,12 +2106,26 @@
             var b = $('hero').querySelector('.btn.primary');
             if (b) focusEl(b);
           } else {
-            var first = $('view-' + v).querySelector('.f');
+            var first = firstVisibleFocusable($('view-' + v));
             if (first) focusEl(first);
           }
         });
       })(navs[i]);
     }
+
+    var cats = document.querySelectorAll('[data-cat]');
+    for (var ci = 0; ci < cats.length; ci++) {
+      (function (el) {
+        el.addEventListener('click', function () { openCategory(el.getAttribute('data-cat'), el); });
+      })(cats[ci]);
+    }
+
+    // klávesnice vedle výsledků hledání (TV)
+    $('skeys').addEventListener('click', function (e) {
+      var t = e.target;
+      while (t && t !== this && !(t.getAttribute && t.getAttribute('data-sk') !== null)) t = t.parentNode;
+      if (t && t !== this) searchKey(t.getAttribute('data-sk'));
+    });
 
     // hledání
     $('searchGo').addEventListener('click', function () { doSearch($('searchInput').value); });

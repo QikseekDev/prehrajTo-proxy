@@ -2225,18 +2225,16 @@
             const castMsg = document.getElementById('castMsg');
             const castClose = document.getElementById('castClose');
             const castLabel = (on) => { castBtn.textContent = on ? '📺 Přehrává se na TV' : '📺 Přehrát na TV'; castBtn.classList.toggle('on', !!on); };
-            let castOpener = null;
 
             const tvLink = () => `${location.origin}${location.pathname}?watch=${encodeURIComponent(player.page)}&title=${encodeURIComponent(player.title || 'Video')}`;
             const setMsg = (text) => { castMsg.textContent = text || ''; };
             const closeCast = () => {
                 castDlg.hidden = true;
-                if (castOpener && typeof castOpener.focus === 'function') castOpener.focus();
+                castBtn.focus();
             };
 
             castBtn.addEventListener('click', () => {
                 if (!player.page) return;
-                castOpener = castBtn;
                 castLink.value = tvLink();
                 setMsg('');
                 castNative.disabled = !castSupported;

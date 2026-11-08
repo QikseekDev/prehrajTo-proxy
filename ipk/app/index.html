@@ -27,9 +27,14 @@
   <div id="shell" class="shell" hidden>
     <nav id="rail" class="rail" aria-label="Hlavní navigace">
       <div class="rail-logo">Wflix</div>
-      <button class="navbtn f" data-nav="home" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-home" xlink:href="#i-home"/></svg></span><span class="lbl">Domů</span></button>
       <button class="navbtn f" data-nav="search" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-search" xlink:href="#i-search"/></svg></span><span class="lbl">Hledat</span></button>
+      <button class="navbtn f" data-nav="home" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-home" xlink:href="#i-home"/></svg></span><span class="lbl">Domů</span></button>
       <button class="navbtn f" data-nav="live" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-live" xlink:href="#i-live"/></svg></span><span class="lbl">Živě</span></button>
+      <div class="rail-group">Kategorie</div>
+      <button class="navbtn f cat" data-cat="České" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-film" xlink:href="#i-film"/></svg></span><span class="lbl">České</span></button>
+      <button class="navbtn f cat" data-cat="Rodinné" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-film" xlink:href="#i-film"/></svg></span><span class="lbl">Rodinné</span></button>
+      <button class="navbtn f cat" data-cat="Sci-fi" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-film" xlink:href="#i-film"/></svg></span><span class="lbl">Sci-fi</span></button>
+      <button class="navbtn f cat" data-cat="Moje oblíbené" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-star" xlink:href="#i-star"/></svg></span><span class="lbl">Oblíbené</span></button>
       <div class="rail-spacer"></div>
       <button class="navbtn f" data-nav="settings" type="button"><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-settings" xlink:href="#i-settings"/></svg></span><span class="lbl">Nastavení</span></button>
     </nav>
@@ -41,7 +46,7 @@
       </section>
 
       <section id="view-search" class="view">
-        <div class="page-head">
+        <div class="page-head search-head">
           <h1 class="page-title">Hledat</h1>
           <div class="searchbar">
             <span class="s-ico" aria-hidden="true"><svg class="i" aria-hidden="true"><use href="#i-search" xlink:href="#i-search"/></svg></span>
@@ -50,8 +55,20 @@
             <button id="searchGo" class="f btn" type="button">Hledat</button>
           </div>
         </div>
-        <div id="searchGrid" class="grid"></div>
-        <div id="searchState" class="state"></div>
+        <div class="search-layout">
+          <div class="search-side">
+            <div id="searchField" class="search-field empty">
+              <span class="s-ico" aria-hidden="true"><svg class="i" aria-hidden="true"><use href="#i-search" xlink:href="#i-search"/></svg></span>
+              <span id="searchText" class="search-text"></span><span class="caret"></span>
+            </div>
+            <div id="skeys" class="skeys"></div>
+          </div>
+          <div class="search-main">
+            <div id="searchHint" class="search-hint"></div>
+            <div id="searchGrid" class="grid"></div>
+            <div id="searchState" class="state"></div>
+          </div>
+        </div>
       </section>
 
       <section id="view-live" class="view">
