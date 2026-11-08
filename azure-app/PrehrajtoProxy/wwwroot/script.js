@@ -43,6 +43,10 @@
         let activeSeries = null;      // otevřený seriál (pro návrat z přehrávače)
         let seriesReturn = false;     // do přehrávače se šlo z epizody seriálu
         let lastQuery = '';
+        // Dotahování dalších stránek hledání pro otevřený seriál (klíč = series.key):
+        // pages = poslední načtená stránka, done = víc už není, busy = právě běží.
+        const seriesLoad = new Map();
+        const SERIES_MAX_PAGES = 10;
         // Stránkování hledání: první stránka se ověřuje (mrtvé kusy zmizí), další se jen
         // přidají - ověřování je to pomalé a naráží na 429, a videa většinou fungují i bez něj.
 
@@ -393,6 +397,25 @@
             };
         }
 
+        // Stránka 2+ hledání: připojí jen epizody stejného seriálu, ostatní výsledky ignoruje.
+        // Vrací nový finalizovaný seriál a nově přidané filmy (kvůli přehrávání z currentResults).
+        function mergeSeriesMovies(series, movies) {
+            const known = new Set(series.raw.map(r => r.movie.url));
+            const addedMovies = [];
+            (movies || []).forEach(movie => {
+                if (!movie || !movie.url || known.has(movie.url)) return;
+                const parsed = parseEpisodeTitle(movie.title);
+                if (!parsed || seriesKeyOf(parsed.base) !== series.key) return;
+                known.add(movie.url);
+                series.raw.push({ movie, parsed });
+                addedMovies.push(movie);
+                if (!series.poster && movie.thumbnail) series.poster = movie.thumbnail;
+                if (!series.year && movie.year) series.year = movie.year;
+            });
+            if (!addedMovies.length) return { added: 0, series, addedMovies };
+            return { added: addedMovies.length, series: finalizeSeries(series), addedMovies };
+        }
+
         // kolik různých dílů sezóna pokrývá (soubor S02E02-12 počítá díly 2-12)
         function episodeSpanCount(season) {
             const nums = new Set();
@@ -735,6 +758,7 @@
             activeSeries = null;
             seriesReturn = false;
             searchEntries = [];
+            seriesLoad.clear();
             lastQuery = '';
             searchInput.value = '';
             // Vždy překreslit: osobní řady se mezitím mohly změnit (dozrál postup, přibyl oblíbený).
@@ -1135,6 +1159,7 @@
             activeSeries = null;
             seriesReturn = false;
             searchEntries = [];
+            seriesLoad.clear();
             resultsLoading(`Hledám „${query}" …`);
 
             try {
@@ -1215,7 +1240,9 @@
             card.onclick = (e) => {
                 if (e.ctrlKey || e.metaKey || e.button !== 0) return;   // nechat otevřít v nové kartě
                 e.preventDefault();
-                openSeriesPage(series, true);
+                // podle klíče, ne podle uzavřeného objektu - po dotažení dalších stránek
+                // je v searchEntries novější verze seriálu s víc epizodami
+                openSeriesByKey(series.key, true);
             };
             card.innerHTML = `
                     <div class="card-play"><i>▶</i></div>
@@ -1239,13 +1266,92 @@
             stopVideo();
             hideStatus();
             pageTitle.textContent = series.title;
-            pageBody.innerHTML = seriesPageHtml(series);
+            pageBody.innerHTML = seriesPageHtml(series, seriesLoadNote(series));
             showSection('page');
             if (push !== false) window.history.pushState({}, '', seriesUrl(series.key));
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            loadMoreEpisodes(series);
         }
 
-        function seriesPageHtml(series) {
+        // ===== Dotahování epizod (stránky 2+) =====
+        // Není to stránkování v UI: appka jen dohledá další výsledky hledání pro otevřený
+        // seriál, dokud stránka něco vrací (max SERIES_MAX_PAGES kvůli limitu prehraj.to).
+
+        function seriesLoadNote(series) {
+            const st = seriesLoad.get(series.key);
+            if (!st) return '';
+            if (st.busy) return 'Načítám další epizody…';
+            if (st.error) return 'Další epizody se nepodařilo načíst.';
+            if (st.done && st.pages > 1) return 'Načteno vše dostupné.';
+            return '';
+        }
+
+        function refreshSeriesPage() {
+            if (!activeSeries || pageSection.style.display !== 'block') return;
+            pageBody.innerHTML = seriesPageHtml(activeSeries, seriesLoadNote(activeSeries));
+        }
+
+        function seriesLoadState(key) {
+            let st = seriesLoad.get(key);
+            if (!st) {
+                st = { pages: 1, done: false, busy: false, error: '', emptyStreak: 0 };
+                seriesLoad.set(key, st);
+            }
+            return st;
+        }
+
+        function updateSeriesCard(series) {
+            const card = Array.from(resultsGrid.querySelectorAll('.series-card'))
+                .find(c => c.dataset.seriesKey === series.key);
+            const meta = card && card.querySelector('.year');
+            if (meta) meta.textContent = seriesMeta(series);
+        }
+
+        async function loadMoreEpisodes(startSeries) {
+            const st = seriesLoadState(startSeries.key);
+            if (st.busy || st.done || !lastQuery) return;
+            st.busy = true;
+            st.error = '';
+            refreshSeriesPage();
+            try {
+                while (!st.done) {
+                    // uživatel odešel jinam (jiný seriál, přehrávač, domovská stránka)
+                    if (!activeSeries || activeSeries.key !== startSeries.key) break;
+                    if (pageSection.style.display !== 'block') break;
+                    if (st.pages >= SERIES_MAX_PAGES) { st.done = true; break; }
+
+                    const page = st.pages + 1;
+                    const { data, rateLimited } = await apiJson(
+                        `/api/search?q=${encodeURIComponent(lastQuery)}&page=${page}${proxyQS()}`,
+                        { retries: 1 });
+                    if (rateLimited || !data || !data.success || !Array.isArray(data.movies)) { st.done = true; break; }
+                    // prázdná stránka = konec výsledků
+                    if (data.movies.length === 0) { st.done = true; break; }
+                    st.pages = page;
+
+                    const res = mergeSeriesMovies(activeSeries, data.movies);
+                    if (res.added) {
+                        st.emptyStreak = 0;
+                        currentResults.push(...res.addedMovies);
+                        const entry = searchEntries.find(x => x.type === 'series' && x.series.key === res.series.key);
+                        if (entry) entry.series = res.series;
+                        activeSeries = res.series;
+                        updateSeriesCard(res.series);
+                        refreshSeriesPage();
+                    } else if (++st.emptyStreak >= 2) {
+                        // dvě stránky v řadě bez nových epizod = další nemá smysl zkoušet
+                        st.done = true;
+                    }
+                }
+            } catch (e) {
+                st.error = (e && e.message) ? e.message : 'chyba';
+            } finally {
+                st.busy = false;
+                refreshSeriesPage();
+            }
+        }
+
+        function seriesPageHtml(series, loadNote) {
             const poster = series.poster
                 ? `<div class="series-poster"><img src="${escapeHtml(series.poster)}" alt=""></div>`
                 : '';
@@ -1254,9 +1360,10 @@
                     ${poster}
                     <div class="series-head-text">
                         <div class="series-sub">${escapeHtml([series.year, seriesMeta(series)].filter(Boolean).join(' · '))}</div>
-                        <p class="series-note">Epizody jsou poskládané z výsledků hledání – prehraj.to nevede stránku seriálu, takže seznam nemusí být úplný.</p>
+                        <p class="series-note">Epizody se skládají z výsledků hledání – prehraj.to nevede stránku seriálu. Appka u otevřeného seriálu dotahuje další stránky, dokud něco vrací.</p>
                     </div>
                 </div>
+                ${loadNote ? `<div class="series-load">${escapeHtml(loadNote)}</div>` : ''}
                 ${series.seasons.map(seriesSeasonHtml).join('')}
             `;
         }

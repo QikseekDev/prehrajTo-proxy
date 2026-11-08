@@ -23,17 +23,17 @@ function slice(startMarker, endMarker, what) {
 
 function loadParser() {
     const block = slice('// ===== Seriály =====', '        function saveThumbs() {', 'parser');
-    return new Function('norm', 'tokens', block + '\nreturn { parseEpisodeTitle, groupSearchResults, seriesMeta, czCount, episodeSpanCount };')(norm, tokens);
+    return new Function('norm', 'tokens', block + '\nreturn { parseEpisodeTitle, groupSearchResults, mergeSeriesMovies, seriesMeta, czCount, episodeSpanCount };')(norm, tokens);
 }
 
 function loadSeriesPage() {
-    const block = slice('        function seriesPageHtml(series) {', '        // Klik na epizodu', 'stránka seriálu');
+    const block = slice('        function seriesPageHtml(', '        // Klik na epizodu', 'stránka seriálu');
     const parser = loadParser();
     const escapeHtml = str => String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     return new Function('escapeHtml', 'czCount', 'seriesMeta', 'episodeSpanCount', block + '\nreturn { seriesPageHtml };')(escapeHtml, parser.czCount, parser.seriesMeta, parser.episodeSpanCount);
 }
 
-const { parseEpisodeTitle, groupSearchResults, seriesMeta, czCount } = loadParser();
+const { parseEpisodeTitle, groupSearchResults, mergeSeriesMovies, seriesMeta, czCount } = loadParser();
 
 // [název, base, sezóna, první díl, koncový díl (null = jeden díl)]
 const parsed = [
@@ -126,6 +126,31 @@ test('soubor S02E02-12 je jeden řádek, ne kopie pro každý díl', () => {
     assert.equal(pack.variants.length, 1, 'duplicitní upload se nesmí přidat dvakrát');
     assert.equal(show.episodeCount, 12, 'pokryté díly: 1 + 2-12');
     assert.equal(season.episodes.filter(e => e.episodeEnd).length, 1, 'žádné rozkopírování');
+});
+
+test('stránka 2+ přidá jen epizody stejného seriálu a zbytek ignoruje', () => {
+    const page1 = [
+        m('Mr. Robot S01E01', 'u1'),
+        m('Mr. Robot S01E02', 'u2'),
+    ];
+    const show = groupSearchResults(page1).find(e => e.type === 'series').series;
+    const page2 = [
+        m('Mr. Robot S01E01', 'u1'),                       // už známá URL
+        m('Mr. Robot S02E01', 'u9', '2016'),               // nová epizoda
+        m('Mr. Robot S02E02-12 CZ dab', 'u10', '2016'),    // nový soubor s více díly
+        m('Duna 2', 'u5', '2024'),                         // jiný titul -> ignorovat
+    ];
+
+    const res = mergeSeriesMovies(show, page2);
+    assert.equal(res.added, 2);
+    assert.equal(res.addedMovies.length, 2);
+    assert.deepEqual(res.series.seasons.map(s => s.season), [1, 2]);
+    assert.equal(res.series.seasonCount, 2);
+    assert.equal(res.series.episodeCount, 14, '2 díly S1 + 12 pokrytých dílů S2 (E01 + E02-E12)');
+
+    const again = mergeSeriesMovies(res.series, page2);
+    assert.equal(again.added, 0, 'stejná stránka podruhé nic nepřidá');
+    assert.equal(again.series.episodeCount, 14);
 });
 
 test('jediná epizoda se neseskupuje', () => {
