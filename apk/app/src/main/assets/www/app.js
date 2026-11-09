@@ -2607,13 +2607,21 @@
     localStorage.setItem(LS_PROGRESS, JSON.stringify(clean));
   } catch(_){} }
   function getSavedProgress(u){ var m=loadProgressMap(), it=m[progressKey(u)]; if(!it||!isFinite(it.t)) return 0; return it.t; }
-  function saveVideoProgress(force){ try{ if(!player||player.kind==='live'||!player.resumeKey) return; var d=video.duration, t=video.currentTime; if(!isFinite(d)||d<=0||!isFinite(t)) return; var k=progressKey(player.resumeKey); if(!k) return; if(!force && (t<8 || d-t<20)) return; var m=loadProgressMap(); m[k]={t:Math.floor(t), d:Math.floor(d), ts:Date.now(), title:(player.title||''), thumb:(player.poster||''), url:(player.resumeKey||player.page||''), kind:(player.kind||'movie')}; saveProgressMap(m); player._lastProgSave=Date.now(); }catch(_){} }
+  function saveVideoProgress(force){ try{
+    if(!player||player.kind==='live'||!player.resumeKey) return;
+    var d=video.duration, t=video.currentTime; if(!isFinite(d)||d<=0||!isFinite(t)) return;
+    var k=progressKey(player.resumeKey); if(!k) return;
+    // 2 min před koncem = považovat za dohraný, automaticky smazat; jinak uložit vše rozkoukané
+    if((d-t) <= 120){ clearVideoProgress(player.resumeKey); return; }
+    if(t < 5) return;
+    var m=loadProgressMap(); m[k]={t:Math.floor(t), d:Math.floor(d), ts:Date.now(), title:(player.title||''), thumb:(player.poster||''), url:(player.resumeKey||player.page||''), kind:(player.kind||'movie')}; saveProgressMap(m); player._lastProgSave=Date.now();
+  }catch(_){} }
   function clearVideoProgress(u){ try{ var m=loadProgressMap(); delete m[progressKey(u||player.resumeKey)]; saveProgressMap(m); }catch(_){} }
   function getContinueItems(){ try{
     var m=loadProgressMap(), ks=Object.keys(m), out=[];
     for(var i=0;i<ks.length;i++){ var k=ks[i], it=m[k]; if(!it||!isFinite(it.t)||it.t<8) continue;
       var url=it.url||k, title=it.title||''; if(!url||!title) continue;
-      var d=it.d; if(isFinite(d)&&d>0 && (d-it.t)<15) continue;
+      var d=it.d; if(isFinite(d)&&d>0 && (d-it.t)<=120) continue;
       out.push({ title:title, img:(it.thumb||''), url:url, y:(isFinite(d)&&d>0)?('Pokračovat '+Math.max(1,Math.floor((1-it.t/d)*100))+'% zbývá'):'' , _t:it.ts||0, _kind:it.kind||'movie' });
     }
     out.sort(function(a,b){ return (b._t||0)-(a._t||0); });
