@@ -1075,6 +1075,8 @@
   function renderRows() {
     var cat = state.catalog;
     var rows = [];
+    var cont = (typeof getContinueItems === 'function') ? getContinueItems() : [];
+    if (cont && cont.length) rows.push({ name: 'Pokračovat ve sledování', items: cont, lib: 'continue' });
     if (favorites.length) rows.push({ name: 'Moje oblíbené', items: favorites, lib: 'fav' });
     rows.push({ name: 'Doporučujeme', items: cat.slice(0, 16) });
     for (var i = 0; i < GENRE_ORDER.length; i++) {
@@ -1108,7 +1110,8 @@
           if (!row) return;
           var it = row.items[parseInt(parts[1], 10)];
           if (!it) return;
-          if (row.lib) openLibEntry(row.lib, it);
+          if (row.lib === 'continue') { playMovie({ url: it.url, title: it.title, thumbnail: it.img || it.thumb || '' }); }
+          else if (row.lib) openLibEntry(row.lib, it);
           else openCatalogDetail(it);
         });
       })(cards[c]);
@@ -2604,8 +2607,18 @@
     localStorage.setItem(LS_PROGRESS, JSON.stringify(clean));
   } catch(_){} }
   function getSavedProgress(u){ var m=loadProgressMap(), it=m[progressKey(u)]; if(!it||!isFinite(it.t)) return 0; return it.t; }
-  function saveVideoProgress(force){ try{ if(!player||player.kind==='live'||!player.resumeKey) return; var d=video.duration, t=video.currentTime; if(!isFinite(d)||d<=0||!isFinite(t)) return; var k=progressKey(player.resumeKey); if(!k) return; if(!force && (t<8 || d-t<20)) return; var m=loadProgressMap(); m[k]={t:Math.floor(t), d:Math.floor(d), ts:Date.now()}; saveProgressMap(m); player._lastProgSave=Date.now(); }catch(_){} }
+  function saveVideoProgress(force){ try{ if(!player||player.kind==='live'||!player.resumeKey) return; var d=video.duration, t=video.currentTime; if(!isFinite(d)||d<=0||!isFinite(t)) return; var k=progressKey(player.resumeKey); if(!k) return; if(!force && (t<8 || d-t<20)) return; var m=loadProgressMap(); m[k]={t:Math.floor(t), d:Math.floor(d), ts:Date.now(), title:(player.title||''), thumb:(player.poster||''), url:(player.resumeKey||player.page||''), kind:(player.kind||'movie')}; saveProgressMap(m); player._lastProgSave=Date.now(); }catch(_){} }
   function clearVideoProgress(u){ try{ var m=loadProgressMap(); delete m[progressKey(u||player.resumeKey)]; saveProgressMap(m); }catch(_){} }
+  function getContinueItems(){ try{
+    var m=loadProgressMap(), ks=Object.keys(m), out=[];
+    for(var i=0;i<ks.length;i++){ var k=ks[i], it=m[k]; if(!it||!isFinite(it.t)||it.t<8) continue;
+      var url=it.url||k, title=it.title||''; if(!url||!title) continue;
+      var d=it.d; if(isFinite(d)&&d>0 && (d-it.t)<15) continue;
+      out.push({ title:title, img:(it.thumb||''), url:url, y:(isFinite(d)&&d>0)?('Pokračovat '+Math.max(1,Math.floor((1-it.t/d)*100))+'% zbývá'):'' , _t:it.ts||0, _kind:it.kind||'movie' });
+    }
+    out.sort(function(a,b){ return (b._t||0)-(a._t||0); });
+    return out.slice(0,20);
+  }catch(_){ return []; } }
   function applyResumeIfNeeded(){ try{ if(player.kind==='live'||!player.resumeAt||player._resumeApplied) return; var d=video.duration; if(!isFinite(d)||d<=0) return; var t=Math.max(0, Math.min(player.resumeAt, d-8)); if(t>5 && video.currentTime < Math.max(2, t-1)){ video.currentTime=t; try{ setPlayerState('Pokračuji od ' + formatTime(t) + '…'); }catch(_){} } player._resumeApplied=true; player.resumeAt=0; }catch(_){} }
 
   // Drag-to-scroll (mouse/pointer/touch drag) so content can be moved without only clicking.
