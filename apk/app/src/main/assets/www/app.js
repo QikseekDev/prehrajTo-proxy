@@ -2479,9 +2479,14 @@
           e.preventDefault();
           if (k === 'ArrowLeft') seekBy(-10);
           else if (k === 'ArrowRight') seekBy(10);
-          else if (k === 'ArrowUp') moveFocus(0, -1);
-          else moveFocus(0, 1);
+          else if (k === 'ArrowUp') focusEl($('pBack'));
+          else focusEl($('pPlay') || $('pPause'));
           return;
+        }
+        // explicitní pořadí ovládání přehrávače: Zpět ↑↓ Posuvník ↑↓ Přehrát/Pauza (a další v řadě)
+        if (playerOpen && pFocused) {
+          if (pFocused === $('pBack') && k === 'ArrowDown') { e.preventDefault(); if($('pBar')&&$('pBar').style.display!=='none') focusEl($('pBar')); else focusEl($('pPlay')); return; }
+          if (pFocused === $('pPlay') && k === 'ArrowUp') { e.preventDefault(); if($('pBar')&&$('pBar').style.display!=='none') focusEl($('pBar')); else focusEl($('pBack')); return; }
         }
         var moved;
         if (k === 'ArrowLeft') moved = moveFocus(-1, 0);
@@ -2574,7 +2579,7 @@
   function getSavedProgress(u){ var m=loadProgressMap(), it=m[progressKey(u)]; if(!it||!isFinite(it.t)) return 0; return it.t; }
   function saveVideoProgress(force){ try{ if(!player||player.kind==='live'||!player.resumeKey) return; var d=video.duration, t=video.currentTime; if(!isFinite(d)||d<=0||!isFinite(t)) return; var k=progressKey(player.resumeKey); if(!k) return; if(!force && (t<8 || d-t<20)) return; var m=loadProgressMap(); m[k]={t:Math.floor(t), d:Math.floor(d), ts:Date.now()}; saveProgressMap(m); player._lastProgSave=Date.now(); }catch(_){} }
   function clearVideoProgress(u){ try{ var m=loadProgressMap(); delete m[progressKey(u||player.resumeKey)]; saveProgressMap(m); }catch(_){} }
-  function applyResumeIfNeeded(){ try{ if(player.kind==='live'||!player.resumeAt||player._resumeApplied) return; var d=video.duration; if(!isFinite(d)||d<=0) return; var t=Math.max(0, Math.min(player.resumeAt, d-12)); if(t>8 && video.currentTime < 2){ video.currentTime=t; } player._resumeApplied=true; player.resumeAt=0; }catch(_){} }
+  function applyResumeIfNeeded(){ try{ if(player.kind==='live'||!player.resumeAt||player._resumeApplied) return; var d=video.duration; if(!isFinite(d)||d<=0) return; var t=Math.max(0, Math.min(player.resumeAt, d-8)); if(t>5 && video.currentTime < Math.max(2, t-1)){ video.currentTime=t; try{ setPlayerState('Pokračuji od ' + formatTime(t) + '…'); }catch(_){} } player._resumeApplied=true; player.resumeAt=0; }catch(_){} }
 
   // Drag-to-scroll (mouse/pointer/touch drag) so content can be moved without only clicking.
   function addDragScroll(root, opts) {
