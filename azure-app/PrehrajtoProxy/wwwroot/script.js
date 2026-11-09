@@ -1941,7 +1941,15 @@
             player.busy = true;
             player.fixes++;
             const page = player.page;
-            const resumeAt = player.lastTime;
+            // při zaseknutí streamu pomáhá skok ~30 s dopředu (uživatel pak může vrátit zpět)
+            let resumeAt = player.lastTime || 0;
+            if (reason === 'stall' || reason === 'predcasny konec') {
+                try {
+                    const d = videoPlayer.duration;
+                    if (isFinite(d) && d > 2) resumeAt = Math.min(d - 2, resumeAt + 30);
+                    else resumeAt = resumeAt + 30;
+                } catch(_){ resumeAt = resumeAt + 30; }
+            }
             player.resumeAt = resumeAt;
             // Po dvou neúspěšných pokusech s čerstvým CDN odkazem zkusíme server. Je to jen
             // pro tohle přehrávání: nastavení zůstává zapnuté a další video zkusí CDN znovu,
@@ -1954,9 +1962,9 @@
             // Ruční nabídka serveru dřív, než na něj appka přejde sama.
             if (player.mode === 'direct' && player.fixes >= 2) proxyBtn.hidden = false;
             console.warn('Obnova přehrávání:', reason, 'mode=' + player.mode, 'od', resumeAt);
-            showStatus(player.mode === 'relay'
-                ? '🔄 Přímé přehrávání selhalo, pokračuji přes server…'
-                : '🔄 Obnovuju přehrávání…', 'loading');
+            showStatus((reason === 'stall' || reason === 'predcasny konec')
+                ? '🔄 Stream se zasekl – posouvám o 30 s…'
+                : (player.mode === 'relay' ? '🔄 Přímé přehrávání selhalo, pokračuji přes server…' : '🔄 Obnovuju přehrávání…'), 'loading');
             try {
                 let src;
                 if (player.mode === 'relay') {
@@ -2563,6 +2571,7 @@
 
         function seekBy(delta) {
             if (!isFinite(videoPlayer.duration) || videoPlayer.duration <= 0) return;
+            try { if (player && player.page) videoPlayer.pause(); } catch(_){}
             const t = Math.min(videoPlayer.duration - 1, Math.max(0, videoPlayer.currentTime + delta));
             videoPlayer.currentTime = t;
             notice((delta > 0 ? '⏩ ' : '⏪ ') + fmtClock(t), 'success', 1500);

@@ -1962,9 +1962,9 @@
     if(video.readyState >= 3 && !video.paused) return; // has data/playing enough
     var d = video.duration, t = video.currentTime;
     if(isFinite(d) && d>1 && isFinite(t)){
-      // malý posun vpřed (uživatel to dělá ručně) + pokus o pokračování
-      var nt = Math.min(d - 0.5, Math.max(0, t + 0.35));
-      if(Math.abs(nt-t) > 0.01) video.currentTime = nt;
+      // uživatel to řeší ručně skokem cca 30 s dopředu a pak zpět – automatizujeme posun vpřed
+      var nt = Math.min(d - 2, Math.max(0, t + 30));
+      if(Math.abs(nt-t) > 0.5) { video.currentTime = nt; setPlayerState('Stream se zasekl – posouvám o 30 s…'); }
     }
     try{ var p=video.play(); if(p&&p.catch) p.catch(function(){}); }catch(_){}
   }catch(_){} }
