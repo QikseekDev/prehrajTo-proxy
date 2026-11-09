@@ -168,10 +168,17 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
   ukládá jen do prohlížeče – `localStorage` (`wflix-history`, `wflix-favs`, `wflix-settings`),
   žádný účet ani server.
 - **API Endpoints**:
-  - `GET /api/search?q={query}` - Vyhledávání filmů. Vrací třicítku, kterou prehraj.to na stránce
-    hledání nabízí; jejich stránkování je čistě JavaScriptové, takže `?p=` nemá žádný efekt
-    (ověřeno: druhá i třetí stránka vrátí stejné položky), a appka proto žádné „načíst další“ nemá.
-  - `GET /api/proxy?url={prehrajto_url}` - Získání URL videa (a seznamu VTT titulků, pokud je stránka má)
+  - `GET /api/search?q={query}[&source=prehrajto|bombuj|sledujteto][&fallback=0]` - Vyhledávání filmů.
+    Výchozí zdroj je `prehrajto` (zpětně kompatibilní). Při prázdném výsledku/chybě `prehrajto` se
+    automaticky zkusí `sledujteto` jako fallback a výsledky se sloučí s deduplikací (vypne se `fallback=0`).
+    `bombuj` hledá přes `bombuj.si` (autocomplete endpoint z `uvod.php`, dynamicky zjištěný).
+    `sledujteto` zkouší API endpointy `https://www.sledujteto.cz/api/web/videos` / `https://sledujteto.cz/api/web/videos`
+    (primárně) a `old.sledujteto.cz` jako zálohu, s `page`/`query`/`limit`/`sort=relevance`; běží přes PHP proxy
+    (česká IP). HTML stránka `https://www.sledujteto.cz/vyhledat/?search=...&page=...` je JS-renderovaná,
+    takže server-side se parsuje API varianta. Prehraj.to vrací třicítku, kterou stránka hledání nabízí.
+  - `GET /api/proxy?url={page_url}[&source=prehrajto|bombuj|sledujteto]` - Získání URL videa/resolve stránky
+    (a seznamu VTT titulků, pokud je stránka má). Pro `prehrajto` extrahuje CDN URL; pro `bombuj`/`sledujteto`
+    vrací best-effort nalezené stream/embed URL (přímý stream nemusí být ve statickém HTML vždy dostupný).
   - `GET /api/stream?url={prehrajto_url}[&download=1&name={titul}]` - Server video přeposílá z CDN (podporuje Range/seeking)
     a sám obnovuje vypršelý odkaz, takže se přehrávání ani stahování nezasekne po pár minutách. Používá se pro
     stahování, ruční přehrání přes server a jako záložní cesta, když přímé přehrávání z CDN neprojde. S `download=1` se

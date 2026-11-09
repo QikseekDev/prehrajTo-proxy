@@ -278,11 +278,30 @@ const RegexOptions Ci = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
 static string ClientKey(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
 // ------------------------------------------------------------------ helpers
+static bool IsAllowedHost(string host, params string[] domains) =>
+    domains.Any(d => host.Equals(d, StringComparison.OrdinalIgnoreCase) || host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
+
 static bool IsPrehrajUrl(string u) =>
     Uri.TryCreate(u, UriKind.Absolute, out var x)
     && (x.Scheme == Uri.UriSchemeHttp || x.Scheme == Uri.UriSchemeHttps)
-    && (x.Host.Equals("prehraj.to", StringComparison.OrdinalIgnoreCase)
-        || x.Host.EndsWith(".prehraj.to", StringComparison.OrdinalIgnoreCase));
+    && IsAllowedHost(x.Host, "prehraj.to");
+
+static bool IsAllowedSourcePageUrl(string u) =>
+    Uri.TryCreate(u, UriKind.Absolute, out var x)
+    && (x.Scheme == Uri.UriSchemeHttp || x.Scheme == Uri.UriSchemeHttps)
+    && IsAllowedHost(x.Host, "prehraj.to", "bombuj.si", "sledujteto.cz");
+
+static string NormalizeSource(string? s)
+{
+    s = (s ?? "prehrajto").Trim().ToLowerInvariant();
+    return s switch
+    {
+        "prehraj" or "prehrajto" or "prehraj.to" => "prehrajto",
+        "bombuj" or "bombuj.si" => "bombuj",
+        "sledujteto" or "sledujteto.cz" or "old.sledujteto.cz" => "sledujteto",
+        _ => "prehrajto"
+    };
+}
 
 static async Task<(int status, string body, string? error)> GetAsync(
     IHttpClientFactory f, string url, int timeoutSeconds, Action<HttpRequestMessage>? tweak = null,
@@ -723,7 +742,7 @@ static bool IsPrivateHost(string host)
 }
 
 // ------------------------------------------------------------------ /api/search
-app.MapGet("/api/search", async (string q, int? page, string[]? proxy, IHttpClientFactory f, IMemoryCache cache) =>
+app.MapGet("/api/search", async (string q, int? page, string? source, string[]? proxy, IHttpClientFactory f, IMemoryCache cache) =>
 {
     q = (q ?? "").Trim();
     if (q.Length == 0)
@@ -731,10 +750,11 @@ app.MapGet("/api/search", async (string q, int? page, string[]? proxy, IHttpClie
 
     // Stránkování výsledků (pro dotahování epizod seriálů). 1 = první stránka, 2+ = další.
     var pg = Math.Clamp(page.GetValueOrDefault(1), 1, 50);
+    var src = NormalizeSource(source);
 
     // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nikdy nechodí (datacentrová IP
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
-    var query = $"action=search&q={Uri.EscapeDataString(q)}" + (pg > 1 ? $"&page={pg}" : "");
+    var query = $"action=search&q={Uri.EscapeDataString(q)}&source={Uri.EscapeDataString(src)}" + (pg > 1 ? $"&page={pg}" : "");
     var proxies = EffectiveProxies(proxy, serverProxies);
     var sources = OrderedProxies(proxies)
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
@@ -744,7 +764,7 @@ app.MapGet("/api/search", async (string q, int? page, string[]? proxy, IHttpClie
     // se kvůli tomu cache pro běžné diváky vůbec nepoužila a každé hledání šlo na prehraj.to.
     // Stejný dotaz teď obslouží všechny uživatele a při 429 se vrátí i starší uložená odpověď.
     var norm = Regex.Replace(q.ToLowerInvariant(), @"\s+", " ");
-    var cacheKey = "search:" + CacheScope(proxies) + ":" + norm + (pg > 1 ? ":" + pg : "");
+    var cacheKey = "search:" + src + ":" + CacheScope(proxies) + ":" + norm + (pg > 1 ? ":" + pg : "");
     var (ok, body, errors) = norm.Length <= 100
         ? await CachedFetch(cache, cacheKey, SearchTtl, () => PacedFirstWorking(sources))
         : await PacedFirstWorking(sources);
@@ -1229,16 +1249,23 @@ app.MapGet("/api/subtitles", async (string url, IHttpClientFactory f, HttpContex
 }).RequireRateLimiting("subs");
 
 // ------------------------------------------------------------------ /api/proxy  (extract video URL)
-app.MapGet("/api/proxy", async (string url, string[]? proxy, IHttpClientFactory f) =>
+app.MapGet("/api/proxy", async (string url, string? source, string[]? proxy, IHttpClientFactory f) =>
 {
     if (string.IsNullOrEmpty(url))
         return Results.BadRequest(new { success = false, error = "Missing url parameter" });
-    if (!IsPrehrajUrl(url))
-        return Results.BadRequest(new { success = false, error = "URL must be from prehraj.to" });
+    var src = NormalizeSource(source);
+    if (Uri.TryCreate(url, UriKind.Absolute, out var u))
+    {
+        if (IsAllowedHost(u.Host, "bombuj.si")) src = "bombuj";
+        else if (IsAllowedHost(u.Host, "sledujteto.cz")) src = "sledujteto";
+        else if (IsAllowedHost(u.Host, "prehraj.to")) src = "prehrajto";
+    }
+    if (!IsAllowedSourcePageUrl(url))
+        return Results.BadRequest(new { success = false, error = "URL must be from a supported source (prehraj.to, bombuj.si, sledujteto.cz)" });
 
-    // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nechodí. 2xx s normální odpovědí = vyhrává;
+    // Jen PHP proxy servery, zkoušené postupně. 2xx s normální odpovědí = vyhrává;
     // 429/403/5xx nebo {"success":false} = prohra a bere se další zdroj.
-    var query = $"url={Uri.EscapeDataString(url)}";
+    var query = $"url={Uri.EscapeDataString(url)}&source={Uri.EscapeDataString(src)}";
     var sources = OrderedProxies(EffectiveProxies(proxy, serverProxies))
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 

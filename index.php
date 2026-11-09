@@ -31,15 +31,238 @@ function wflixFail($payload, $upstream = 0) {
 
 // Determine action: search, stream or get video
 $action = isset($_GET['action']) ? $_GET['action'] : 'video';
+$source = wflixSource(isset($_GET['source']) ? $_GET['source'] : 'prehrajto');
 
 if ($action === 'search') {
-    handleSearch();
+    handleSearch($source);
 } elseif ($action === 'thumb') {
     handleThumb();
 } elseif ($action === 'stream') {
     handleStream();
 } else {
-    handleVideo();
+    handleVideo($source);
+}
+
+function wflixSource($s) {
+    $s = strtolower(trim((string)$s));
+    $map = [
+        'prehraj' => 'prehrajto', 'prehrajto' => 'prehrajto', 'prehraj.to' => 'prehrajto',
+        'bombuj' => 'bombuj', 'bombuj.si' => 'bombuj',
+        'sledujteto' => 'sledujteto', 'sledujteto.cz' => 'sledujteto', 'old.sledujteto.cz' => 'sledujteto',
+    ];
+    return isset($map[$s]) ? $map[$s] : 'prehrajto';
+}
+
+function wflixAllowedSourceUrl($source, $url) {
+    $host = strtolower((string)parse_url((string)$url, PHP_URL_HOST));
+    $scheme = strtolower((string)parse_url((string)$url, PHP_URL_SCHEME));
+    if (!in_array($scheme, ['http', 'https'], true) || $host === '') return false;
+    if ($source === 'prehrajto') return $host === 'prehraj.to' || substr($host, -11) === '.prehraj.to';
+    if ($source === 'bombuj') return $host === 'bombuj.si' || substr($host, -9) === '.bombuj.si';
+    if ($source === 'sledujteto') return $host === 'sledujteto.cz' || substr($host, -14) === '.sledujteto.cz';
+    return false;
+}
+
+function wflixHttpGet($url, $timeout = 30, $headers = []) {
+    $ch = curl_init();
+    $base = [
+        'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language: cs-CZ,cs;q=0.9,sk;q=0.8,en;q=0.5',
+    ];
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_HTTPHEADER => array_merge($base, $headers),
+        CURLOPT_ENCODING => '',
+    ]);
+    $body = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    return [$code, is_string($body) ? $body : '', $err];
+}
+
+function wflixHttpPost($url, $data, $timeout = 30, $headers = []) {
+    $ch = curl_init();
+    $base = [
+        'Accept: */*',
+        'Accept-Language: cs-CZ,cs;q=0.9,sk;q=0.8,en;q=0.5',
+        'Content-Type: application/x-www-form-urlencoded',
+    ];
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($data),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_HTTPHEADER => array_merge($base, $headers),
+        CURLOPT_ENCODING => '',
+    ]);
+    $body = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    return [$code, is_string($body) ? $body : '', $err];
+}
+
+function wflixFixUrl($url, $baseHost) {
+    $url = html_entity_decode((string)$url, ENT_QUOTES, 'UTF-8');
+    if ($url === '') return '';
+    if (strpos($url, '//') === 0) return 'https:' . $url;
+    if ($url[0] === '/') return 'https://' . $baseHost . $url;
+    if (preg_match('#^https?://#i', $url)) return $url;
+    return 'https://' . $baseHost . '/' . ltrim($url, '/');
+}
+
+function searchBombuj($query) {
+    list($hc, $home, $he) = wflixHttpGet('https://www.bombuj.si/uvod.php', 20, ['Referer: https://www.bombuj.si/']);
+    if ($hc < 200 || $hc >= 300 || $home === '') return ['error' => 'Bombuj: nelze načíst vyhledávání' . ($he ? ' (' . $he . ')' : ''), 'status' => $hc, 'movies' => []];
+    $endpoint = 'https://www.bombuj.si/4154q37rpc4dsvbp.php';
+    if (preg_match('#xhr\.open\(\s*[\'"]POST[\'"]\s*,\s*[\'"](//www\.bombuj\.si/[^\'\"]+\.php)[\'"]#i', $home, $m)) {
+        $endpoint = wflixFixUrl($m[1], 'www.bombuj.si');
+    }
+    list($sc, $html, $se) = wflixHttpPost($endpoint, ['queryString' => $query], 25, [
+        'Referer: https://www.bombuj.si/uvod.php',
+        'X-Requested-With: XMLHttpRequest',
+        'Origin: https://www.bombuj.si',
+    ]);
+    if ($se) return ['error' => 'Bombuj: ' . $se, 'status' => 0, 'movies' => []];
+    if ($sc < 200 || $sc >= 300) return ['error' => 'Bombuj HTTP: ' . $sc, 'status' => $sc, 'movies' => []];
+    $movies = []; $seen = [];
+    if (preg_match_all('#<a\s+href="(//www\.bombuj\.si/online-film[^"]+)"[^>]*>.*?<span class="nazov">([^<]+)</span>.*?(?:<img[^>]+src="([^"]+)")?#is', $html, $ms, PREG_SET_ORDER)) {
+        foreach ($ms as $m) {
+            $u = wflixFixUrl($m[1], 'www.bombuj.si');
+            if (isset($seen[$u])) continue; $seen[$u] = true;
+            $title = trim(html_entity_decode($m[2], ENT_QUOTES, 'UTF-8'));
+            $year = '';
+            if (preg_match('/\((\d{4})\)\s*$/u', $title, $ym)) $year = $ym[1];
+            $thumb = isset($m[3]) ? wflixFixUrl($m[3], 'www.bombuj.si') : '';
+            $movies[] = ['url' => $u, 'title' => $title, 'thumbnail' => $thumb, 'year' => $year, 'source' => 'bombuj'];
+        }
+    }
+    if (empty($movies) && preg_match_all('#href="(//www\.bombuj\.si/online-film[^"]+)"#i', $html, $ls)) {
+        foreach (array_unique($ls[1]) as $u) {
+            $u = wflixFixUrl($u, 'www.bombuj.si');
+            $slug = preg_replace('#^.*/online-film-#', '', $u);
+            $title = trim(ucwords(str_replace('-', ' ', $slug)));
+            $movies[] = ['url' => $u, 'title' => $title, 'thumbnail' => '', 'year' => '', 'source' => 'bombuj'];
+            if (count($movies) >= 30) break;
+        }
+    }
+    return ['error' => null, 'movies' => array_slice($movies, 0, 30)];
+}
+
+function wflixDedupMovies($movies) {
+    $out = []; $seen = [];
+    foreach ((array)$movies as $m) {
+        if (!is_array($m)) continue;
+        $url = isset($m['url']) ? (string)$m['url'] : '';
+        $title = isset($m['title']) ? (string)$m['title'] : '';
+        $normTitle = preg_replace('/\s+/u', ' ', wflixNorm(preg_replace('/\(\d{4}\)\s*$/u', '', $title)));
+        $key = $url !== '' ? ('u:' . preg_replace('#^https?://#i', '', rtrim(strtolower($url), '/'))) : ('t:' . $normTitle);
+        if ($key === 'u:' || $key === 't:') $key = 't:' . $normTitle . '|' . (isset($m['year']) ? $m['year'] : '');
+        if (isset($seen[$key])) continue;
+        // also dedup by normalized title when URLs differ across sources
+        if ($normTitle !== '' && isset($seen['t:' . $normTitle])) continue;
+        $seen[$key] = true;
+        if ($normTitle !== '') $seen['t:' . $normTitle] = true;
+        $out[] = $m;
+    }
+    return $out;
+}
+
+function searchSledujteto($query, $page = 1) {
+    $page = max(1, (int)$page);
+    // Primary/backup API endpoints (must be called from Czech IP in production; PHP proxy handles that).
+    // User-confirmed: www/sledujteto.cz api/web/videos works; HTML vyhledat endpoint exists but is JS-rendered.
+    $apis = [
+        ['url' => 'https://www.sledujteto.cz/api/web/videos?query=' . rawurlencode($query) . '&limit=30&page=' . $page . '&sort=relevance', 'host' => 'www.sledujteto.cz'],
+        ['url' => 'https://sledujteto.cz/api/web/videos?query=' . rawurlencode($query) . '&limit=30&page=' . $page . '&sort=relevance', 'host' => 'sledujteto.cz'],
+        ['url' => 'https://old.sledujteto.cz/api/web/videos?query=' . rawurlencode($query) . '&limit=30&page=' . $page . '&sort=relevance', 'host' => 'old.sledujteto.cz'],
+    ];
+    $lastErr = 'Sledujteto: žádná odpověď'; $lastStatus = 0;
+    foreach ($apis as $api) {
+        list($c, $body, $e) = wflixHttpGet($api['url'], 25, [
+            'Accept: application/json, text/plain, */*',
+            'X-Requested-With: XMLHttpRequest',
+            'Referer: https://' . $api['host'] . '/vyhledat/?search=' . rawurlencode($query) . '&page=' . $page,
+            'Origin: https://' . $api['host'],
+        ]);
+        if ($e) { $lastErr = 'Sledujteto: ' . $e; $lastStatus = 0; continue; }
+        if ($c < 200 || $c >= 300) { $lastErr = 'Sledujteto HTTP: ' . $c; $lastStatus = $c; continue; }
+        $d = json_decode($body, true);
+        if (!is_array($d)) { $lastErr = 'Sledujteto: neplatná odpověď'; $lastStatus = $c; continue; }
+        $files = isset($d['data']['files']) && is_array($d['data']['files']) ? $d['data']['files'] : (isset($d['files']) && is_array($d['files']) ? $d['files'] : []);
+        $movies = [];
+        foreach ($files as $f) {
+            if (!is_array($f)) continue;
+            $id = isset($f['id']) ? $f['id'] : (isset($f['file_id']) ? $f['file_id'] : (isset($f['files_id']) ? $f['files_id'] : ''));
+            $title = isset($f['filename']) ? $f['filename'] : (isset($f['name']) ? $f['name'] : (isset($f['title']) ? $f['title'] : ''));
+            $title = trim(html_entity_decode((string)$title, ENT_QUOTES, 'UTF-8'));
+            $url = '';
+            foreach (['url', 'link', 'permalink', 'href'] as $k) if (!empty($f[$k])) { $url = wflixFixUrl($f[$k], $api['host']); break; }
+            if ($url === '' && $id !== '') $url = 'https://' . $api['host'] . '/video/' . rawurlencode((string)$id);
+            if ($url === '' || $title === '') continue;
+            $thumb = '';
+            foreach (['thumb', 'thumbnail', 'image', 'poster', 'img', 'preview', 'cover'] as $k) if (!empty($f[$k])) { $thumb = wflixFixUrl($f[$k], $api['host']); break; }
+            $year = '';
+            if (preg_match('/[-(](\d{4})[)-]/u', $title, $ym)) $year = $ym[1];
+            $movies[] = ['url' => $url, 'title' => $title, 'thumbnail' => $thumb, 'year' => $year, 'source' => 'sledujteto'];
+            if (count($movies) >= 30) break;
+        }
+        if (!empty($movies)) return ['error' => null, 'movies' => $movies, 'endpoint' => $api['url']];
+        // successful but empty: keep trying other API bases (CZ IP/context may matter) but remember success
+        $lastErr = null; $lastStatus = $c;
+    }
+    return ['error' => $lastErr, 'status' => $lastStatus, 'movies' => []];
+}
+
+function resolveSourceVideo($source, $url) {
+    if ($source === 'bombuj') {
+        list($c, $html, $e) = wflixHttpGet($url, 30, ['Referer: https://www.bombuj.si/']);
+        if ($e || $c < 200 || $c >= 300) return ['success' => false, 'error' => 'Bombuj: nelze načíst stránku videa' . ($e ? " ($e)" : " (HTTP $c)"), 'source' => 'bombuj'];
+        $all = []; $videoUrl = null;
+        if (preg_match_all('#https?://[^"\'<>\s]+\.(?:m3u8|mp4)[^"\'<>\s]*#i', $html, $am)) $all = array_values(array_unique($am[0]));
+        if (preg_match_all('#<iframe[^>]+(?:data-src|src)=["\']([^"\']+)["\']#i', $html, $im)) {
+            foreach ($im[1] as $u) { $u = wflixFixUrl($u, 'www.bombuj.si'); if (strpos($u, 'about:blank') === false) $all[] = $u; }
+            $all = array_values(array_unique($all));
+        }
+        foreach ($all as $u) if (preg_match('/\.(m3u8|mp4)/i', $u)) { $videoUrl = $u; break; }
+        return [
+            'success' => $videoUrl !== null,
+            'videoUrl' => $videoUrl ?: $url,
+            'pageUrl' => $url,
+            'allUrls' => $all,
+            'subtitles' => wflixSubtitles($html),
+            'source' => 'bombuj',
+            'hint' => $videoUrl ? null : 'Bombuj často používá vložené přehrávače; přímá URL streamu nebyla v HTML nalezena. Zkuste otevřít stránku zdroje.',
+        ];
+    }
+    if ($source === 'sledujteto') {
+        $base = (strpos($url, 'old.sledujteto.cz') !== false) ? 'old.sledujteto.cz' : 'www.sledujteto.cz';
+        list($c, $html, $e) = wflixHttpGet($url, 30, ['Referer: https://' . $base . '/']);
+        if ($e || $c < 200 || $c >= 300) return ['success' => false, 'error' => 'Sledujteto: nelze načíst stránku videa' . ($e ? " ($e)" : " (HTTP $c)"), 'source' => 'sledujteto'];
+        $all = [];
+        if (preg_match_all('#https?://[^"\'<>\s]+\.(?:m3u8|mp4)[^"\'<>\s]*#i', $html, $am)) $all = array_values(array_unique($am[0]));
+        $videoUrl = !empty($all) ? $all[0] : null;
+        return [
+            'success' => $videoUrl !== null,
+            'videoUrl' => $videoUrl ?: $url,
+            'pageUrl' => $url,
+            'allUrls' => $all,
+            'subtitles' => wflixSubtitles($html),
+            'source' => 'sledujteto',
+            'hint' => $videoUrl ? null : 'Sledujteto může vyžadovat přihlášení/premium nebo načítat stream přes JavaScript; přímá URL nebyla nalezena.',
+        ];
+    }
+    return ['success' => false, 'error' => 'Neznámý zdroj', 'source' => $source];
 }
 
 /**
@@ -68,7 +291,7 @@ function wflixSearchCacheWrite($file, $data) {
 /**
  * Handle search request - returns list of movies
  */
-function handleSearch() {
+function handleSearch($source = 'prehrajto') {
     $query = isset($_GET['q']) ? trim($_GET['q']) : '';
     // Stránkování: 1 = první stránka, 2+ = další výsledky (appka si je dotahuje u seriálů)
     $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
@@ -79,37 +302,65 @@ function handleSearch() {
         echo json_encode([
             'success' => false,
             'error' => 'Missing search query (q parameter)',
-            'usage' => 'index.php?action=search&q=matrix'
-        ]);
+            'usage' => 'index.php?action=search&q=matrix&source=prehrajto|bombuj|sledujteto'
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
-    
-    $cacheFile = wflixSearchCacheFile($query, $page);
+
+    $cacheFile = wflixSearchCacheFile($source . '|' . $query, $page);
     $hit = wflixSearchCacheRead($cacheFile);
     if ($hit !== null) {
         echo json_encode($hit, JSON_UNESCAPED_UNICODE);
         exit;
     }
 
-    $r = searchPrehraj($query, $page);
-    if ($r['error']) {
-        // 429 od prehraj.to: když máme starší kopii, vrátíme ji - zastaralý výsledek je
-        // lepší než chyba (stejné pravidlo jako v .NET cache).
+    $fallbackUsed = null;
+    if ($source === 'bombuj') {
+        $r = searchBombuj($query);
+    } elseif ($source === 'sledujteto') {
+        $r = searchSledujteto($query, $page);
+    } else {
+        $r = searchPrehraj($query, $page);
+        // Sledujteto jako fallback pro prehraj.to (duplication prevention při sloučení).
+        // Zapne se při chybě/prázdném výsledku; pro explicitní "jen prehrajto" lze poslat fallback=0.
+        $allowFallback = !isset($_GET['fallback']) || $_GET['fallback'] === '' || $_GET['fallback'] === '1' || $_GET['fallback'] === 'true';
+        $needFallback = $allowFallback && (!empty($r['error']) || empty($r['movies']));
+        if ($needFallback) {
+            $fb = searchSledujteto($query, $page);
+            if (empty($fb['error']) && !empty($fb['movies'])) {
+                $r['movies'] = wflixDedupMovies(array_merge(is_array($r['movies'] ?? null) ? $r['movies'] : [], $fb['movies']));
+                $r['error'] = null;
+                $fallbackUsed = 'sledujteto';
+            } elseif (!empty($r['error']) && !empty($fb['error'])) {
+                $r['error'] = $r['error'] . ' | fallback sledujteto: ' . $fb['error'];
+                $r['status'] = $r['status'] ?? ($fb['status'] ?? 0);
+            } elseif (!empty($r['error']) && empty($fb['movies'])) {
+                $r['error'] = $r['error'] . ' | fallback sledujteto: žádné výsledky';
+            }
+        }
+    }
+
+    $movies = wflixDedupMovies(is_array($r['movies'] ?? null) ? $r['movies'] : []);
+
+    if (!empty($r['error']) && empty($movies)) {
+        // 429/temporary: když máme starší kopii, vrátíme ji.
         $stale = wflixSearchCacheRead($cacheFile, true);
         if ($stale !== null) {
             echo json_encode($stale, JSON_UNESCAPED_UNICODE);
             exit;
         }
-        wflixFail(['success' => false, 'error' => $r['error']], $r['status'] ?? 0);
+        wflixFail(['success' => false, 'error' => $r['error'], 'source' => $source], $r['status'] ?? 0);
     }
 
     $out = [
         'success' => true,
+        'source' => $source,
         'query' => $query,
         'page' => $page,
-        'count' => count($r['movies']),
-        'movies' => $r['movies']
+        'count' => count($movies),
+        'movies' => $movies
     ];
+    if ($fallbackUsed) $out['fallback'] = $fallbackUsed;
     wflixSearchCacheWrite($cacheFile, $out);
     echo json_encode($out, JSON_UNESCAPED_UNICODE);
 }
@@ -387,10 +638,12 @@ function handleStream() {
         exit;
     }
     
-    // Validate URL is from CDN
-    if (strpos($url, 'premiumcdn.net') === false && strpos($url, 'cdn') === false) {
+    // Validate URL looks like a media/CDN URL (kept permissive for known CDNs but requires media-like targets)
+    $isCdnHost = (strpos($url, 'premiumcdn.net') !== false || strpos($url, 'cdn') !== false);
+    $isMediaUrl = (bool)preg_match('#^https?://#i', $url) && (bool)preg_match('/\.(m3u8|mp4|ts)(\?|$)/i', $url);
+    if (!$isCdnHost && !$isMediaUrl) {
         header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'error' => 'URL must be from CDN']);
+        echo json_encode(['success' => false, 'error' => 'URL must be from a supported CDN/media source']);
         exit;
     }
     
@@ -506,25 +759,39 @@ function wflixSubtitles($html) {
 /**
  * Handle video URL extraction
  */
-function handleVideo() {
+function handleVideo($source = 'prehrajto') {
     // Get URL parameter
     $url = isset($_GET['url']) ? $_GET['url'] : '';
-    
+
     if (empty($url)) {
         echo json_encode([
             'success' => false,
             'error' => 'Missing url parameter',
-            'usage' => 'index.php?url=https://prehraj.to/video/...'
-        ]);
+            'usage' => 'index.php?url=https://prehraj.to/video/...&source=prehrajto|bombuj|sledujteto'
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
-    
-    // Validate URL is from prehraj.to
-    if (strpos($url, 'prehraj.to') === false) {
-        echo json_encode([
-            'success' => false,
-            'error' => 'URL must be from prehraj.to'
-        ]);
+
+    // Validate URL by source (default prehraj.to for backward compatibility)
+    if (!wflixAllowedSourceUrl($source, $url)) {
+        // If an explicit source wasn't meaningful, try to infer from URL host for convenience.
+        $host = strtolower((string)parse_url($url, PHP_URL_HOST));
+        $inferred = $source;
+        if ($host === 'bombuj.si' || substr($host, -9) === '.bombuj.si') $inferred = 'bombuj';
+        elseif ($host === 'sledujteto.cz' || substr($host, -14) === '.sledujteto.cz') $inferred = 'sledujteto';
+        elseif ($host === 'prehraj.to' || substr($host, -11) === '.prehraj.to') $inferred = 'prehrajto';
+        if (!wflixAllowedSourceUrl($inferred, $url)) {
+            echo json_encode([
+                'success' => false,
+                'error' => 'URL is not allowed for source ' . $source
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $source = $inferred;
+    }
+
+    if ($source !== 'prehrajto') {
+        echo json_encode(resolveSourceVideo($source, $url), JSON_UNESCAPED_UNICODE);
         exit;
     }
     

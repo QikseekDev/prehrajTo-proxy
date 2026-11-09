@@ -30,6 +30,26 @@ function isPrehrajUrl($u) {
     return $host === 'prehraj.to' || substr($host, -11) === '.prehraj.to';
 }
 
+function wflixSource($s) {
+    $s = strtolower(trim((string)$s));
+    $map = [
+        'prehraj' => 'prehrajto', 'prehrajto' => 'prehrajto', 'prehraj.to' => 'prehrajto',
+        'bombuj' => 'bombuj', 'bombuj.si' => 'bombuj',
+        'sledujteto' => 'sledujteto', 'sledujteto.cz' => 'sledujteto', 'old.sledujteto.cz' => 'sledujteto',
+    ];
+    return isset($map[$s]) ? $map[$s] : 'prehrajto';
+}
+
+function isAllowedSourceUrl($source, $u) {
+    $host = strtolower((string)parse_url((string)$u, PHP_URL_HOST));
+    $scheme = strtolower((string)parse_url((string)$u, PHP_URL_SCHEME));
+    if (!$host || !in_array($scheme, ['http', 'https'], true)) return false;
+    if ($source === 'prehrajto') return $host === 'prehraj.to' || substr($host, -11) === '.prehraj.to';
+    if ($source === 'bombuj') return $host === 'bombuj.si' || substr($host, -9) === '.bombuj.si';
+    if ($source === 'sledujteto') return $host === 'sledujteto.cz' || substr($host, -14) === '.sledujteto.cz';
+    return isPrehrajUrl($u);
+}
+
 function jsonError($payload, $code = 400) {
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
@@ -555,11 +575,13 @@ switch ($path) {
         $q = $_GET['q'] ?? '';
         $page = (int)($_GET['page'] ?? 1);
         if ($page < 1) $page = 1;
-        $qs = 'action=search&q=' . rawurlencode($q) . ($page > 1 ? '&page=' . $page : '');
+        $source = wflixSource($_GET['source'] ?? 'prehrajto');
+        $qs = 'action=search&q=' . rawurlencode($q) . ($page > 1 ? '&page=' . $page : '') . '&source=' . rawurlencode($source);
         if ($proxies) sendRaceWinner(viaProxyRace($proxies, $qs, 30));
         else setActiveSource('direct');
         // proxy selhaly (429 atd.) -> jedeme přímo přes index.php na tomhle serveru
         $_GET['action'] = 'search';
+        $_GET['source'] = $source;
         require __DIR__ . '/index.php';
         return true;
 
@@ -578,11 +600,17 @@ switch ($path) {
 
     case '/api/proxy':
         $url = $_GET['url'] ?? '';
+        $source = wflixSource($_GET['source'] ?? 'prehrajto');
         if ($url === '') jsonError(['success' => false, 'error' => 'Missing url parameter']);
-        if (!isPrehrajUrl($url)) jsonError(['success' => false, 'error' => 'URL must be from prehraj.to']);
-        if ($proxies) sendRaceWinner(viaProxyRace($proxies, 'url=' . rawurlencode($url), 30));
+        $host = strtolower((string)parse_url($url, PHP_URL_HOST));
+        if ($host === 'bombuj.si' || substr($host, -9) === '.bombuj.si') $source = 'bombuj';
+        elseif ($host === 'sledujteto.cz' || substr($host, -14) === '.sledujteto.cz') $source = 'sledujteto';
+        elseif ($host === 'prehraj.to' || substr($host, -11) === '.prehraj.to') $source = 'prehrajto';
+        if (!isAllowedSourceUrl($source, $url)) jsonError(['success' => false, 'error' => 'URL is not allowed for the selected source']);
+        if ($proxies) sendRaceWinner(viaProxyRace($proxies, 'url=' . rawurlencode($url) . '&source=' . rawurlencode($source), 30));
         else setActiveSource('direct');
         $_GET['action'] = 'video';
+        $_GET['source'] = $source;
         require __DIR__ . '/index.php';
         return true;
 
