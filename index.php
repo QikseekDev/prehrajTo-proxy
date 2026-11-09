@@ -43,6 +43,29 @@ if ($action === 'search') {
 }
 
 /**
+ * Cache hledání. prehraj.to pustí z jedné IP jen pár dotazů za deset vteřin, takže stejný
+ * dotaz nesmí na prehraj.to chodit pro každou instanci appky (a po restartu) znovu.
+ */
+function wflixSearchCacheFile($query, $page) {
+    $key = strtolower(trim(preg_replace('/\s+/u', ' ', (string) $query))) . '|' . (int) $page;
+    return sys_get_temp_dir() . '/wflix-search/' . md5($key) . '.json';
+}
+
+function wflixSearchCacheRead($file, $ignoreTtl = false) {
+    if (!is_file($file)) return null;
+    $data = json_decode((string) @file_get_contents($file), true);
+    if (!is_array($data)) return null;
+    if ($ignoreTtl) return $data;
+    $ttl = !empty($data['movies']) ? 1800 : 300;   // s nálezy 30 min, prázdné 5 min
+    return (time() - filemtime($file) < $ttl) ? $data : null;
+}
+
+function wflixSearchCacheWrite($file, $data) {
+    @mkdir(dirname($file), 0777, true);
+    @file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE), LOCK_EX);
+}
+
+/**
  * Handle search request - returns list of movies
  */
 function handleSearch() {
@@ -61,18 +84,34 @@ function handleSearch() {
         exit;
     }
     
+    $cacheFile = wflixSearchCacheFile($query, $page);
+    $hit = wflixSearchCacheRead($cacheFile);
+    if ($hit !== null) {
+        echo json_encode($hit, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     $r = searchPrehraj($query, $page);
     if ($r['error']) {
+        // 429 od prehraj.to: když máme starší kopii, vrátíme ji - zastaralý výsledek je
+        // lepší než chyba (stejné pravidlo jako v .NET cache).
+        $stale = wflixSearchCacheRead($cacheFile, true);
+        if ($stale !== null) {
+            echo json_encode($stale, JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         wflixFail(['success' => false, 'error' => $r['error']], $r['status'] ?? 0);
     }
 
-    echo json_encode([
+    $out = [
         'success' => true,
         'query' => $query,
         'page' => $page,
         'count' => count($r['movies']),
         'movies' => $r['movies']
-    ]);
+    ];
+    wflixSearchCacheWrite($cacheFile, $out);
+    echo json_encode($out, JSON_UNESCAPED_UNICODE);
 }
 
 /**

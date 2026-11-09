@@ -176,6 +176,10 @@
         const thumbQueue = [];
         const thumbPending = new Map();
         let thumbActive = 0;
+        // Než dorazí katalog z iTunes, nemá smysl tahat náhledy pro záložní seznam: každý
+        // takový dotaz je hledání na prehraj.to a ta jsou přísně limitovaná (~5 za 10 s).
+        // Bez tohohle se při každém studeném startu poslaly desítky hledání jen na plakáty.
+        let catalogSettled = false;
 
         const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
@@ -630,6 +634,8 @@
             // Plakát z iTunes katalogu: rovnou z obrázku, žádný dotaz na server ani na prehraj.to
             const fromCatalog = CATALOG.find(m => m.q === q);
             if (fromCatalog && fromCatalog.img) { cb(fromCatalog.img); return; }
+            // Záložní seznam bez plakátů: počkat, až loadCatalog doběhne.
+            if (!catalogSettled) return;
             const c = thumbCache[q];
             // nalezené držíme napořád, nenalezené zkusíme znovu po 24 h
             if (c && (c.u || Date.now() - c.t < 86400000)) { cb(c.u); return; }
@@ -681,6 +687,7 @@
         }, { rootMargin: '200px' });
 
         function observeThumbs() {
+            if (!catalogSettled) return;
             // Jen karty katalogu - osobní řady mají plakát už v sobě a getThumb by hledal 'undefined'.
             document.querySelectorAll('#catalogRows .poster[data-q]').forEach(el => thumbObserver.observe(el));
         }
@@ -965,6 +972,7 @@
         // ===== Katalog z iTunes: stáhne ho server (/api/catalog, cache na 1 den) a překreslí stránku.
         // Když se ho nepodaří stáhnout, zůstane záložní CATALOG výše (české klasiky se přidávají vždy).
         async function loadCatalog() {
+            let applied = false;
             try {
                 const { data: d } = await apiJson('/api/catalog?lang=' + (settings.catLang === 'en' ? 'en' : 'cz'), { retries: 2 });
                 if (!d || !d.success || !Array.isArray(d.items) || d.items.length === 0) return;
@@ -972,8 +980,15 @@
                 heroOffset = 0;
                 renderHero();
                 renderCatalog();
+                applied = true;
             } catch (e) { /* zůstane záložní katalog */ }
-            finally { markFirstPaint(); }
+            finally {
+                // Teprve teď má smysl pouštět náhledy (viz catalogSettled v getThumb).
+                catalogSettled = true;
+                if (!applied) renderHero();   // záložní seznam: dotáhnout aspoň billboard
+                observeThumbs();
+                markFirstPaint();
+            }
         }
         loadCatalog();
 

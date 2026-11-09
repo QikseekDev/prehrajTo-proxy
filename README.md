@@ -124,7 +124,7 @@ Appka je veřejná a bez přihlášení, takže `/api/*` má dvě vrstvy ochrany
 
 | Policy | Endpointy | Trvale | Dávka (burst) |
 |---|---|---|---|
-| `search` | `/api/search` | 3 dotazy/s | 8 |
+| `search` | `/api/search` | 5 dotazů/s | 20 |
 | `api` | `/api/proxy`, `/api/stream`, `/api/catalog` | 6/s | 20 |
 | `subs` | `/api/subtitles` | 20/s | 60 |
 | `thumb` | `/api/thumb` | 10/s | 40 |
@@ -135,6 +135,15 @@ při seekování pošle několik Range dotazů v jedné vlně – s holým „3/
 Překročení vrací `429` + `Retry-After: 5` a JSON `{"success":false,"error":"…"}`, který UI zobrazí
 jako běžnou chybu hledání. Za App Service se IP bere z `X-Forwarded-For` (`UseForwardedHeaders`),
 jinak by všechny požadavky měly IP front-endu Azure a limit by platil pro celý internet dohromady.
+
+**Hledání se sdílí a dávkuje.** prehraj.to pustí z jedné IP zhruba 5 hledání za 10 s a pak na
+~20 s vrací 429. Všechny PHP proxy servery se přitom chovají jako jedna IP (po 429 na jednom
+vrátí 429 i ostatní), takže přeskakování na další server u 429 nemá smysl. `/api/search` proto
+drží výsledky ve sdílené cache (30 min, prázdné 5 min, při 429 se vrátí i starší kopie) a dotazy
+na prehraj.to pouští po jednom s odstupem 1,6 s (`PacedFirstWorking`). Cache se použije i když
+prohlížeč pošle `&proxy=…` – sada proxy je součástí klíče, takže stejný dotaz obslouží všechny
+diváky (dřív se cache kvůli parametru `proxy` nepoužila vůbec). Když je fronta delší než 8 s,
+vrátí se `rateLimited` a klient to sám po pár vteřinách zopakuje.
 
 **2. Nic se neblokuje podle hlaviček** – `/api` nekontroluje User-Agent, `Sec-Fetch-Site` ani
 `Referer`. Dřív tu byl deny-list nástrojů (curl, python-requests, okhttp…) plus požadavek na
@@ -176,7 +185,10 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
     192.168.x) odmítá.
   - `GET /api/thumb?q={query}[&t={titul}][&y={rok}][&re={regex}][&src=itunes]` - Jen thumbnail pro homepage. Výchozí regex je `query*`
     (každé významné slovo z `q`/`t` jako začátek slova v názvu/slugu, bez diakritiky, pořadí je jedno); `re` ho přepíše.
-    Výsledek se cachuje na serveru (týden, nenalezené hodinu).
+    Výsledek se cachuje na serveru (týden, nenalezené hodinu) – i když ho vrátí PHP proxy – a souběžné
+    stejné dotazy se slučují do jednoho. Prohlížeč náhledy pouští až po načtení katalogu z `/api/catalog`,
+    aby se při studeném startu neposlaly desítky hledání na prehraj.to jen na plakáty (ta hledání pak
+    chybí u vyhledávání, protože mají společnou kvótu).
     Volitelný limit souběžných dotazů (výchozí: bez limitu): server `Prehraj:ThumbConcurrency` (Azure `Prehraj__ThumbConcurrency`),
     aplikace: avatar vpravo nahoře → Nastavení → „Omezit souběžné dotazy na náhledy“ (výchozí vypnuto, uloží se v prohlížeči).
     Náhledy se vždycky berou z prehraj.to a vypnout se nedají. `src=itunes` je jen pro volání API – hledá
@@ -202,6 +214,9 @@ a nového .NET buildu** – starý proxy `subtitles` nevrací a starý backend `
 
 ### `/index.php`
 PHP proxy pro český hosting – bez něj se .NET verze k prehraj.to nedostane (viz výše).
+Hledání se v něm cachuje do `sys_get_temp_dir()` na 30 min (prázdné 5 min) a při 429 z prehraj.to
+vrátí i starší kopii, takže stejný dotaz nejde na prehraj.to znovu pro každou instanci appky ani po
+restartu. Po úpravě `index.php` je potřeba ho znovu nahrát na všechny proxy hostingy.
 
 ## Self-host bez Azure (Termux / Linux)
 

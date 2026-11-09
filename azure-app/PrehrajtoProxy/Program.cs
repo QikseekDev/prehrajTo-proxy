@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -111,7 +112,8 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
 
 // Limity platí na IP a jen pro /api (statické soubory se nelimitují). Nastavené tak,
 // aby běžnému člověku nepřekážely, ale scrapeování bylo pomalé:
-//   search  - 3 dotazy/s, dávka 8: jeden search = jeden request, tohle je rychlé klikání
+//   search  - 5 dotazů/s, dávka 20: jeden search = jeden request; celá třída za jednou
+//             NAT IP se do dávky vejde, skutečný strop je stejně limit prehraj.to (PacedFirstWorking)
 //   api     - 6/s, dávka 20: přehrávač při seekování pošle víc Range dotazů naráz
 //   thumb   - 10/s, dávka 40: úvodní stránka posílá náhledy všech posterů najednou
 builder.Services.AddRateLimiter(o =>
@@ -127,8 +129,8 @@ builder.Services.AddRateLimiter(o =>
 
     o.AddPolicy("search", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
     {
-        TokenLimit = 8,
-        TokensPerPeriod = 3,
+        TokenLimit = 20,
+        TokensPerPeriod = 5,
         ReplenishmentPeriod = TimeSpan.FromSeconds(1),
         QueueLimit = 0,
         AutoReplenishment = true,
@@ -340,6 +342,62 @@ static async Task<(bool ok, string body, List<string> errors)> FirstWorking(
     return (false, "", errors);
 }
 
+// prehraj.to pustí z jedné IP zhruba 5 hledání za 10 s a pak na ~15-20 s vrací 429. Všechny
+// PHP proxy servery jedou ze stejné egress IP, takže u 429 nemá smysl přeskakovat na další -
+// jen se spálí další dva pokusy a limit se prodlouží. Hledání proto pouštíme po jednom
+// s odstupem a po 429 zkusíme stejný server znovu; jiná chyba (timeout, 5xx) znamená vadný
+// server a jde se na další. Když je fronta delší než pár vteřin, vrátíme rate-limited hned -
+// klient to sám zopakuje (a mezitím se odpověď klidně objeví v cache od jiného diváka).
+var upstreamGate = new SemaphoreSlim(1, 1);
+var nextUpstreamSlot = DateTime.MinValue;
+const int UpstreamSpacingMs = 1600;
+const int UpstreamMaxQueueMs = 8000;
+
+async Task<(bool ok, string body, List<string> errors)> PacedFirstWorking(
+    Func<CancellationToken, Task<(int status, string body, string? err)>>[] sources,
+    CancellationToken ct = default)
+{
+    var errors = new List<string>();
+    foreach (var src in sources)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            if (ct.IsCancellationRequested) return (false, "", errors);
+
+            DateTime slot;
+            await upstreamGate.WaitAsync(ct);
+            try
+            {
+                var now = DateTime.UtcNow;
+                slot = nextUpstreamSlot > now ? nextUpstreamSlot : now;
+                if (slot - now > TimeSpan.FromMilliseconds(UpstreamMaxQueueMs))
+                {
+                    errors.Add("HTTP 429");
+                    return (false, "", errors);
+                }
+                nextUpstreamSlot = slot.AddMilliseconds(UpstreamSpacingMs);
+            }
+            finally { upstreamGate.Release(); }
+
+            var wait = slot - DateTime.UtcNow;
+            if (wait > TimeSpan.Zero) await Task.Delay(wait, ct);
+
+            (int status, string body, string? err) r;
+            try { r = await src(ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return (false, "", errors); }
+            catch (Exception ex) { errors.Add(ex.Message); break; }
+
+            if (r.err == null && Is2xx(r.status) && r.body.Length > 0 && IsGoodBody(r.body))
+                return (true, r.body, errors);
+
+            errors.Add(r.err ?? $"HTTP {r.status}");
+            if (r.status != 429) break;   // vadný server -> další proxy
+            await Task.Delay(TimeSpan.FromMilliseconds(1500 * (attempt + 1)), ct);
+        }
+    }
+    return (false, "", errors);
+}
+
 // Společná chybová odpověď, když selže úplně všechno (proxy i přímé volání).
 // Když některý zdroj vrátil 429, klient dostane rateLimited + retryAfter a sám to za pár vteřin zkusí znovu.
 static IResult AllFailed(List<string> errors)
@@ -441,8 +499,29 @@ static TimeSpan SearchTtl(string body)
     return TimeSpan.FromMinutes(5);
 }
 
-// Klient může poslat vlastní ?proxy= - takový dotaz do sdílené cache nepatří (šlo by ji otrávit).
-static bool CanShareCache(string[]? proxy) => proxy == null || proxy.All(string.IsNullOrWhiteSpace);
+// Náhledy: nalezený plakát držíme týden, nenalezený hodinu - stejně jako dřív, jen teď
+// i pro odpovědi z PHP proxy. TTL se počítá z těla, protože se cachuje hotový JSON.
+static TimeSpan ThumbTtl(string body)
+{
+    try
+    {
+        using var d = JsonDocument.Parse(body);
+        var thumb = d.RootElement.ValueKind == JsonValueKind.Object
+            && d.RootElement.TryGetProperty("thumbnail", out var th) ? th.GetString() ?? "" : "";
+        return thumb.Length > 0 ? TimeSpan.FromDays(7) : TimeSpan.FromHours(1);
+    }
+    catch (JsonException) { return TimeSpan.FromHours(1); }
+}
+
+// Prohlížeč posílá seznam proxy u každého dotazu (?proxy=... z DEFAULT_PROXY_SERVERS), takže
+// "dotaz bez ?proxy=" v praxi neexistuje - podle toho se sdílená cache nesmí vypínat, jinak
+// se nikdy nepoužije a každé hledání jde znovu na prehraj.to. Sada proxy jde proto do klíče:
+// stejná sada (v libovolném pořadí) sdílí výsledky, jiná sada má vlastní záznam, takže cizí
+// server nemůže podstrčit výsledky do sdílené cache.
+static string CacheScope(string[] proxies) => proxies.Length == 0
+    ? "direct"
+    : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+        string.Join("\n", proxies.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))))).Substring(0, 16);
 
 // Pořadí proxy serverů: naposledy funkční jde první, ostatní v pořadí z konfigurace/klienta.
 IEnumerable<string> OrderedProxies(IEnumerable<string> proxies)
@@ -603,16 +682,19 @@ app.MapGet("/api/search", async (string q, int? page, string[]? proxy, IHttpClie
     // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nikdy nechodí (datacentrová IP
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
     var query = $"action=search&q={Uri.EscapeDataString(q)}" + (pg > 1 ? $"&page={pg}" : "");
-    var sources = OrderedProxies(EffectiveProxies(proxy, serverProxies))
+    var proxies = EffectiveProxies(proxy, serverProxies);
+    var sources = OrderedProxies(proxies)
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
-
-    // Sdílená cache: normalizovaný dotaz (malá písmena, jedny mezery), jen bez vlastního ?proxy=.
+    // Sdílená cache: normalizovaný dotaz (malá písmena, jedny mezery) + sada proxy, ze které se
+    // výsledek vzal. Sada je v klíči proto, že prohlížeč posílá ?proxy= u každého dotazu - dřív
+    // se kvůli tomu cache pro běžné diváky vůbec nepoužila a každé hledání šlo na prehraj.to.
+    // Stejný dotaz teď obslouží všechny uživatele a při 429 se vrátí i starší uložená odpověď.
     var norm = Regex.Replace(q.ToLowerInvariant(), @"\s+", " ");
-    var cacheKey = "search:" + norm + (pg > 1 ? ":" + pg : "");
-    var (ok, body, errors) = CanShareCache(proxy) && norm.Length <= 100
-        ? await CachedFetch(cache, cacheKey, SearchTtl, () => FirstWorking(sources))
-        : await FirstWorking(sources);
+    var cacheKey = "search:" + CacheScope(proxies) + ":" + norm + (pg > 1 ? ":" + pg : "");
+    var (ok, body, errors) = norm.Length <= 100
+        ? await CachedFetch(cache, cacheKey, SearchTtl, () => PacedFirstWorking(sources))
+        : await PacedFirstWorking(sources);
     if (!ok) return AllFailed(errors);
     return Results.Content(body, "application/json");
 }).RequireRateLimiting("search");
@@ -717,42 +799,39 @@ app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string
         return Results.BadRequest(new { success = false, error = "Invalid regex: " + ex.Message });
     }
 
-    var key = $"thumb|{src}|{Norm(q)}|{Norm(t)}|{y}|{re}";
-    if (!cache.TryGetValue(key, out ThumbResult? res) || res is null)
+    // Sada proxy je v klíči ze stejného důvodu jako u hledání: prohlížeč posílá ?proxy=
+    // u každého dotazu. Náhledy se navíc musí cachovat i když je vrátí PHP proxy - dřív se
+    // ukládaly jen ty z iTunes, takže každý nový divák (a každý restart) znovu poslal na
+    // prehraj.to desítky hledání za náhledy a vyčerpal tím kvótu, kterou pak nemělo hledání.
+    var key = $"thumb|{CacheScope(eff)}|{src}|{Norm(q)}|{Norm(t)}|{y}|{re}";
+
+    // Postupně PHP proxy servery, pak vlastní pohled iTunes (na prehraj.to přímo se nechodí). Kdo vrátí 2xx
+    // s normální odpovědí, ten vyhrává; chyba (429 atd.) nebo {"success":false} = prohra
+    // a bere se další zdroj. Stejný náhled pro víc diváků najednou se stahuje jen jednou
+    // (single-flight v CachedFetch).
+    var sources = OrderedProxies(eff).Select(p => ProxySource(f, p, qs, 40, g => lastGoodProxy = g)).ToList();
+    sources.Add(async ct =>
     {
-        // Postupně PHP proxy servery, pak vlastní pohled iTunes (na prehraj.to přímo se nechodí). Kdo vrátí 2xx
-        // s normální odpovědí, ten vyhrává; chyba (429 atd.) nebo {"success":false} = prohra
-        // a bere se další zdroj. Když selže všechno, klient dostane chybu a zkusí to příště.
-        // Nejdřív PHP proxy servery jeden po druhém, iTunes až jako poslední záloha.
-        var sources = OrderedProxies(eff).Select(p => ProxySource(f, p, qs, 40, g => lastGoodProxy = g)).ToList();
-        sources.Add(async ct =>
-        {
-            // Nikdy přímo na prehraj.to - jen přes PHP proxy servery; tahle cesta zůstává jen pro iTunes.
-            ThumbResult? r2 = null;
-            if (src == "itunes") r2 = await ItunesThumb(f, t.Length > 0 ? t : q, rx, y);
-            if (r2 is null) return (0, "", "direct fetch disabled - use PHP proxies");
-            // nalezené držíme týden, nenalezené hodinu; chyby z prehraj.to se necachují
-            cache.Set(key, r2, r2.Thumbnail.Length > 0 ? TimeSpan.FromDays(7) : TimeSpan.FromHours(1));
-            var json = JsonSerializer.Serialize(new { success = true, q, thumbnail = r2.Thumbnail, title = r2.Title, url = r2.Url });
-            return (200, json, (string?)null);
-        });
+        // Nikdy přímo na prehraj.to - jen přes PHP proxy servery; tahle cesta zůstává jen pro iTunes.
+        ThumbResult? r2 = null;
+        if (src == "itunes") r2 = await ItunesThumb(f, t.Length > 0 ? t : q, rx, y);
+        if (r2 is null) return (0, "", "direct fetch disabled - use PHP proxies");
+        var json = JsonSerializer.Serialize(new { success = true, q, thumbnail = r2.Thumbnail, title = r2.Title, url = r2.Url });
+        return (200, json, (string?)null);
+    });
 
-        var (won, body, errors) = await FirstWorking(sources.ToArray());
-        if (!won) return AllFailed(errors);
+    var (won, body, errors) = await CachedFetch(cache, key, ThumbTtl, () => FirstWorking(sources.ToArray()));
+    if (!won) return AllFailed(errors);
 
-        var thumb = "";
-        try
-        {
-            using var d = JsonDocument.Parse(body);
-            if (d.RootElement.TryGetProperty("thumbnail", out var th)) thumb = th.GetString() ?? "";
-        }
-        catch (JsonException) { }
-        ctx.Response.Headers.CacheControl = thumb.Length > 0 ? "public, max-age=86400" : "public, max-age=600";
-        return Results.Content(body, "application/json");
+    var thumb = "";
+    try
+    {
+        using var d = JsonDocument.Parse(body);
+        if (d.RootElement.TryGetProperty("thumbnail", out var th)) thumb = th.GetString() ?? "";
     }
-
-    ctx.Response.Headers.CacheControl = res.Thumbnail.Length > 0 ? "public, max-age=86400" : "public, max-age=600";
-    return Results.Json(new { success = true, q, thumbnail = res.Thumbnail, title = res.Title, url = res.Url });
+    catch (JsonException) { }
+    ctx.Response.Headers.CacheControl = thumb.Length > 0 ? "public, max-age=86400" : "public, max-age=600";
+    return Results.Content(body, "application/json");
 }).RequireRateLimiting("thumb");
 
 // ------------------------------------------------------------------ /api/catalog  (filmy pro homepage)
