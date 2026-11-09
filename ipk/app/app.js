@@ -621,7 +621,7 @@
 
   function libCardHtml(rec, kind, idx) {
     var img = rec.poster || '';
-    var art = img ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '';
+    var art = img ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer">' : '';
     var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</div>';
     var pct = 0;
     var badge = '', note = 'Oblíbené';
@@ -1061,7 +1061,7 @@
   function cardHtml(it, idx, extra) {
     var img = itemImg(it);
     var art = img
-      ? '<img src="' + esc(img) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
+      ? '<img src="' + esc(img) + '" alt="" onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
       : '';
     var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</div>';
     var year = itemYear(it);
@@ -1270,7 +1270,7 @@
   function movieCardHtml(m, idx) {
     var img = m.thumbnail || '';
     var artImg = img
-      ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer"'
+      ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer"'
         + ' onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
       : '';
     return '<button class="f card wide" type="button" data-idx="' + idx + '">'
@@ -1283,7 +1283,7 @@
   function seriesCardHtml(series, idx) {
     var img = series.poster || '';
     var artImg = img
-      ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer"'
+      ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer"'
         + ' onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
       : '';
     return '<button class="f card wide" type="button" data-idx="' + idx + '">'
@@ -1668,7 +1668,7 @@
       var initials = String(c.name || '?').split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0); }).join('').toUpperCase();
       html += '<button class="f ch" type="button" data-ch="' + idx + '">'
         + '<span class="logo">' + (c.logo
-          ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML=\'<span class=&quot;init&quot;>' + esc(initials) + '</span>\'">'
+          ? '<img src="' + esc(c.logo) + '" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML=\'<span class=&quot;init&quot;>' + esc(initials) + '</span>\'">'
           : '<span class="init">' + esc(initials) + '</span>') + '</span>'
         + '<span class="name">' + esc(c.name) + '</span>'
         + '<span class="badges">'
@@ -2223,7 +2223,7 @@
     try {
       var dlg = $('health');
       if (!dlg || dlg.hidden) return;
-      dlg.hidden = true;
+      dlg.hidden = true; try{dlg.style.display='none';}catch(_){}
       if (typeof hide === 'function') { try { hide(dlg); } catch(_){} }
       if (typeof focusAfterOverlay === 'function') { try { focusAfterOverlay(); } catch(_){} }
     } catch(e) {}
@@ -2234,11 +2234,11 @@
       if (!dlg || !content) { if (typeof toast==='function') toast('Status overlay není k dispozici.'); return; }
       try { if (fromEl) lastFocus = fromEl; else if (document.activeElement && document.activeElement !== document.body) lastFocus = document.activeElement; } catch(_){}
       content.innerHTML = '<span class="spinner"></span> Načítám /api/health…';
-      dlg.hidden = false;
+      dlg.hidden = false; try{dlg.style.display='';}catch(_){}
       if (typeof show === 'function') { try { show(dlg); } catch(_){} }
       try { var closeBtn = $('healthClose'); if (closeBtn) { if (typeof focusEl === 'function') focusEl(closeBtn); else if (closeBtn.focus) closeBtn.focus(); } } catch(_){}
       var done = false;
-      function finish(data, status) { if (done) return; done = true; try { if (!dlg.hidden) content.innerHTML = renderHealthData(data, status); } catch(_){} }
+      var finish = function(data, status) { if (done) return; done = true; try { if (!dlg.hidden) content.innerHTML = renderHealthData(data, status); } catch(_){} };
       try {
         var p = apiJson('/api/health?ts=' + Date.now(), 15000);
         if (p && p.then) p.then(function (d) {
@@ -2504,6 +2504,7 @@
 
     renderLiveChips();
     renderSettings();
+    var _hd=$('health'); if(_hd){_hd.hidden=true; try{_hd.style.display='none';}catch(_){}} 
 
     startApp();
   }

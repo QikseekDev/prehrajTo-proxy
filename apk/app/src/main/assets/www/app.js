@@ -2223,7 +2223,7 @@
     try {
       var dlg = $('health');
       if (!dlg || dlg.hidden) return;
-      dlg.hidden = true;
+      dlg.hidden = true; try{dlg.style.display='none';}catch(_){}
       if (typeof hide === 'function') { try { hide(dlg); } catch(_){} }
       if (typeof focusAfterOverlay === 'function') { try { focusAfterOverlay(); } catch(_){} }
     } catch(e) {}
@@ -2234,11 +2234,11 @@
       if (!dlg || !content) { if (typeof toast==='function') toast('Status overlay není k dispozici.'); return; }
       try { if (fromEl) lastFocus = fromEl; else if (document.activeElement && document.activeElement !== document.body) lastFocus = document.activeElement; } catch(_){}
       content.innerHTML = '<span class="spinner"></span> Načítám /api/health…';
-      dlg.hidden = false;
+      dlg.hidden = false; try{dlg.style.display='';}catch(_){}
       if (typeof show === 'function') { try { show(dlg); } catch(_){} }
       try { var closeBtn = $('healthClose'); if (closeBtn) { if (typeof focusEl === 'function') focusEl(closeBtn); else if (closeBtn.focus) closeBtn.focus(); } } catch(_){}
       var done = false;
-      function finish(data, status) { if (done) return; done = true; try { if (!dlg.hidden) content.innerHTML = renderHealthData(data, status); } catch(_){} }
+      var finish = function(data, status) { if (done) return; done = true; try { if (!dlg.hidden) content.innerHTML = renderHealthData(data, status); } catch(_){} };
       try {
         var p = apiJson('/api/health?ts=' + Date.now(), 15000);
         if (p && p.then) p.then(function (d) {
@@ -2497,6 +2497,7 @@
 
     renderLiveChips();
     renderSettings();
+    var _hd=$('health'); if(_hd){_hd.hidden=true; try{_hd.style.display='none';}catch(_){}} 
 
     startApp();
   }
