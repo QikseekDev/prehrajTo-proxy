@@ -28,8 +28,8 @@ android {
         applicationId 'cz.qikseek.wflix'
         minSdk 23
         targetSdk 34
-        versionCode 31
-        versionName '1.3.0'
+        versionCode 32
+        versionName '1.3.1'
         // Klient mluví s tvým Wflix backendem (Azure nebo PHP self-host)
         // a streamy tahá z CDN, takže potřebuje jen internet.
     }
