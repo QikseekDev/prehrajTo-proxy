@@ -63,7 +63,8 @@
     lang: 'cz',        // jazyk katalogu
     live: 'cz',        // výchozí zdroj živého vysílání
     subSize: 'm',      // velikost titulků (m | l | xl)
-    subBg: 'dark'      // pozadí titulků (dark | light | none)
+    subBg: 'dark',     // pozadí titulků (dark | light | none)
+    searchMerge: false // Experimental: Více výsledků (source=all), tolerantní k výpadku zdroje
   };
 
   function loadSettings() {
@@ -75,6 +76,7 @@
         if (typeof s.live === 'string') settings.live = s.live;
         if (s.subSize === 'm' || s.subSize === 'l' || s.subSize === 'xl') settings.subSize = s.subSize;
         if (s.subBg === 'dark' || s.subBg === 'light' || s.subBg === 'none') settings.subBg = s.subBg;
+        if (typeof s.searchMerge === 'boolean') settings.searchMerge = s.searchMerge;
       }
     } catch (e) { /* poškozené úložiště – jedeme s výchozím */ }
     settings.server = FIXED_SERVER;   // starší uložená adresa se ignoruje
@@ -83,7 +85,7 @@
     try {
       localStorage.setItem(LS_SETTINGS, JSON.stringify({
         direct: settings.direct, lang: settings.lang, live: settings.live,
-        subSize: settings.subSize, subBg: settings.subBg
+        subSize: settings.subSize, subBg: settings.subBg, searchMerge: settings.searchMerge
       }));
     } catch (e) { /* TV může mít úložiště vypnuté – jede se dál bez uložení */ }
   }
@@ -1240,7 +1242,7 @@
     st.className = 'state show';
     st.textContent = 'Hledám „' + q + '“ …';
     if (!quiet) loading('Hledám „' + q + '“ …');
-    return apiJson('/api/search?q=' + encodeURIComponent(q)).then(function (d) {
+    return apiJson('/api/search?q=' + encodeURIComponent(q) + (settings.searchMerge ? '&source=all' : '')).then(function (d) {
       if (!quiet) loading(null);
       if (token !== searchToken) return;          // mezitím se psalo dál
       if (!d) { st.className = 'state show err'; st.textContent = 'Server nevrátil platnou odpověď.'; return; }
@@ -1442,7 +1444,7 @@
     if (token !== seriesToken || !state.series) return;
     if (page > SERIES_MAX_PAGES) { setSeriesNote(null); return; }
     setSeriesNote('Načítám další díly…');
-    apiJson('/api/search?q=' + encodeURIComponent(state.seriesQuery) + '&page=' + page).then(function (d) {
+    apiJson('/api/search?q=' + encodeURIComponent(state.seriesQuery) + '&page=' + page + (settings.searchMerge ? '&source=all' : '')).then(function (d) {
       if (token !== seriesToken || !state.series) return;
       var movies = (d && d.success && d.movies) ? d.movies : [];
       if (!movies.length) { setSeriesNote('Další díly už nejsou.'); return; }
@@ -1544,7 +1546,7 @@
   /* Z katalogu: najdi film a ukaž výsledky hledání (nic se nespouští samo) */
   function searchThenPlay(q) {
     loading('Hledám „' + q + '“ …');
-    apiJson('/api/search?q=' + encodeURIComponent(q)).then(function (d) {
+    apiJson('/api/search?q=' + encodeURIComponent(q) + (settings.searchMerge ? '&source=all' : '')).then(function (d) {
       loading(null);
       if (!d || !d.success || !(d.movies || []).length) {
         toast('Pro „' + q + '“ prehraj.to nic nenašel.');
@@ -2075,6 +2077,10 @@
       + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setDirect">' + (settings.direct ? 'Zapnuto' : 'Vypnuto') + '</button></div>'
       + '</div>'
       + '<div class="set-row">'
+      + '  <div class="lab"><b>Více výsledků</b><span>Experimentální: hledá na Prehraj.to, Sledujteto a Bombuj najednou. Když jeden zdroj selže, použijí se ostatní; chyba jen když selžou všechny.</span></div>'
+      + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setSearchMerge">' + (settings.searchMerge ? 'Zapnuto' : 'Vypnuto') + '</button></div>'
+      + '</div>'
+      + '<div class="set-row">'
       + '  <div class="lab"><b>Jazyk katalogu</b><span>Plakáty a tituly na úvodní stránce.</span></div>'
       + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setLang">' + (settings.lang === 'en' ? 'English' : 'Čeština') + '</button></div>'
       + '</div>'
@@ -2112,6 +2118,14 @@
       renderSettings();
       focusEl($('setDirect'));
       toast('Přímé přehrávání: ' + (settings.direct ? 'zapnuto' : 'vypnuto'));
+    });
+    $('setSearchMerge').addEventListener('click', function () {
+      // Experimental: source=all merge (Prehraj.to + Sledujteto + Bombuj), tolerant to single-source failures.
+      settings.searchMerge = !settings.searchMerge;
+      saveSettings();
+      renderSettings();
+      focusEl($('setSearchMerge'));
+      toast('Více výsledků: ' + (settings.searchMerge ? 'zapnuto' : 'vypnuto'));
     });
     $('setLang').addEventListener('click', function () {
       settings.lang = settings.lang === 'en' ? 'cz' : 'en';
