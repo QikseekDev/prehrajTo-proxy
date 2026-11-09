@@ -1794,6 +1794,7 @@
   }
 
   function resetVideo() {
+    try{ if(typeof clearStallRecovery==='function') clearStallRecovery(); }catch(_){} try{ stallNudges=0; }catch(_){}
     destroyHls();
     try { video.pause(); } catch (e) { }
     video.removeAttribute('src');
@@ -1919,6 +1920,7 @@
     if (player.kind === 'live') return;
     var d = video.duration;
     if (!isFinite(d) || d <= 0) return;
+    try { video.pause(); } catch(_){}
     video.currentTime = Math.min(d - 0.3, Math.max(0, video.currentTime + sec));
     updateProgress();
     bumpIdle();
@@ -1928,6 +1930,7 @@
     if (player.kind === 'live') return;
     var d = video.duration;
     if (!isFinite(d) || d <= 0) return;
+    try { video.pause(); } catch(_){}
     video.currentTime = Math.max(0, Math.min(d - 0.3, d * f));
     updateProgress();
     bumpIdle();
@@ -1949,8 +1952,33 @@
       if (liveLocked() && video.paused && !document.hidden && video.currentSrc) play();
     }, 60);
   });
-  video.addEventListener('waiting', function () { setPlayerState('Načítám stream…'); });
-  video.addEventListener('playing', function () { setPlayerState(null); bumpIdle(); });
+
+  var stallTimer = null, stallNudges = 0;
+  function clearStallRecovery(){ if(stallTimer){ clearTimeout(stallTimer); stallTimer=null; } }
+  function nudgeStalledStream(){ try{
+    if($('player')&&$('player').hidden) return;
+    if(player.kind==='live') return;
+    if(video.ended) return;
+    if(video.readyState >= 3 && !video.paused) return; // has data/playing enough
+    var d = video.duration, t = video.currentTime;
+    if(isFinite(d) && d>1 && isFinite(t)){
+      // malý posun vpřed (uživatel to dělá ručně) + pokus o pokračování
+      var nt = Math.min(d - 0.5, Math.max(0, t + 0.35));
+      if(Math.abs(nt-t) > 0.01) video.currentTime = nt;
+    }
+    try{ var p=video.play(); if(p&&p.catch) p.catch(function(){}); }catch(_){}
+  }catch(_){} }
+  function scheduleStallRecovery(){ try{
+    if(player.kind==='live' || video.ended) return;
+    if(stallNudges >= 3) return;
+    clearStallRecovery();
+    stallTimer = setTimeout(function(){ stallTimer=null; if(player.kind==='live'||video.ended||($('player')&&$('player').hidden)) return; if(video.readyState < 3){ stallNudges++; nudgeStalledStream(); scheduleStallRecovery(); } }, 7000);
+  }catch(_){} }
+
+  video.addEventListener('waiting', function () { setPlayerState('Načítám stream…'); scheduleStallRecovery(); });
+  video.addEventListener('playing', function () { setPlayerState(null); bumpIdle(); stallNudges=0; clearStallRecovery(); });
+  video.addEventListener('canplay', function(){ clearStallRecovery(); if(video.readyState>=3 && player.kind!=='live') setPlayerState(null); });
+  video.addEventListener('stalled', function(){ if(player.kind!=='live') scheduleStallRecovery(); });
   video.addEventListener('ended', function () {
     var d = video.duration;
     var finished = isFinite(d) && d > 0 && video.currentTime >= d - 1.5;
