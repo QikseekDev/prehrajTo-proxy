@@ -2433,6 +2433,85 @@
     if (settings.live) state.liveFilter = settings.live;
   }
 
+
+  // Drag-to-scroll (mouse/pointer/touch drag) so content can be moved without only clicking.
+  function addDragScroll(root, opts) {
+    if (!root || root.__dragScroll) return;
+    root.__dragScroll = true;
+    opts = opts || {};
+    var threshold = opts.threshold || 6;
+    var dragging = false, moved = false, startX = 0, startY = 0, sl = 0, st = 0, pid = null;
+    var axis = opts.axis || 'both'; // 'x','y','both'
+    function onDown(e) {
+      if (!e) return;
+      if (e.pointerType === 'touch' && e.isPrimary === false) return;
+      if (e.button != null && e.button !== 0 && e.pointerType !== 'touch') return;
+      var t = e.target;
+      // don't hijack explicit controls/inputs/range interactions
+      if (t && t.closest && t.closest('input,textarea,select,.p-bar,[data-no-drag]')) return;
+      dragging = true; moved = false; pid = (e.pointerId != null ? e.pointerId : 'mouse');
+      startX = e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      startY = e.clientY != null ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      sl = root.scrollLeft || 0; st = root.scrollTop || 0;
+    }
+    function onMove(e) {
+      if (!dragging) return;
+      if (pid !== 'mouse' && e.pointerId != null && e.pointerId !== pid) return;
+      var x = e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : startX);
+      var y = e.clientY != null ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : startY);
+      var dx = x - startX, dy = y - startY;
+      if (!moved && (Math.abs(dx) > threshold || Math.abs(dy) > threshold)) {
+        moved = true;
+        try { root.classList.add('dragging'); } catch(_){}
+        try { if (root.setPointerCapture && e.pointerId != null) root.setPointerCapture(e.pointerId); } catch(_){}
+      }
+      if (!moved) return;
+      if (axis !== 'y') root.scrollLeft = sl - dx;
+      if (axis !== 'x') root.scrollTop = st - dy;
+      if (e.cancelable) try { e.preventDefault(); } catch(_){}
+    }
+    function onUp(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { root.classList.remove('dragging'); } catch(_){}
+      if (moved) {
+        // suppress click caused by drag release
+        var suppress = function(ev){ if(ev){ev.stopPropagation&&ev.stopPropagation(); ev.preventDefault&&ev.preventDefault();} root.removeEventListener('click', suppress, true); };
+        root.addEventListener('click', suppress, true);
+        setTimeout(function(){ try{root.removeEventListener('click', suppress, true);}catch(_){ } }, 0);
+      }
+      moved = false; pid = null;
+    }
+    if (window.PointerEvent) {
+      root.addEventListener('pointerdown', onDown, {passive:true});
+      root.addEventListener('pointermove', onMove, {passive:false});
+      root.addEventListener('pointerup', onUp, {passive:true});
+      root.addEventListener('pointercancel', onUp, {passive:true});
+      root.addEventListener('pointerleave', onUp, {passive:true});
+    } else {
+      root.addEventListener('mousedown', onDown, false);
+      window.addEventListener('mousemove', onMove, false);
+      window.addEventListener('mouseup', onUp, false);
+      root.addEventListener('touchstart', onDown, {passive:true});
+      root.addEventListener('touchmove', onMove, {passive:false});
+      root.addEventListener('touchend', onUp, {passive:true});
+      root.addEventListener('touchcancel', onUp, {passive:true});
+    }
+  }
+  function attachDynamicDragScroll() {
+    var els = document.querySelectorAll('.row-scroll,.series-body,.health-content');
+    for (var i=0;i<els.length;i++) addDragScroll(els[i], {axis: els[i].classList.contains('row-scroll') ? 'x' : 'y'});
+  }
+  function initDragScroll() {
+    var main = $('main') || document.querySelector('.main');
+    if (main) addDragScroll(main, {axis:'y'});
+    attachDynamicDragScroll();
+    try {
+      var mo = new MutationObserver(function(){ attachDynamicDragScroll(); });
+      mo.observe(document.body, {childList:true, subtree:true});
+    } catch(_){}
+  }
+
   function boot() {
     document.body.classList.toggle('touch', isTouch);
     document.documentElement.classList.toggle('touch', isTouch);
@@ -2506,6 +2585,7 @@
     renderSettings();
     var _hd=$('health'); if(_hd){_hd.hidden=true; try{_hd.style.display='none';}catch(_){}} 
 
+    try{initDragScroll();}catch(_){}
     startApp();
   }
 
