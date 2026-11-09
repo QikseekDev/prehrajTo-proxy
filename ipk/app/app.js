@@ -2498,6 +2498,11 @@
       }
       if (k === 'Enter') {
         var f = currentFocus();
+        if (playerOpen && f === $('pBar')) {
+          e.preventDefault();
+          if (player.kind !== 'live') { if (video.paused) play(); else video.pause(); }
+          return;
+        }
         if (f === $('searchInput') && !isTouch) {
           e.preventDefault();
           openKeyboard({
