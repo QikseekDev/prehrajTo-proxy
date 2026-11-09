@@ -2579,8 +2579,22 @@
 
   var LS_PROGRESS = 'wflix.progress';
   function progressKey(u){ return String(u||'').trim(); }
-  function loadProgressMap(){ try { var v = JSON.parse(localStorage.getItem(LS_PROGRESS)||'{}'); return (v && typeof v==='object') ? v : {}; } catch(_){ return {}; } }
-  function saveProgressMap(m){ try { var ks=Object.keys(m||{}); if(ks.length>80){ ks.sort(function(a,b){ return (m[b].ts||0)-(m[a].ts||0); }); var nm={}; for(var i=0;i<60&&i<ks.length;i++) nm[ks[i]]=m[ks[i]]; m=nm; } localStorage.setItem(LS_PROGRESS, JSON.stringify(m)); } catch(_){} }
+  function loadProgressMap(){ try {
+    var v = JSON.parse(localStorage.getItem(LS_PROGRESS)||'{}');
+    if(!v || typeof v!=='object') return {};
+    var now=Date.now(), ttl=30*24*60*60*1000, out={}, changed=false;
+    var ks=Object.keys(v); for(var i=0;i<ks.length;i++){ var k=ks[i], it=v[k];
+      if(it && typeof it==='object' && isFinite(it.t) && (now-(it.ts||0)) <= ttl) out[k]=it; else changed=true; }
+    if(changed) try{ localStorage.setItem(LS_PROGRESS, JSON.stringify(out)); }catch(_){}
+    return out;
+  } catch(_){ return {}; } }
+  function saveProgressMap(m){ try {
+    var now=Date.now(), ttl=30*24*60*60*1000, ks=Object.keys(m||{}), clean={};
+    for(var j=0;j<ks.length;j++){ var k=ks[j], it=m[k]; if(it && (now-(it.ts||0)) <= ttl && isFinite(it.t)) clean[k]=it; }
+    ks=Object.keys(clean);
+    if(ks.length>80){ ks.sort(function(a,b){ return (clean[b].ts||0)-(clean[a].ts||0); }); var nm={}; for(var i=0;i<60&&i<ks.length;i++) nm[ks[i]]=clean[ks[i]]; clean=nm; }
+    localStorage.setItem(LS_PROGRESS, JSON.stringify(clean));
+  } catch(_){} }
   function getSavedProgress(u){ var m=loadProgressMap(), it=m[progressKey(u)]; if(!it||!isFinite(it.t)) return 0; return it.t; }
   function saveVideoProgress(force){ try{ if(!player||player.kind==='live'||!player.resumeKey) return; var d=video.duration, t=video.currentTime; if(!isFinite(d)||d<=0||!isFinite(t)) return; var k=progressKey(player.resumeKey); if(!k) return; if(!force && (t<8 || d-t<20)) return; var m=loadProgressMap(); m[k]={t:Math.floor(t), d:Math.floor(d), ts:Date.now()}; saveProgressMap(m); player._lastProgSave=Date.now(); }catch(_){} }
   function clearVideoProgress(u){ try{ var m=loadProgressMap(); delete m[progressKey(u||player.resumeKey)]; saveProgressMap(m); }catch(_){} }
