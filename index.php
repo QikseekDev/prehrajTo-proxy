@@ -37,6 +37,8 @@ if ($action === 'search') {
     handleSearch($source);
 } elseif ($action === 'thumb') {
     handleThumb();
+} elseif ($action === 'health') {
+    handleHealth();
 } elseif ($action === 'stream') {
     handleStream();
 } else {
@@ -1016,4 +1018,90 @@ function handleVideo($source = 'prehrajto') {
             'hint' => 'Page might require JavaScript or different parsing'
         ]);
     }
+}
+
+
+function wflixHealthProbe($url, $timeout = 8, $headers = [], $post = null) {
+    $t0 = microtime(true);
+    $ch = curl_init($url);
+    $base = ['Accept: */*', 'Accept-Language: cs-CZ,cs;q=0.9,en;q=0.5'];
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => min(5, $timeout),
+        CURLOPT_HTTPHEADER => array_merge($base, $headers),
+        CURLOPT_ENCODING => '',
+    ]);
+    if ($post !== null) {
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, is_array($post) ? http_build_query($post) : $post);
+    }
+    $body = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    $ms = (int)round((microtime(true) - $t0) * 1000);
+    $ok = !$err && $code >= 200 && $code < 400 && $body !== false && $body !== '';
+    return ['ok' => $ok, 'status' => $code, 'ms' => $ms, 'error' => $err ?: ($ok ? null : ($code ? 'HTTP ' . $code : 'empty response'))];
+}
+
+function handleHealth() {
+    header('Cache-Control: no-store, max-age=0');
+    $checks = [
+        ['name' => 'prehraj.to', 'type' => 'upstream', 'url' => 'https://prehraj.to/'],
+        ['name' => 'sledujteto.cz api', 'type' => 'upstream', 'url' => 'https://www.sledujteto.cz/api/web/videos?query=test&limit=1&page=1&sort=relevance',
+         'headers' => ['Accept: application/json', 'X-Requested-With: XMLHttpRequest', 'Referer: https://www.sledujteto.cz/vyhledat/?search=test&page=1', 'Origin: https://www.sledujteto.cz']],
+        ['name' => 'bombuj.si', 'type' => 'upstream', 'url' => 'https://www.bombuj.si/uvod.php'],
+        ['name' => 'itunes catalog', 'type' => 'upstream', 'url' => 'https://itunes.apple.com/search?media=movie&entity=movie&country=cz&limit=1&term=matrix'],
+    ];
+    $mh = curl_multi_init();
+    $chs = [];
+    foreach ($checks as $i => $c) {
+        $t0 = microtime(true);
+        $ch = curl_init($c['url']);
+        $base = ['Accept: */*', 'Accept-Language: cs-CZ,cs;q=0.9,en;q=0.5'];
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 8, CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            CURLOPT_SSL_VERIFYPEER => false, CURLOPT_HTTPHEADER => array_merge($base, isset($c['headers']) ? $c['headers'] : []), CURLOPT_ENCODING => '',
+        ]);
+        curl_multi_add_handle($mh, $ch);
+        $chs[$i] = ['ch' => $ch, 't0' => $t0, 'meta' => $c];
+    }
+    do { curl_multi_exec($mh, $running); if ($running) curl_multi_select($mh, 0.2); } while ($running > 0);
+    $upstreams = [];
+    $allOk = true;
+    foreach ($chs as $i => $x) {
+        $body = curl_multi_getcontent($x['ch']);
+        $code = (int)curl_getinfo($x['ch'], CURLINFO_HTTP_CODE);
+        $err = curl_error($x['ch']);
+        $ms = (int)round((microtime(true) - $x['t0']) * 1000);
+        curl_multi_remove_handle($mh, $x['ch']);
+        curl_close($x['ch']);
+        $ok = !$err && $code >= 200 && $code < 400 && $body !== false && $body !== '';
+        if (!$ok) $allOk = false;
+        $upstreams[] = ['name' => $x['meta']['name'], 'type' => $x['meta']['type'], 'ok' => $ok, 'status' => $code, 'ms' => $ms, 'error' => $err ?: ($ok ? null : ($code ? 'HTTP ' . $code : 'empty response'))];
+    }
+    curl_multi_close($mh);
+
+    $endpoints = [
+        ['endpoint' => 'action=search', 'ok' => true, 'note' => 'handler available (prehrajto/bombuj/sledujteto/all)'],
+        ['endpoint' => 'action=thumb', 'ok' => true, 'note' => 'handler available'],
+        ['endpoint' => 'action=health', 'ok' => true, 'note' => 'handler available'],
+        ['endpoint' => 'action=stream', 'ok' => true, 'note' => 'handler available'],
+        ['endpoint' => 'action=video/proxy resolve', 'ok' => true, 'note' => 'handler available'],
+    ];
+
+    echo json_encode([
+        'success' => $allOk,
+        'status' => $allOk ? 'ok' : 'degraded',
+        'service' => 'prehrajto-proxy (php)',
+        'time' => gmdate('c'),
+        'endpoints' => $endpoints,
+        'upstreams' => $upstreams,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
 }

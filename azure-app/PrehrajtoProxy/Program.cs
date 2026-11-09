@@ -1481,14 +1481,58 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
 }).RequireRateLimiting("api");
 
 // ------------------------------------------------------------------ /api/health + /api/ping
-app.MapGet("/api/health", () => Results.Json(new
+app.MapGet("/api/health", async (IHttpClientFactory f) =>
 {
-    ok = true,
-    timeUtc = DateTime.UtcNow,
-    onlineUsers = OnlineCount(),
-    proxies = serverProxies.Count(IsValidProxyUrl),
-    lastGoodProxy = lastGoodProxy ?? "",
-}));
+    static async Task<object> Probe(IHttpClientFactory f, string name, string url, int timeoutSec = 8, Dictionary<string,string>? headers = null)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
+            var c = f.CreateClient("prehraj");
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (headers != null) foreach (var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+            using var resp = await c.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            sw.Stop();
+            var ok = (int)resp.StatusCode >= 200 && (int)resp.StatusCode < 400;
+            return new { endpoint = name, ok, status = (int)resp.StatusCode, ms = sw.ElapsedMilliseconds, error = ok ? (string?)null : ("HTTP " + (int)resp.StatusCode) };
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            return new { endpoint = name, ok = false, status = 0, ms = sw.ElapsedMilliseconds, error = ex.GetType().Name + ": " + ex.Message };
+        }
+    }
+
+    var mapped = new[] { "/api/search", "/api/thumb", "/api/catalog", "/api/live", "/api/live/countries", "/api/live/hls", "/api/subtitles", "/api/proxy", "/api/stream", "/api/health", "/api/ping" };
+    var mappedResults = mapped.Select(m => new { endpoint = m, ok = true, note = "mapped" }).ToArray<object>();
+
+    var probes = new List<Task<object>>();
+    probes.Add(Probe(f, "upstream:itunes", "https://itunes.apple.com/search?media=movie&entity=movie&country=cz&limit=1&term=matrix"));
+    probes.Add(Probe(f, "upstream:iptv-org", "https://iptv-org.github.io/api/countries.json"));
+    probes.Add(Probe(f, "upstream:prehraj.to", "https://prehraj.to/"));
+    probes.Add(Probe(f, "upstream:sledujteto.cz", "https://www.sledujteto.cz/api/web/videos?query=test&limit=1&page=1&sort=relevance",
+        new Dictionary<string,string> { ["Accept"]="application/json", ["X-Requested-With"]="XMLHttpRequest", ["Referer"]="https://www.sledujteto.cz/vyhledat/?search=test&page=1", ["Origin"]="https://www.sledujteto.cz" }));
+    probes.Add(Probe(f, "upstream:bombuj.si", "https://www.bombuj.si/uvod.php"));
+    foreach (var proxy in serverProxies.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).Take(6))
+    {
+        var purl = proxy.Contains('?') ? (proxy + "&action=health") : (proxy + "?action=health");
+        probes.Add(Probe(f, "proxy:" + proxy, purl, 10));
+    }
+    var probeResults = await Task.WhenAll(probes);
+    var ok = probeResults.All(r => ((dynamic)r).ok);
+    return Results.Json(new
+    {
+        ok,
+        status = ok ? "ok" : "degraded",
+        timeUtc = DateTime.UtcNow,
+        onlineUsers = OnlineCount(),
+        proxies = serverProxies.Count(IsValidProxyUrl),
+        lastGoodProxy = lastGoodProxy ?? "",
+        endpoints = mappedResults,
+        checks = probeResults,
+    });
+});
 
 // Lehký heartbeat pro indikátor přítomnosti (nastavení / UI).
 app.MapGet("/api/ping", () => Results.Json(new { ok = true, onlineUsers = OnlineCount() }))

@@ -572,6 +572,13 @@ function subtitleRelay() {
 }
 
 switch ($path) {
+    case '/api/health':
+        if ($proxies) sendRaceWinner(viaProxyRace($proxies, 'action=health', 12));
+        else setActiveSource('direct');
+        $_GET['action'] = 'health';
+        require __DIR__ . '/index.php';
+        return true;
+
     case '/api/search':
         $q = $_GET['q'] ?? '';
         $page = (int)($_GET['page'] ?? 1);
