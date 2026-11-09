@@ -39,11 +39,22 @@ jobs:
           fi
           F=ipk/app/appinfo.json
           VER=$(jq -r .version "$F")
-          NEW="${VER%.*}.$(( ${VER##*.} + 1 ))"
+          # Schéma X.Y.Z = velké vylepšení . normální změna . něco, co bych radši neříkal
+          # Vynucení typu: [bump:velke|major] / [bump:normalni|minor] / [bump:spatne|patch]; jinak Z
+          MSG="$(git log -1 --pretty=%B 2>/dev/null || true)"
+          IFS='.' read -r X Y Z <<< "$VER"
+          X=${X:-0}; Y=${Y:-0}; Z=${Z:-0}
+          if echo "$MSG" | grep -Eqi '\[bump:(velke|major)\]'; then
+            X=$((X+1)); Y=0; Z=0
+          elif echo "$MSG" | grep -Eqi '\[bump:(normalni|minor)\]'; then
+            Y=$((Y+1)); Z=0
+          else
+            Z=$((Z+1))
+          fi
+          NEW="$X.$Y.$Z"
           sed -i "s/\"version\": \"$VER\"/\"version\": \"$NEW\"/" "$F"
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
-          echo "Verze $VER -> $NEW"
-
+          echo "Verze $VER -> $NEW [schema velke.normalni.spatne]"
       - name: Read version
         id: ver
         run: echo "name=$(jq -r .version ipk/app/appinfo.json)" >> "$GITHUB_OUTPUT"

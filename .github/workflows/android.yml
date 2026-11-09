@@ -56,12 +56,23 @@ jobs:
           F=apk/app/build.gradle
           CODE=$(grep -oP "versionCode \K[0-9]+" "$F")
           NAME=$(grep -oP "versionName '\K[^']+" "$F")
+          # Schéma X.Y.Z = velké vylepšení . normální změna . něco, co bych radši neříkal
+          # Vynucení typu v commit message: [bump:velke|major] / [bump:normalni|minor] / [bump:spatne|patch]; jinak Z
+          MSG="$(git log -1 --pretty=%B 2>/dev/null || true)"
+          IFS='.' read -r X Y Z <<< "$NAME"
+          X=${X:-0}; Y=${Y:-0}; Z=${Z:-0}
+          if echo "$MSG" | grep -Eqi '\[bump:(velke|major)\]'; then
+            X=$((X+1)); Y=0; Z=0
+          elif echo "$MSG" | grep -Eqi '\[bump:(normalni|minor)\]'; then
+            Y=$((Y+1)); Z=0
+          else
+            Z=$((Z+1))
+          fi
           NEW_CODE=$((CODE + 1))
-          NEW_NAME="${NAME%.*}.$(( ${NAME##*.} + 1 ))"
-          sed -i "s/versionCode $CODE\$/versionCode $NEW_CODE/; s/versionName '$NAME'/versionName '$NEW_NAME'/" "$F"
+          NEW_NAME="$X.$Y.$Z"
+          sed -i "s/versionCode $CODE$/versionCode $NEW_CODE/; s/versionName '$NAME'/versionName '$NEW_NAME'/" "$F"
           echo "BUMPED_VERSION=$NEW_NAME" >> "$GITHUB_ENV"
-          echo "Verze $NAME ($CODE) -> $NEW_NAME ($NEW_CODE)"
-
+          echo "Verze $NAME ($CODE) -> $NEW_NAME ($NEW_CODE) [schema velke.normalni.spatne]"
       - name: Read version
         id: ver
         working-directory: apk
