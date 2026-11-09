@@ -1466,11 +1466,14 @@
     if (!info || !info.next) return;
     var el = $('pNext'), t = $('pNextTitle');
     if (!el || !t) return;
+    var wasBar = false; try { wasBar = (document.activeElement === $('pBar') || !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('#pBar'))); } catch(_){}
     var n = info.next;
     var txt = (info.seriesTitle ? (info.seriesTitle + ' · ') : '') + (n.label ? (n.label + (n.name ? ' – ' + n.name : '')) : (n.name || n.title || 'Další díl'));
     t.textContent = txt;
+    var im = $('pNextImg'); if (im) { if (n.thumbnail) { im.src = n.thumbnail; im.hidden = false; } else { im.removeAttribute('src'); im.hidden = true; } }
     el.hidden = false;
     player.nextEpShown = true;
+    if (wasBar) { try { focusEl($('pNextPlay')); } catch(_){ } }
   }
   function playNextEp() {
     var info = player.nextEpInfo;
@@ -1829,11 +1832,12 @@
       if (typeof Native.setFullscreen === 'function') Native.setFullscreen(true);
       if (typeof Native.setKeepScreenOn === 'function') Native.setKeepScreenOn(true);
     }
-    focusEl($('pBack'));
+    setTimeout(function(){ try{ if($('player')&&$('player').hidden) return; if(player.kind!=='live' && $('pBar') && $('pBar').style.display!=='none') focusEl($('pBar')); else focusEl($('pBack')); }catch(_){} }, 0);
   }
 
   function closePlayer() {
     var t = video.currentTime;
+    try { saveVideoProgress(true); } catch(_){}
     resetVideo();
     if (Native) {
       if (typeof Native.setFullscreen === 'function') Native.setFullscreen(false);
@@ -1874,11 +1878,13 @@
       hls.loadSource(src);
       hls.attachMedia(video);
       hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
+        applyResumeIfNeeded();
         play();
       });
       return;
     }
     // nativní HLS (Safari/iOS) i běžné mp4
+    video.addEventListener('loadedmetadata', function(){ applyResumeIfNeeded(); }, { once: true });
     video.src = src;
     play();
   }
@@ -1927,13 +1933,14 @@
     bumpIdle();
   }
 
-  video.addEventListener('timeupdate', function(){ updateProgress(); checkNextEpisodePrompt(); });
+  video.addEventListener('timeupdate', function(){ updateProgress(); checkNextEpisodePrompt(); if(!player._lastProgSave || Date.now()-player._lastProgSave>5000) saveVideoProgress(false); });
   video.addEventListener('progress', updateProgress);
   video.addEventListener('durationchange', updateProgress);
   video.addEventListener('play', function () { $('pPlay').textContent = 'Pozastavit'; bumpIdle(); });
   video.addEventListener('pause', function () {
     $('pPlay').textContent = 'Přehrát';
     $('player').classList.remove('idle');
+    try{ saveVideoProgress(true); }catch(_){}
   });
   // Kdyby live stream pozastavilo něco jiného (systém, tlačítko na ovladači), hned se rozběhne.
   video.addEventListener('pause', function () {
@@ -1949,6 +1956,7 @@
     var finished = isFinite(d) && d > 0 && video.currentTime >= d - 1.5;
     if (finished) {
       // Film dohrál do konce – není to chyba CDN, nic nepřepínáme.
+      try { clearVideoProgress(player.resumeKey || player.page); } catch(_){}
       $('player').classList.remove('idle');
       setPlayerState('Přehráno. Zpět nebo Enter spustí znovu.');
       $('pPlay').textContent = 'Přehrát znovu';
@@ -2059,6 +2067,9 @@
     player.cdn = '';
     player.poster = m.thumbnail || '';
     player.title = m.title || 'Video';
+    player.resumeKey = m.url || '';
+    try { player.resumeAt = getSavedProgress(player.resumeKey); } catch(_){ player.resumeAt = 0; }
+    player._resumeApplied = false;
     if (!player._keepNextEp) { player.nextEpInfo = null; player.nextEpDismissed = false; }
     player._keepNextEp = false;
     openPlayer('movie', player.title);
@@ -2513,6 +2524,16 @@
     if (settings.live) state.liveFilter = settings.live;
   }
 
+
+
+  var LS_PROGRESS = 'wflix.progress';
+  function progressKey(u){ return String(u||'').trim(); }
+  function loadProgressMap(){ try { var v = JSON.parse(localStorage.getItem(LS_PROGRESS)||'{}'); return (v && typeof v==='object') ? v : {}; } catch(_){ return {}; } }
+  function saveProgressMap(m){ try { var ks=Object.keys(m||{}); if(ks.length>80){ ks.sort(function(a,b){ return (m[b].ts||0)-(m[a].ts||0); }); var nm={}; for(var i=0;i<60&&i<ks.length;i++) nm[ks[i]]=m[ks[i]]; m=nm; } localStorage.setItem(LS_PROGRESS, JSON.stringify(m)); } catch(_){} }
+  function getSavedProgress(u){ var m=loadProgressMap(), it=m[progressKey(u)]; if(!it||!isFinite(it.t)) return 0; return it.t; }
+  function saveVideoProgress(force){ try{ if(!player||player.kind==='live'||!player.resumeKey) return; var d=video.duration, t=video.currentTime; if(!isFinite(d)||d<=0||!isFinite(t)) return; var k=progressKey(player.resumeKey); if(!k) return; if(!force && (t<8 || d-t<20)) return; var m=loadProgressMap(); m[k]={t:Math.floor(t), d:Math.floor(d), ts:Date.now()}; saveProgressMap(m); player._lastProgSave=Date.now(); }catch(_){} }
+  function clearVideoProgress(u){ try{ var m=loadProgressMap(); delete m[progressKey(u||player.resumeKey)]; saveProgressMap(m); }catch(_){} }
+  function applyResumeIfNeeded(){ try{ if(player.kind==='live'||!player.resumeAt||player._resumeApplied) return; var d=video.duration; if(!isFinite(d)||d<=0) return; var t=Math.max(0, Math.min(player.resumeAt, d-12)); if(t>8 && video.currentTime < 2){ video.currentTime=t; } player._resumeApplied=true; player.resumeAt=0; }catch(_){} }
 
   // Drag-to-scroll (mouse/pointer/touch drag) so content can be moved without only clicking.
   function addDragScroll(root, opts) {

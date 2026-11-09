@@ -500,3 +500,15 @@ body:not(.touch) .search-main .state{padding-left:0}
 .row-scroll{touch-action:pan-y pinch-zoom}
 .main{touch-action:pan-y pinch-zoom}
 .series-body,.health-content{touch-action:pan-y pinch-zoom}
+
+/* Up next episode */
+.p-next{position:absolute;right:1rem;bottom:6.2rem;z-index:6;display:flex;align-items:center;gap:1rem;max-width:min(36rem,calc(100% - 2rem));padding:.9rem 1rem;border-radius:10px;background:rgba(18,20,26,.94);border:1px solid rgba(255,255,255,.12);box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.p-next[hidden]{display:none !important}
+.p-next-img{width:5.2rem;aspect-ratio:16/9;height:auto;object-fit:cover;border-radius:6px;background:rgba(255,255,255,.08);flex:0 0 auto}
+.p-next-img[hidden]{display:none !important}
+.p-next-info{min-width:0;flex:1}
+.p-next-kicker{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2,#b8bcc7);margin-bottom:.15rem}
+.p-next-title{font-size:.98rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p-next-actions{display:flex;gap:.5rem;flex:0 0 auto}
+.p-next .btn{min-height:2.3rem;padding:.45rem .85rem}
+.player.idle .p-next{opacity:1;pointer-events:auto}
