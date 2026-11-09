@@ -1030,15 +1030,15 @@
 
         function retryDelaySeconds(response, data) {
             const h = response && response.headers ? Number(response.headers.get('Retry-After')) : 0;
-            const s = Number(data && data.retryAfter) || h || 5;
-            return Math.min(10, Math.max(5, s));
+            const s = Number(data && data.retryAfter) || h || 20;
+            return Math.min(20, Math.max(5, s));
         }
 
         // fetch + JSON s automatickým opakováním při rate limitu.
         // onWait(secs, pokus, max) se zavolá před čekáním, onRetry() těsně před dalším pokusem.
         async function apiJson(url, opts) {
             opts = opts || {};
-            const max = opts.retries == null ? 3 : opts.retries;
+            const max = opts.retries == null ? 1 : opts.retries;
             for (let attempt = 0; ; attempt++) {
                 const response = await fetch(url);
                 let data = null;

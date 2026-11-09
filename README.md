@@ -132,7 +132,7 @@ Appka je veřejná a bez přihlášení, takže `/api/*` má dvě vrstvy ochrany
 
 Dávka je tam proto, že úvodní stránka posílá náhledy všech viditelných posterů najednou a přehrávač
 při seekování pošle několik Range dotazů v jedné vlně – s holým „3/s“ by se appka rozbila sama sobě.
-Překročení vrací `429` + `Retry-After: 5` a JSON `{"success":false,"error":"…"}`, který UI zobrazí
+Překročení vrací `429` + `Retry-After: 20` a JSON `{"success":false,"error":"…"}`, který UI zobrazí
 jako běžnou chybu hledání. Za App Service se IP bere z `X-Forwarded-For` (`UseForwardedHeaders`),
 jinak by všechny požadavky měly IP front-endu Azure a limit by platil pro celý internet dohromady.
 
@@ -142,7 +142,7 @@ vrátí 429 i ostatní), takže přeskakování na další server u 429 nemá sm
 drží výsledky ve sdílené cache (30 min, prázdné 5 min, při 429 se vrátí i starší kopie) a dotazy
 na prehraj.to pouští po jednom s odstupem 1,6 s (`PacedFirstWorking`). Cache se použije i když
 prohlížeč pošle `&proxy=…` – sada proxy je součástí klíče, takže stejný dotaz obslouží všechny
-diváky (dřív se cache kvůli parametru `proxy` nepoužila vůbec). Když je fronta delší než 8 s,
+diváky (dřív se cache kvůli parametru `proxy` nepoužila vůbec). Při 429 z prehraj.to se stejný zdroj zkusí nejvýš 2× a čeká se až 20 s; když je fronta delší než 20 s,
 vrátí se `rateLimited` a klient to sám po pár vteřinách zopakuje.
 
 **2. Nic se neblokuje podle hlaviček** – `/api` nekontroluje User-Agent, `Sec-Fetch-Site` ani

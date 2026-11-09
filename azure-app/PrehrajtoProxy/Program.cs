@@ -121,10 +121,10 @@ builder.Services.AddRateLimiter(o =>
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.OnRejected = async (ctx, ct) =>
     {
-        ctx.HttpContext.Response.Headers.RetryAfter = "5";
+        ctx.HttpContext.Response.Headers.RetryAfter = "20";
         ctx.HttpContext.Response.ContentType = "application/json; charset=utf-8";
         await ctx.HttpContext.Response.WriteAsync(
-            "{\"success\":false,\"rateLimited\":true,\"retryAfter\":5,\"error\":\"Příliš mnoho požadavků. Chvilku počkej a zkus to znovu.\"}", ct);
+            "{\"success\":false,\"rateLimited\":true,\"retryAfter\":20,\"error\":\"Příliš mnoho požadavků. Chvilku počkej a zkus to znovu.\"}", ct);
     };
 
     o.AddPolicy("search", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
@@ -351,7 +351,7 @@ static async Task<(bool ok, string body, List<string> errors)> FirstWorking(
 var upstreamGate = new SemaphoreSlim(1, 1);
 var nextUpstreamSlot = DateTime.MinValue;
 const int UpstreamSpacingMs = 1600;
-const int UpstreamMaxQueueMs = 8000;
+const int UpstreamMaxQueueMs = 20000;
 
 async Task<(bool ok, string body, List<string> errors)> PacedFirstWorking(
     Func<CancellationToken, Task<(int status, string body, string? err)>>[] sources,
@@ -360,7 +360,7 @@ async Task<(bool ok, string body, List<string> errors)> PacedFirstWorking(
     var errors = new List<string>();
     foreach (var src in sources)
     {
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 0; attempt < 2; attempt++)
         {
             if (ct.IsCancellationRequested) return (false, "", errors);
 
@@ -392,7 +392,7 @@ async Task<(bool ok, string body, List<string> errors)> PacedFirstWorking(
 
             errors.Add(r.err ?? $"HTTP {r.status}");
             if (r.status != 429) break;   // vadný server -> další proxy
-            await Task.Delay(TimeSpan.FromMilliseconds(1500 * (attempt + 1)), ct);
+            if (attempt + 1 < 2) await Task.Delay(TimeSpan.FromSeconds(20), ct);
         }
     }
     return (false, "", errors);
@@ -408,7 +408,7 @@ static IResult AllFailed(List<string> errors)
         success = false,
         valid = false,
         rateLimited = rl,
-        retryAfter = rl ? 5 : 0,
+        retryAfter = rl ? 20 : 0,
         error = rl
             ? "Příliš mnoho požadavků na prehraj.to. Chvilku počkej a zkus to znovu."
             : "Všechny zdroje selhaly: " + string.Join(" | ", errors),
