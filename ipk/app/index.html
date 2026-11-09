@@ -135,7 +135,7 @@
       <div class="p-live-badge" id="pLive" hidden>Živě</div>
     </div>
     <div id="pBottom" class="p-bottom">
-      <div id="pBar" class="p-bar f" role="slider" tabindex="0" aria-label="Pozice přehrávání">
+      <div id="pBar" class="p-bar f" data-no-drag="1" role="slider" tabindex="0" aria-label="Pozice přehrávání">
         <div class="p-track"><div class="p-buf" id="pBuf"></div><div class="p-prog" id="pProg"></div></div>
         <div class="p-knob" id="pKnob"></div>
       </div>
@@ -148,6 +148,10 @@
         <button id="pRelay" class="f p-btn" type="button">Přes server</button>
       </div>
     </div>
+      <div id="pNext" class="p-next" hidden>
+        <div class="p-next-info"><div class="p-next-kicker">Další díl</div><div id="pNextTitle" class="p-next-title"></div></div>
+        <div class="p-next-actions"><button id="pNextPlay" class="f btn primary" type="button">Přehrát</button><button id="pNextCancel" class="f btn ghost" type="button">Zrušit</button></div>
+      </div>
     <div id="pState" class="p-state" hidden></div>
   </div>
 

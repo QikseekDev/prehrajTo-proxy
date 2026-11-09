@@ -1432,8 +1432,78 @@
     hide($('series'));
   }
 
+
+  function findNextEpisode(series, currentUrl) {
+    if (!series || !series.seasons || !currentUrl) return null;
+    var flat = [];
+    for (var i = 0; i < series.seasons.length; i++) {
+      var sn = series.seasons[i];
+      var eps = sn && sn.episodes ? sn.episodes : [];
+      for (var j = 0; j < eps.length; j++) {
+        var ep = eps[j];
+        var v = (typeof bestVariant === 'function') ? bestVariant(ep) : (ep && ep.variants ? ep.variants[0] : null);
+        if (!v || !v.url) continue;
+        var sl = (ep.season != null ? ('S' + ep.season) : (sn && sn.season != null ? ('S' + sn.season) : ''));
+        var en = (ep.episode != null ? ('E' + ep.episode) : '');
+        var label = (sl || en) ? (sl + en) : (ep.num || ep.label || '');
+        var name = String(v.name || v.title || ep.label || '').replace(/\s+/g,' ').trim();
+        flat.push({ url: v.url, title: v.title || name, name: name, label: label, thumbnail: v.thumbnail || series.poster || '', ep: ep, variant: v });
+      }
+    }
+    for (var k = 0; k < flat.length; k++) {
+      if (flat[k].url === currentUrl) {
+        if (k + 1 < flat.length) return { seriesTitle: series.title || 'Seriál', next: flat[k + 1] };
+        return null;
+      }
+    }
+    return null;
+  }
+  function hideNextEpPrompt() {
+    player.nextEpShown = false;
+    var el = $('pNext'); if (el) el.hidden = true;
+  }
+  function showNextEpPrompt(info) {
+    if (!info || !info.next) return;
+    var el = $('pNext'), t = $('pNextTitle');
+    if (!el || !t) return;
+    var n = info.next;
+    var txt = (info.seriesTitle ? (info.seriesTitle + ' · ') : '') + (n.label ? (n.label + (n.name ? ' – ' + n.name : '')) : (n.name || n.title || 'Další díl'));
+    t.textContent = txt;
+    el.hidden = false;
+    player.nextEpShown = true;
+  }
+  function playNextEp() {
+    var info = player.nextEpInfo;
+    hideNextEpPrompt();
+    if (!info || !info.next || !info.next.url) return;
+    var nextUrl = info.next.url;
+    try {
+      player.nextEpInfo = (state.series) ? findNextEpisode(state.series, nextUrl) : null;
+      player.nextEpShown = false; player.nextEpDismissed = false;
+      player._keepNextEp = !!player.nextEpInfo;
+    } catch(_){ player.nextEpInfo = null; player._keepNextEp = false; }
+    playMovie({ url: nextUrl, title: info.next.title || info.next.name || 'Další díl', thumbnail: info.next.thumbnail || player.poster || '' });
+  }
+  function checkNextEpisodePrompt() {
+    try {
+      if (!$('player') || $('player').hidden) return;
+      if (player.kind === 'live') return;
+      if (!player.nextEpInfo || !player.nextEpInfo.next) return;
+      if (player.nextEpShown || player.nextEpDismissed) return;
+      var d = video.duration, t = video.currentTime;
+      if (!isFinite(d) || d <= 0 || !isFinite(t)) return;
+      var remain = d - t;
+      if (remain <= 18 && remain > 1.5) showNextEpPrompt(player.nextEpInfo);
+    } catch(_){}
+  }
+
   function playEpisode(movie) {
     lastFocus = document.activeElement;
+    try {
+      player.nextEpInfo = (state.series && movie && movie.url) ? findNextEpisode(state.series, movie.url) : null;
+      player.nextEpShown = false; player.nextEpDismissed = false;
+      player._keepNextEp = true;
+    } catch(_){ player.nextEpInfo = null; player._keepNextEp = false; }
     playMovie({ url: movie.url, title: movie.title, thumbnail: (state.series && state.series.poster) || '' });
   }
 
@@ -1731,6 +1801,7 @@
     player.subIndex = -1;
     $('pSub').textContent = 'Titulky';
     $('pSub').disabled = true;
+    try { hideNextEpPrompt(); } catch(_){}
   }
 
   function openPlayer(kind, title) {
@@ -1738,6 +1809,8 @@
     player.title = title || '';
     player.mode = settings.direct ? 'direct' : 'relay';
     player.triedRelay = false;
+    player.nextEpShown = false; player.nextEpDismissed = false;
+    try { hideNextEpPrompt(); } catch(_){ }
     $('pTitle').textContent = title || '';
     $('pLive').hidden = kind !== 'live';
     $('pPlay').style.display = kind === 'live' ? 'none' : '';
@@ -1854,7 +1927,7 @@
     bumpIdle();
   }
 
-  video.addEventListener('timeupdate', updateProgress);
+  video.addEventListener('timeupdate', function(){ updateProgress(); checkNextEpisodePrompt(); });
   video.addEventListener('progress', updateProgress);
   video.addEventListener('durationchange', updateProgress);
   video.addEventListener('play', function () { $('pPlay').textContent = 'Pozastavit'; bumpIdle(); });
@@ -1913,7 +1986,12 @@
     bumpIdle();
   });
   $('pBack').addEventListener('click', function () { closePlayer(); renderRows(); focusAfterOverlay(); });
-  $('pRelay').addEventListener('click', function () { switchToRelay(video.currentTime); });
+  
+    var pNextPlay = $('pNextPlay'), pNextCancel = $('pNextCancel');
+    if (pNextPlay) pNextPlay.addEventListener('click', function(e){ if(e){e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();} playNextEp(); });
+    if (pNextCancel) pNextCancel.addEventListener('click', function(e){ if(e){e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();} player.nextEpDismissed=true; hideNextEpPrompt(); });
+
+    $('pRelay').addEventListener('click', function () { switchToRelay(video.currentTime); });
 
   // Přehrát na TV: otevře systémové "Přenést obrazovku" (Google Cast / Miracast / Smart View).
   // Video pak hraje dál v aplikaci a zrcadlí se na vybranou TV.
@@ -1981,6 +2059,8 @@
     player.cdn = '';
     player.poster = m.thumbnail || '';
     player.title = m.title || 'Video';
+    if (!player._keepNextEp) { player.nextEpInfo = null; player.nextEpDismissed = false; }
+    player._keepNextEp = false;
     openPlayer('movie', player.title);
     setPlayerState('Získávám odkaz na video…');
     if (player.kind === 'movie') $('pSub').disabled = true;
