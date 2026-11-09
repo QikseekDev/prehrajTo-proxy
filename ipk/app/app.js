@@ -2473,28 +2473,22 @@
         if (k === 'ArrowLeft' ? pos > 0 || end > 0 : pos < len || end < len) return;
       }
       if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
-        if (playerOpen) {
-          bumpIdle();
-          var focused = currentFocus();
-          if (focused === $('pBar')) {
-            e.preventDefault();
-            seekBy(k === 'ArrowLeft' ? -10 : (k === 'ArrowRight' ? 10 : 0));
-            if (k === 'ArrowUp') moveFocus(0, -1);
-            if (k === 'ArrowDown') moveFocus(0, 1);
-            return;
-          }
-          if (k === 'ArrowLeft' || k === 'ArrowRight') {
-            e.preventDefault();
-            seekBy(k === 'ArrowLeft' ? -10 : 10);
-            return;
-          }
+        if (playerOpen) bumpIdle();
+        var pFocused = playerOpen ? currentFocus() : null;
+        if (playerOpen && pFocused === $('pBar')) {
+          e.preventDefault();
+          if (k === 'ArrowLeft') seekBy(-10);
+          else if (k === 'ArrowRight') seekBy(10);
+          else if (k === 'ArrowUp') moveFocus(0, -1);
+          else moveFocus(0, 1);
+          return;
         }
         var moved;
         if (k === 'ArrowLeft') moved = moveFocus(-1, 0);
         else if (k === 'ArrowRight') moved = moveFocus(1, 0);
         else if (k === 'ArrowUp') moved = moveFocus(0, -1);
         else moved = moveFocus(0, 1);
-        if (moved || kbdOpen) { e.preventDefault(); }
+        if (moved || kbdOpen || playerOpen) { e.preventDefault(); }
         return;
       }
       if (k === 'Enter') {
