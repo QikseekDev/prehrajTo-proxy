@@ -110,6 +110,43 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
     o.KnownProxies.Clear();
 });
 
+// Přibližný počet „online“ uživatelů: anonymní klient pošle stabilní cid (localStorage) jako
+// ?cid= / X-Wflix-Client a server si pamatuje poslední aktivitu. Jen orientační indikátor pro
+// malou skupinu (sdílená NAT = méně unikátních IP, ale cid je rozliší).
+var Presence = new ConcurrentDictionary<string, DateTime>();
+const int PresenceWindowSeconds = 90;
+static string? PresenceId(HttpContext ctx)
+{
+    var id = ctx.Request.Query["cid"].ToString();
+    if (string.IsNullOrWhiteSpace(id))
+        id = ctx.Request.Headers["X-Wflix-Client"].ToString();
+    if (string.IsNullOrWhiteSpace(id)) return null;
+    id = id.Trim();
+    if (id.Length < 8 || id.Length > 80) return null;
+    foreach (var c in id) if (!char.IsLetterOrDigit(c) && c != '-' && c != '_') return null;
+    return id;
+}
+void TouchPresence(HttpContext ctx)
+{
+    var id = PresenceId(ctx) ?? ("ip:" + ClientKey(ctx));
+    var now = DateTime.UtcNow;
+    Presence[id] = now;
+    // občas prořezat, ať slovník neroste do nekonečna
+    if ((now.Ticks & 0xFF) == 0)
+    {
+        var cut = now.AddSeconds(-PresenceWindowSeconds * 2);
+        foreach (var kv in Presence) if (kv.Value < cut) Presence.TryRemove(kv.Key, out _);
+    }
+}
+int OnlineCount()
+{
+    var cut = DateTime.UtcNow.AddSeconds(-PresenceWindowSeconds);
+    var n = 0;
+    foreach (var kv in Presence) if (kv.Value >= cut) n++; else if (kv.Value < cut.AddSeconds(-PresenceWindowSeconds)) Presence.TryRemove(kv.Key, out _);
+    return n;
+}
+
+
 // Limity platí na IP a jen pro /api (statické soubory se nelimitují). Nastavené tak,
 // aby běžnému člověku nepřekážely, ale scrapeování bylo pomalé:
 //   search  - 5 dotazů/s, dávka 20: jeden search = jeden request; celá třída za jednou
@@ -123,8 +160,15 @@ builder.Services.AddRateLimiter(o =>
     {
         ctx.HttpContext.Response.Headers.RetryAfter = "20";
         ctx.HttpContext.Response.ContentType = "application/json; charset=utf-8";
-        await ctx.HttpContext.Response.WriteAsync(
-            "{\"success\":false,\"rateLimited\":true,\"retryAfter\":20,\"error\":\"Příliš mnoho požadavků. Chvilku počkej a zkus to znovu.\"}", ct);
+        var payload = JsonSerializer.Serialize(new
+        {
+            success = false,
+            rateLimited = true,
+            retryAfter = 20,
+            onlineUsers = OnlineCount(),
+            error = "Příliš mnoho požadavků. Chvilku počkej a zkus to znovu."
+        });
+        await ctx.HttpContext.Response.WriteAsync(payload, ct);
     };
 
     o.AddPolicy("search", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
@@ -181,6 +225,14 @@ builder.Services.AddRateLimiter(o =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+// Přibližná přítomnost pro indikátor „kolik lidí je online“ (viz PresenceId/OnlineCount).
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/api"))
+        TouchPresence(ctx);
+    await next();
+});
 
 // /api nic neblokuje podle User-Agenta ani podle Refereru. WebView v mobilní appce
 // a obecně jakýkoli jiný klient posílá jiné (nebo žádné) hlavičky než prohlížeč a blokace
@@ -400,7 +452,7 @@ async Task<(bool ok, string body, List<string> errors)> PacedFirstWorking(
 
 // Společná chybová odpověď, když selže úplně všechno (proxy i přímé volání).
 // Když některý zdroj vrátil 429, klient dostane rateLimited + retryAfter a sám to za pár vteřin zkusí znovu.
-static IResult AllFailed(List<string> errors)
+IResult AllFailed(List<string> errors)
 {
     var rl = errors.Any(e => e.Contains("429"));
     return Results.Json(new
@@ -409,6 +461,7 @@ static IResult AllFailed(List<string> errors)
         valid = false,
         rateLimited = rl,
         retryAfter = rl ? 20 : 0,
+        onlineUsers = OnlineCount(),
         error = rl
             ? "Příliš mnoho požadavků na prehraj.to. Chvilku počkej a zkus to znovu."
             : "Všechny zdroje selhaly: " + string.Join(" | ", errors),
@@ -1398,6 +1451,20 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
         return Results.Json(new { success = false, error = $"CDN returned HTTP {lastStatus}" }, statusCode: 502);
     return Results.Empty;
 }).RequireRateLimiting("api");
+
+// ------------------------------------------------------------------ /api/health + /api/ping
+app.MapGet("/api/health", () => Results.Json(new
+{
+    ok = true,
+    timeUtc = DateTime.UtcNow,
+    onlineUsers = OnlineCount(),
+    proxies = serverProxies.Count(IsValidProxyUrl),
+    lastGoodProxy = lastGoodProxy ?? "",
+}));
+
+// Lehký heartbeat pro indikátor přítomnosti (nastavení / UI).
+app.MapGet("/api/ping", () => Results.Json(new { ok = true, onlineUsers = OnlineCount() }))
+   .RequireRateLimiting("api");
 
 app.Run();
 

@@ -163,13 +163,25 @@
         // přímo ze zdroje; po opakovaných chybách se pro TO jedno přehrávání dočasně použije
         // server a nastavení zůstane zapnuté, takže další přehrávání zkusí CDN znovu.
         const directPreferred = () => settings.direct === true;
+        // Stabilní anonymní ID klienta pro přibližný indikátor „kolik lidí je online“.
+        const CID_KEY = 'wflix-cid';
+        function getClientId() {
+            let id = localStorage.getItem(CID_KEY);
+            if (!id || id.length < 8) {
+                id = (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)).replace(/[^a-z0-9]/gi, '').slice(0, 24);
+                try { localStorage.setItem(CID_KEY, id); } catch (e) {}
+            }
+            return id;
+        }
+        const CLIENT_ID = getClientId();
+
         // Proxy servery jsou vždy zapnuté - appka prehraj.to nikdy nevolá přímo. Seznam drží
         // DEFAULT_PROXY_SERVERS (mění ho scripts/change-proxy-servers.sh); backend je zkusí
         // jeden po druhém a vezme první, který odpoví bez chyby.
         const proxyQS = () => DEFAULT_PROXY_SERVERS
             .filter(u => u && u.trim())
             .map(u => '&proxy=' + encodeURIComponent(u.trim()))
-            .join('');
+            .join('') + '&cid=' + encodeURIComponent(CLIENT_ID);
 
         let thumbCache = {};
         try { thumbCache = JSON.parse(localStorage.getItem(THUMB_KEY) || '{}'); } catch (e) {}
@@ -1036,26 +1048,32 @@
 
         // fetch + JSON s automatickým opakováním při rate limitu.
         // onWait(secs, pokus, max) se zavolá před čekáním, onRetry() těsně před dalším pokusem.
+        function withCid(url) {
+            return url && url.indexOf('cid=') === -1 ? url + (url.indexOf('?') === -1 ? '?' : '&') + 'cid=' + encodeURIComponent(CLIENT_ID) : url;
+        }
         async function apiJson(url, opts) {
             opts = opts || {};
             const max = opts.retries == null ? 1 : opts.retries;
             for (let attempt = 0; ; attempt++) {
-                const response = await fetch(url);
+                const response = await fetch(withCid(url));
                 let data = null;
                 try { data = await response.json(); } catch (e) { data = null; }
                 if (!isRateLimited(response.status, data)) return { response, data, rateLimited: false };
                 if (attempt >= max) return { response, data, rateLimited: true };
                 const secs = retryDelaySeconds(response, data);
-                if (opts.onWait) opts.onWait(secs, attempt + 1, max);
+                if (opts.onWait) opts.onWait(secs, attempt + 1, max, data);
                 await sleep(secs * 1000);
                 if (opts.onRetry) opts.onRetry();
             }
         }
 
-        function rateLimitHtml(attempt, max) {
+        function rateLimitHtml(attempt, max, onlineUsers) {
+            const n = Number(onlineUsers);
+            const who = (n > 0) ? '<div class="rl-text" style="margin-top:.35rem;opacity:.85">Právě online (přibližně): <b>' + n + '</b></div>' : '';
             return '<div class="rl-body"><div class="rl-title">Server chvilku nestíhá</div>'
                 + '<div class="rl-text">prehraj.to omezuje počet dotazů, když jich přijde moc najednou. '
                 + 'Za pár vteřin to zkusím znovu automaticky (pokus ' + attempt + ' z ' + max + ').</div>'
+                + who
                 + '<div class="rl-bar"><i></i></div></div>';
         }
 
@@ -1067,16 +1085,16 @@
             bar.style.width = '100%';
         }
 
-        function resultsRateLimited(secs, attempt, max) {
+        function resultsRateLimited(secs, attempt, max, data) {
             resultsState.className = 'results-state show ratelimit';
-            resultsState.innerHTML = rateLimitHtml(attempt, max);
+            resultsState.innerHTML = rateLimitHtml(attempt, max, data && data.onlineUsers);
             resultsInfo.textContent = '';
             runRateLimitBar(resultsState, secs);
         }
 
-        function statusRateLimited(secs, attempt, max) {
+        function statusRateLimited(secs, attempt, max, data) {
             status.className = 'status ratelimit';
-            status.innerHTML = rateLimitHtml(attempt, max);
+            status.innerHTML = rateLimitHtml(attempt, max, data && data.onlineUsers);
             runRateLimitBar(status, secs);
         }
 
@@ -2944,6 +2962,13 @@
                     </div>
                     <div class="set-hint">Odkud se berou filmy na úvodní stránce: žebříček iTunes CZ, nebo anglický iTunes US. Seznam i s plakáty stáhne server a cacheuje na 1 den.</div>
 
+                    <h2>Provoz</h2>
+                    <div class="set-row">
+                        <label>Právě online (přibližně)</label>
+                        <span id="onlineCountValue" style="opacity:.9">…</span>
+                    </div>
+                    <div class="set-hint">Orientační počet aktivních klientů za poslední chvíli. Hodí se jako indikátor, když hledání naráží na limit.</div>
+
                     <h2>Náhledy</h2>
                     <div class="set-row">
                         <label for="limitToggle">Omezit souběžné dotazy na náhledy</label>
@@ -2961,7 +2986,21 @@
         }
 
         // Napojení ovládacích prvků po každém vykreslení stránky (prvky jsou nové).
+        let onlinePingTimer = null;
+        async function refreshOnlineCount(root) {
+            const el = root && root.querySelector ? root.querySelector('#onlineCountValue') : document.getElementById('onlineCountValue');
+            if (!el) { clearInterval(onlinePingTimer); onlinePingTimer = null; return; }
+            try {
+                const r = await fetch(withCid('/api/ping'));
+                const d = await r.json();
+                if (document.getElementById('onlineCountValue') === el) el.textContent = (d && typeof d.onlineUsers === 'number') ? String(d.onlineUsers) : '–';
+            } catch (e) { if (document.getElementById('onlineCountValue') === el) el.textContent = '–'; }
+        }
         function bindSettings(root) {
+            clearInterval(onlinePingTimer);
+            refreshOnlineCount(root);
+            onlinePingTimer = setInterval(() => refreshOnlineCount(root), 15000);
+
             const q = id => root.querySelector('#' + id);
 
             const themeTog = q('themeToggle');
