@@ -1833,7 +1833,7 @@
       if (typeof Native.setFullscreen === 'function') Native.setFullscreen(true);
       if (typeof Native.setKeepScreenOn === 'function') Native.setKeepScreenOn(true);
     }
-    setTimeout(function(){ try{ if($('player')&&$('player').hidden) return; if(player.kind!=='live' && $('pBar') && $('pBar').style.display!=='none') focusEl($('pBar')); else focusEl($('pBack')); }catch(_){} }, 0);
+    setTimeout(function(){ try{ if($('player')&&$('player').hidden) return; focusEl((player.kind!=='live' && $('pPlay') && $('pPlay').style.display!=='none') ? $('pPlay') : $('pBack')); }catch(_){} }, 0);
   }
 
   function closePlayer() {
