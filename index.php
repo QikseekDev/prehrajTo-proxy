@@ -49,6 +49,7 @@ function wflixSource($s) {
         'prehraj' => 'prehrajto', 'prehrajto' => 'prehrajto', 'prehraj.to' => 'prehrajto',
         'bombuj' => 'bombuj', 'bombuj.si' => 'bombuj',
         'sledujteto' => 'sledujteto', 'sledujteto.cz' => 'sledujteto', 'old.sledujteto.cz' => 'sledujteto',
+        'all' => 'all', 'merge' => 'all', 'both' => 'all', 'prehrajto+sledujteto' => 'all',
     ];
     return isset($map[$s]) ? $map[$s] : 'prehrajto';
 }
@@ -178,15 +179,43 @@ function wflixDedupMovies($movies) {
     return $out;
 }
 
-function searchSledujteto($query, $page = 1) {
+function sledujtetoApis($query, $page = 1) {
     $page = max(1, (int)$page);
-    // Primary/backup API endpoints (must be called from Czech IP in production; PHP proxy handles that).
-    // User-confirmed: www/sledujteto.cz api/web/videos works; HTML vyhledat endpoint exists but is JS-rendered.
-    $apis = [
+    return [
         ['url' => 'https://www.sledujteto.cz/api/web/videos?query=' . rawurlencode($query) . '&limit=30&page=' . $page . '&sort=relevance', 'host' => 'www.sledujteto.cz'],
         ['url' => 'https://sledujteto.cz/api/web/videos?query=' . rawurlencode($query) . '&limit=30&page=' . $page . '&sort=relevance', 'host' => 'sledujteto.cz'],
         ['url' => 'https://old.sledujteto.cz/api/web/videos?query=' . rawurlencode($query) . '&limit=30&page=' . $page . '&sort=relevance', 'host' => 'old.sledujteto.cz'],
     ];
+}
+
+function parseSledujtetoApiResponse($body, $host) {
+    $d = json_decode((string)$body, true);
+    if (!is_array($d)) return ['error' => 'Sledujteto: neplatná odpověď', 'movies' => []];
+    $files = isset($d['data']['files']) && is_array($d['data']['files']) ? $d['data']['files'] : (isset($d['files']) && is_array($d['files']) ? $d['files'] : []);
+    $movies = [];
+    foreach ($files as $f) {
+        if (!is_array($f)) continue;
+        $id = isset($f['id']) ? $f['id'] : (isset($f['file_id']) ? $f['file_id'] : (isset($f['files_id']) ? $f['files_id'] : ''));
+        $title = isset($f['filename']) ? $f['filename'] : (isset($f['name']) ? $f['name'] : (isset($f['title']) ? $f['title'] : ''));
+        $title = trim(html_entity_decode((string)$title, ENT_QUOTES, 'UTF-8'));
+        $url = '';
+        foreach (['url', 'link', 'permalink', 'href'] as $k) if (!empty($f[$k])) { $url = wflixFixUrl($f[$k], $host); break; }
+        if ($url === '' && $id !== '') $url = 'https://' . $host . '/video/' . rawurlencode((string)$id);
+        if ($url === '' || $title === '') continue;
+        $thumb = '';
+        foreach (['thumb', 'thumbnail', 'image', 'poster', 'img', 'preview', 'cover'] as $k) if (!empty($f[$k])) { $thumb = wflixFixUrl($f[$k], $host); break; }
+        $year = '';
+        if (preg_match('/[-(](\d{4})[)-]/u', $title, $ym)) $year = $ym[1];
+        $movies[] = ['url' => $url, 'title' => $title, 'thumbnail' => $thumb, 'year' => $year, 'source' => 'sledujteto'];
+        if (count($movies) >= 30) break;
+    }
+    return ['error' => null, 'movies' => $movies];
+}
+
+function searchSledujteto($query, $page = 1) {
+    $page = max(1, (int)$page);
+    // Primary/backup API endpoints (must be called from Czech IP in production; PHP proxy handles that).
+    $apis = sledujtetoApis($query, $page);
     $lastErr = 'Sledujteto: žádná odpověď'; $lastStatus = 0;
     foreach ($apis as $api) {
         list($c, $body, $e) = wflixHttpGet($api['url'], 25, [
@@ -197,31 +226,134 @@ function searchSledujteto($query, $page = 1) {
         ]);
         if ($e) { $lastErr = 'Sledujteto: ' . $e; $lastStatus = 0; continue; }
         if ($c < 200 || $c >= 300) { $lastErr = 'Sledujteto HTTP: ' . $c; $lastStatus = $c; continue; }
-        $d = json_decode($body, true);
-        if (!is_array($d)) { $lastErr = 'Sledujteto: neplatná odpověď'; $lastStatus = $c; continue; }
-        $files = isset($d['data']['files']) && is_array($d['data']['files']) ? $d['data']['files'] : (isset($d['files']) && is_array($d['files']) ? $d['files'] : []);
-        $movies = [];
-        foreach ($files as $f) {
-            if (!is_array($f)) continue;
-            $id = isset($f['id']) ? $f['id'] : (isset($f['file_id']) ? $f['file_id'] : (isset($f['files_id']) ? $f['files_id'] : ''));
-            $title = isset($f['filename']) ? $f['filename'] : (isset($f['name']) ? $f['name'] : (isset($f['title']) ? $f['title'] : ''));
-            $title = trim(html_entity_decode((string)$title, ENT_QUOTES, 'UTF-8'));
-            $url = '';
-            foreach (['url', 'link', 'permalink', 'href'] as $k) if (!empty($f[$k])) { $url = wflixFixUrl($f[$k], $api['host']); break; }
-            if ($url === '' && $id !== '') $url = 'https://' . $api['host'] . '/video/' . rawurlencode((string)$id);
-            if ($url === '' || $title === '') continue;
-            $thumb = '';
-            foreach (['thumb', 'thumbnail', 'image', 'poster', 'img', 'preview', 'cover'] as $k) if (!empty($f[$k])) { $thumb = wflixFixUrl($f[$k], $api['host']); break; }
-            $year = '';
-            if (preg_match('/[-(](\d{4})[)-]/u', $title, $ym)) $year = $ym[1];
-            $movies[] = ['url' => $url, 'title' => $title, 'thumbnail' => $thumb, 'year' => $year, 'source' => 'sledujteto'];
-            if (count($movies) >= 30) break;
-        }
-        if (!empty($movies)) return ['error' => null, 'movies' => $movies, 'endpoint' => $api['url']];
-        // successful but empty: keep trying other API bases (CZ IP/context may matter) but remember success
-        $lastErr = null; $lastStatus = $c;
+        $parsed = parseSledujtetoApiResponse($body, $api['host']);
+        if (!empty($parsed['movies'])) return ['error' => null, 'movies' => $parsed['movies'], 'endpoint' => $api['url']];
+        $lastErr = null; $lastStatus = $c; // successful but empty: try other bases
     }
     return ['error' => $lastErr, 'status' => $lastStatus, 'movies' => []];
+}
+
+// Experimental: "Více výsledků" merge mode. Fetches supported sources in parallel/bounded
+// fashion and deduplicates. Individual source failures are ignored; an error is returned only
+// when all sources fail or produce no usable results.
+function searchAll($query, $page = 1) {
+    $page = max(1, (int)$page);
+    $apis = sledujtetoApis($query, $page);
+    $st = $apis[0];
+    $prehrajUrl = 'https://prehraj.to/hledej/' . rawurlencode($query);
+    if ($page > 1) $prehrajUrl .= '?videoListing-visualPaginator-page=' . (int)$page;
+    $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+    $mh = curl_multi_init();
+    $ch1 = curl_init($prehrajUrl);
+    curl_setopt_array($ch1, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 25,
+        CURLOPT_USERAGENT => $ua, CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_HTTPHEADER => ['Accept-Language: cs-CZ,cs;q=0.9,en;q=0.5'],
+    ]);
+    $ch2 = curl_init($st['url']);
+    curl_setopt_array($ch2, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 20,
+        CURLOPT_USERAGENT => $ua, CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_HTTPHEADER => [
+            'Accept: application/json, text/plain, */*',
+            'Accept-Language: cs-CZ,cs;q=0.9,sk;q=0.8,en;q=0.5',
+            'X-Requested-With: XMLHttpRequest',
+            'Referer: https://' . $st['host'] . '/vyhledat/?search=' . rawurlencode($query) . '&page=' . $page,
+            'Origin: https://' . $st['host'],
+        ],
+    ]);
+    $ch3 = curl_init('https://www.bombuj.si/uvod.php');
+    curl_setopt_array($ch3, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 20,
+        CURLOPT_USERAGENT => $ua, CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_HTTPHEADER => ['Accept-Language: cs-CZ,cs;q=0.9,sk;q=0.8,en;q=0.5'],
+    ]);
+    curl_multi_add_handle($mh, $ch1);
+    curl_multi_add_handle($mh, $ch2);
+    curl_multi_add_handle($mh, $ch3);
+    do { curl_multi_exec($mh, $running); if ($running) curl_multi_select($mh, 0.2); } while ($running > 0);
+    $prehrajBody = curl_multi_getcontent($ch1); $prehrajCode = (int)curl_getinfo($ch1, CURLINFO_HTTP_CODE); $prehrajErr = curl_error($ch1);
+    $stBody = curl_multi_getcontent($ch2); $stCode = (int)curl_getinfo($ch2, CURLINFO_HTTP_CODE); $stErr = curl_error($ch2);
+    $bombujHome = curl_multi_getcontent($ch3); $bombujHomeCode = (int)curl_getinfo($ch3, CURLINFO_HTTP_CODE); $bombujHomeErr = curl_error($ch3);
+    curl_multi_remove_handle($mh, $ch1); curl_multi_remove_handle($mh, $ch2); curl_multi_remove_handle($mh, $ch3);
+    curl_close($ch1); curl_close($ch2); curl_close($ch3); curl_multi_close($mh);
+
+    $r1 = ['error' => null, 'movies' => []];
+    if ($prehrajErr) $r1 = ['error' => 'Prehraj.to: ' . $prehrajErr, 'movies' => []];
+    elseif ($prehrajCode < 200 || $prehrajCode >= 300) $r1 = ['error' => 'Prehraj.to HTTP: ' . $prehrajCode, 'status' => $prehrajCode, 'movies' => []];
+    else {
+        $movies = [];
+        if (preg_match_all('/<a[^>]*class="[^"]*video[^"]*"[^>]*href="(\/[a-z0-9+-]+\/[a-z0-9]+)"[^>]*title="([^"]+)"[^>]*>/i', (string)$prehrajBody, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $url = 'https://prehraj.to' . $match[1]; $title = html_entity_decode($match[2], ENT_QUOTES, 'UTF-8');
+                $exists = false; foreach ($movies as $m) { if ($m['url'] === $url) { $exists = true; break; } }
+                if ($exists) continue;
+                $thumbnail = ''; $urlEscaped = preg_quote($match[1], '/');
+                if (preg_match('/href="' . $urlEscaped . '".*?<img[^>]*src="([^"]+thumb[^"]*\.jpg)"/s', (string)$prehrajBody, $tm)) $thumbnail = $tm[1];
+                $year = ''; if (preg_match('/[-(](\d{4})[)-]/', $title, $ym)) $year = $ym[1]; elseif (preg_match('/-(\d{4})[-\/]/', $match[1], $ym)) $year = $ym[1];
+                $movies[] = ['url' => $url, 'title' => $title, 'thumbnail' => $thumbnail, 'year' => $year, 'source' => 'prehrajto'];
+            }
+        }
+        $r1 = ['error' => null, 'movies' => array_slice($movies, 0, 30)];
+    }
+
+    $r2 = ['error' => null, 'movies' => []];
+    if (!$stErr && $stCode >= 200 && $stCode < 300) {
+        $parsed = parseSledujtetoApiResponse($stBody, $st['host']);
+        $r2 = ['error' => null, 'movies' => $parsed['movies']];
+    }
+    if (empty($r2['movies'])) $r2 = searchSledujteto($query, $page); // bounded fallback across other API bases
+
+    $r3 = ['error' => null, 'movies' => []];
+    $bombujPostUrl = '';
+    if (!$bombujHomeErr && $bombujHomeCode >= 200 && $bombujHomeCode < 300) {
+        if (preg_match('/xhr\.open\(\s*[\'\"]POST[\'\"]\s*,\s*[\'\"](\/\/www\.bombuj\.si\/[^\'\"]+?\.php)[\'\"]/i', (string)$bombujHome, $m)) {
+            $bombujPostUrl = wflixFixUrl($m[1], 'www.bombuj.si');
+        } elseif (preg_match('/[\'\"](https?:\/\/www\.bombuj\.si\/[a-z0-9_-]+\.php)[\'\"]/i', (string)$bombujHome, $m)) {
+            $bombujPostUrl = $m[1];
+        }
+    }
+    if ($bombujPostUrl !== '') {
+        list($bc, $bb, $be) = wflixHttpPost($bombujPostUrl, ['queryString' => $query], 20, [
+            'Accept: application/json, text/plain, */*',
+            'Origin: https://www.bombuj.si',
+            'Referer: https://www.bombuj.si/',
+            'X-Requested-With: XMLHttpRequest',
+        ]);
+        if (!$be && $bc >= 200 && $bc < 300) {
+            $bd = json_decode((string)$bb, true);
+            $list = is_array($bd) ? (isset($bd['data']) && is_array($bd['data']) ? $bd['data'] : (array_values($bd) === $bd ? $bd : [])) : [];
+            $movies = [];
+            foreach ($list as $it) {
+                if (!is_array($it)) continue;
+                $url = wflixFixUrl($it['url'] ?? ($it['link'] ?? ''), 'www.bombuj.si');
+                $name = trim(html_entity_decode((string)($it['name'] ?? ($it['title'] ?? '')), ENT_QUOTES, 'UTF-8'));
+                if ($url === '' || $name === '' || strpos($url, '/online-film') === false) continue;
+                $movies[] = ['url' => $url, 'title' => $name, 'thumbnail' => wflixFixUrl($it['img'] ?? ($it['image'] ?? ''), 'www.bombuj.si'), 'year' => '', 'source' => 'bombuj'];
+                if (count($movies) >= 20) break;
+            }
+            $r3 = ['error' => null, 'movies' => $movies];
+        } else {
+            $r3 = ['error' => 'Bombuj: ' . ($be ?: ('HTTP ' . $bc)), 'movies' => []];
+        }
+    } elseif ($bombujHomeErr || $bombujHomeCode < 200 || $bombujHomeCode >= 300) {
+        $r3 = ['error' => 'Bombuj: ' . ($bombujHomeErr ?: ('HTTP ' . $bombujHomeCode)), 'movies' => []];
+    } else {
+        $r3 = ['error' => 'Bombuj: endpoint nenalezen', 'movies' => []];
+    }
+
+    $merged = wflixDedupMovies(array_merge(
+        is_array($r1['movies']) ? $r1['movies'] : [],
+        is_array($r2['movies']) ? $r2['movies'] : [],
+        is_array($r3['movies']) ? $r3['movies'] : []
+    ));
+    $errs = [];
+    if (empty($r1['movies']) && !empty($r1['error'])) $errs[] = $r1['error'];
+    if (empty($r2['movies']) && !empty($r2['error'])) $errs[] = $r2['error'];
+    if (empty($r3['movies']) && !empty($r3['error'])) $errs[] = $r3['error'];
+    $err = (!empty($merged) || empty($errs)) ? null : implode(' | ', $errs);
+    return ['error' => $err, 'status' => $r1['status'] ?? 0, 'movies' => $merged, 'sources' => ['prehrajto', 'sledujteto', 'bombuj']];
 }
 
 function resolveSourceVideo($source, $url) {
@@ -319,6 +451,9 @@ function handleSearch($source = 'prehrajto') {
         $r = searchBombuj($query);
     } elseif ($source === 'sledujteto') {
         $r = searchSledujteto($query, $page);
+    } elseif ($source === 'all') {
+        $r = searchAll($query, $page);
+        $fallbackUsed = 'all';
     } else {
         $r = searchPrehraj($query, $page);
         // Sledujteto jako fallback pro prehraj.to (duplication prevention při sloučení).

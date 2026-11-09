@@ -299,6 +299,7 @@ static string NormalizeSource(string? s)
         "prehraj" or "prehrajto" or "prehraj.to" => "prehrajto",
         "bombuj" or "bombuj.si" => "bombuj",
         "sledujteto" or "sledujteto.cz" or "old.sledujteto.cz" => "sledujteto",
+        "all" or "merge" or "both" or "prehrajto+sledujteto" => "all",
         _ => "prehrajto"
     };
 }

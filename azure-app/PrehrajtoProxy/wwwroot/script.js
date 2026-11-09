@@ -122,11 +122,12 @@
         const SETTINGS_KEY = 'wflix-settings';
         // Knihovna diváka (jen v tomhle prohlížeči): oblíbené.
         const FAVS_KEY = 'wflix-favs';
-        let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: true, theme: 'dark', subSize: 'm', subBg: 'dark' };
+        let settings = { catLang: 'cz', limitOn: false, limit: 3, direct: true, theme: 'dark', subSize: 'm', subBg: 'dark', searchMerge: false };
         try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) {}
         // Starší verze ukládaly volby, které už v panelu nejsou (vypnuté náhledy, zdroj
         // náhledů, proxy). Zahodit, ať se v localStorage nevrátí zpátky do oběhu.
         ['thumbsOff', 'thumbSrc', 'proxyOn', 'proxyServers', 'proxyUrl', 'introSound'].forEach(k => delete settings[k]);
+        if (typeof settings.searchMerge !== 'boolean') settings.searchMerge = false;
         const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} };
 
         // ===== Vzhled: světlý režim a styl titulků =====
@@ -1387,8 +1388,9 @@
             resultsLoading(`Hledám „${query}" …`);
 
             try {
+                const searchSourceQS = settings.searchMerge ? '&source=all' : '';
                 const { response, data, rateLimited } = await apiJson(
-                    `/api/search?q=${encodeURIComponent(query)}${proxyQS()}`,
+                    `/api/search?q=${encodeURIComponent(query)}${proxyQS()}${searchSourceQS}`,
                     { onWait: resultsRateLimited, onRetry: () => resultsLoading(`Hledám „${query}" …`) });
 
                 if (rateLimited) {
@@ -1546,8 +1548,9 @@
                     if (st.pages >= SERIES_MAX_PAGES) { st.done = true; break; }
 
                     const page = st.pages + 1;
+                    const searchSourceQS = settings.searchMerge ? '&source=all' : '';
                     const { data, rateLimited } = await apiJson(
-                        `/api/search?q=${encodeURIComponent(lastQuery)}&page=${page}${proxyQS()}`,
+                        `/api/search?q=${encodeURIComponent(lastQuery)}&page=${page}${proxyQS()}${searchSourceQS}`,
                         { retries: 1 });
                     if (rateLimited || !data || !data.success || !Array.isArray(data.movies)) { st.done = true; break; }
                     // prázdná stránka = konec výsledků
@@ -2933,6 +2936,13 @@
                     </div>
                     <div class="set-hint">Zapnuto (výchozí): video i IPTV jdou přímo ze zdroje. Když přímé přehrávání opakovaně selže, appka pro tohle přehrávání dočasně přejde na server a příště zkusí CDN znovu – server se používá, jen když je opravdu potřeba. Vypnuto: hned přes server.</div>
 
+                    <h2>Vyhledávání</h2>
+                    <div class="set-row">
+                        <label for="searchMergeToggle">Více výsledků</label>
+                        <label class="switch"><input type="checkbox" id="searchMergeToggle"><span></span></label>
+                    </div>
+                    <div class="set-hint">Vypnuto (výchozí): hledá se na Prehraj.to a Sledujteto se použije jen jako záloha při chybě nebo prázdném výsledku. Zapnuto (experimentální): hledá se na Prehraj.to, Sledujteto a Bombuj najednou a výsledky se sloučí bez duplicit. Když jeden zdroj selže, použijí se ostatní; chyba se zobrazí jen když selžou všechny.</div>
+
                     <h2>Titulky</h2>
                     <div class="set-row">
                         <label for="subSizeSelect">Velikost</label>
@@ -3022,6 +3032,16 @@
                     // Vypnutí přímého přehrávání schová ruční nabídku serveru; aktuální
                     // přehrávání se nemění, aby se video zbytečně nepřerušilo.
                     if (!settings.direct) proxyBtn.hidden = true;
+                });
+            }
+
+            // Experimental: "Více výsledků" merges supported sources (source=all). Individual failures are tolerated.
+            const searchMergeTog = q('searchMergeToggle');
+            if (searchMergeTog) {
+                searchMergeTog.checked = !!settings.searchMerge;
+                searchMergeTog.addEventListener('change', () => {
+                    settings.searchMerge = !!searchMergeTog.checked;
+                    saveSettings();
                 });
             }
 

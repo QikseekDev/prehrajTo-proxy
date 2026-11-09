@@ -36,6 +36,7 @@ function wflixSource($s) {
         'prehraj' => 'prehrajto', 'prehrajto' => 'prehrajto', 'prehraj.to' => 'prehrajto',
         'bombuj' => 'bombuj', 'bombuj.si' => 'bombuj',
         'sledujteto' => 'sledujteto', 'sledujteto.cz' => 'sledujteto', 'old.sledujteto.cz' => 'sledujteto',
+        'all' => 'all', 'merge' => 'all', 'both' => 'all', 'prehrajto+sledujteto' => 'all',
     ];
     return isset($map[$s]) ? $map[$s] : 'prehrajto';
 }

@@ -168,9 +168,12 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
   ukládá jen do prohlížeče – `localStorage` (`wflix-history`, `wflix-favs`, `wflix-settings`),
   žádný účet ani server.
 - **API Endpoints**:
-  - `GET /api/search?q={query}[&source=prehrajto|bombuj|sledujteto][&fallback=0]` - Vyhledávání filmů.
+  - `GET /api/search?q={query}[&source=prehrajto|bombuj|sledujteto|all][&fallback=0]` - Vyhledávání filmů.
     Výchozí zdroj je `prehrajto` (zpětně kompatibilní). Při prázdném výsledku/chybě `prehrajto` se
     automaticky zkusí `sledujteto` jako fallback a výsledky se sloučí s deduplikací (vypne se `fallback=0`).
+    `all` (aliasy `merge`/`both`, experimentální) hledá na `prehraj.to`, `sledujteto` a `bombuj` současně/omezeně a výsledky
+    sloučí s deduplikací. Když jeden zdroj selže, pokračuje se s ostatními; chyba se vrátí jen když selžou všechny.
+    Ve web UI jde zapnout volitelně v Nastavení → Vyhledávání („Více výsledků“).
     `bombuj` hledá přes `bombuj.si` (autocomplete endpoint z `uvod.php`, dynamicky zjištěný).
     `sledujteto` zkouší API endpointy `https://www.sledujteto.cz/api/web/videos` / `https://sledujteto.cz/api/web/videos`
     (primárně) a `old.sledujteto.cz` jako zálohu, s `page`/`query`/`limit`/`sort=relevance`; běží přes PHP proxy
