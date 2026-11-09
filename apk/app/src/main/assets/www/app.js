@@ -2492,6 +2492,13 @@
     $('series').addEventListener('click', function (e) {
       if (e.target === $('series')) { closeSeries(); focusAfterOverlay(); }
     });
+    var healthClose = $('healthClose'), healthDlg = $('health');
+    if (healthClose) healthClose.addEventListener('click', function (e) { if(e){e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();} try{closeHealthOverlay();}catch(_){} });
+    if (healthDlg) {
+      healthDlg.addEventListener('click', function (e) { if (e && e.target === healthDlg) { if(e.preventDefault)e.preventDefault(); if(e.stopPropagation)e.stopPropagation(); try{closeHealthOverlay();}catch(_){} } });
+      var hbox = healthDlg.querySelector('.health-box');
+      if (hbox) hbox.addEventListener('click', function (e) { if(e&&e.stopPropagation)e.stopPropagation(); });
+    }
 
     document.addEventListener('mousemove', function () { if (!$('player').hidden) bumpIdle(); });
 
