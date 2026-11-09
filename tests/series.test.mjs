@@ -313,3 +313,111 @@ test('appka: levý panel s kategoriemi a hledání s klávesnicí vedle výsledk
     assert.match(css, /\.skeys\{/);
     assert.match(css, /body:not\(\.touch\) \.navbtn/);
 });
+
+// Franšízy bez SxxExx: "Spider-Man: Brand New Day" je jen název, žádné číslo dílu.
+const franchise = [
+    'SpiderMan Zbrusu nový den (2026) CZ DABING',
+    'SpiderMan - Zbrusu nový den 2026 CZ DAB 2160p',   // jiný upload téhož filmu
+    'Spiderman 2 (2004) 1080p, cz',
+    'Spiderman 3 (2007) 1080p, cz',
+    'Spiderman 2004 UHD CZ ned',                       // holý název + značka uploadera
+    'Spiderman Daleko od domova CZ',
+];
+
+test('franšíza bez SxxExx se slije do jedné série a jde otevřít', () => {
+    const entries = groupSearchResults(franchise.map((t, i) => m(t, 'f' + i, i === 5 ? '' : '')));
+    assert.equal(entries.length, 1, 'jedna karta pro celou sérii');
+    assert.equal(entries[0].type, 'series');
+
+    const show = entries[0].series;
+    assert.equal(show.kind, 'collection');
+    assert.equal(show.title, 'Spiderman');
+    const rows = show.seasons[0].episodes;
+    assert.deepEqual(rows.map(r => r.variants[0].name), [
+        'Spiderman', 'Spiderman 2', 'Spiderman 3', 'Spiderman Daleko od domova', 'SpiderMan Zbrusu nový den',
+    ]);
+    assert.equal(rows[4].variants.length, 2, 'druhý upload téhož filmu je varianta, ne další řádek');
+    assert.equal(seriesMeta(show), '5 filmů');
+    assert.ok(rows.every(r => r.variants[0].url), 'každý řádek má video k přehrání');
+});
+
+test('kolekce bere číslo v názvu jako díl jen když je číslování celé', () => {
+    const show = groupSearchResults([
+        m('Bylo nás pět 1 Pěkné vysvědčení český seriál', 'b1', ''),
+        m('Bylo nás pět 2 Andělíček policajt český seriál', 'b2', ''),
+        m('Bylo nás pět 3 Vypouštění draka český seriál', 'b3', ''),
+    ]).find(e => e.type === 'series').series;
+    assert.equal(show.kind, 'collection');
+    assert.equal(show.unit, 'dil');
+    assert.deepEqual(show.seasons[0].episodes.map(e => e.label), ['Díl 1', 'Díl 2', 'Díl 3']);
+    assert.equal(seriesMeta(show), '3 díly');
+});
+
+test('jeden film s více uploady zůstane kartami, ne sérií', () => {
+    const entries = groupSearchResults([
+        m('Matrix (1999)', 'm1', '1999'),
+        m('Matrix 1999 CZ dabing', 'm2', '1999'),
+    ]);
+    assert.deepEqual(entries.map(e => e.type), ['movie', 'movie']);
+});
+
+test('kolekce dotáhne další filmy z druhé stránky a cizí tituly ignoruje', () => {
+    const show = groupSearchResults([
+        m('Spiderman 2 (2004) 1080p, cz', 'a1', '2004'),
+        m('Spiderman 3 (2007) 1080p, cz', 'a2', '2007'),
+    ]).find(e => e.type === 'series').series;
+
+    const res = mergeSeriesMovies(show, [
+        m('Spiderman Bez Domova 2021 2160p CZ Dabing SiC', 'a3', '2021'),
+        m('Spiderman 3 (2007) 1080p, cz', 'a2', '2007'),   // už známá URL
+        m('Duna 2', 'a4', '2024'),                         // jiný titul
+    ]);
+    assert.equal(res.added, 1);
+    assert.equal(res.series.kind, 'collection');
+    assert.equal(res.series.episodeCount, 3);
+    assert.equal(res.series.seasonCount, 0, 'kolekce nemá série');
+    assert.ok(res.series.seasons[0].episodes.some(e => e.variants[0].url === 'a3'));
+    assert.ok(!res.series.seasons[0].episodes.some(e => e.variants[0].url === 'a4'));
+});
+
+test('klientská appka seskupí franšízu stejně jako web', () => {
+    const app = loadAppParser();
+    const asMovies = titles => titles.map((t, i) => ({ title: t, url: 'u' + i, thumbnail: '', year: '' }));
+    const webShow = groupSearchResults(asMovies(franchise)).find(e => e.type === 'series').series;
+    const appShow = app.groupSearchResults(asMovies(franchise)).find(e => e.type === 'series').series;
+
+    assert.equal(appShow.title, webShow.title);
+    assert.equal(appShow.kind, 'collection');
+    assert.equal(appShow.episodeCount, webShow.episodeCount);
+    assert.deepEqual(
+        appShow.seasons[0].episodes.map(e => e.variants[0].name),
+        webShow.seasons[0].episodes.map(e => e.variants[0].name));
+    assert.equal(app.seriesMeta(appShow), seriesMeta(webShow));
+});
+
+test('stránka kolekce vypíše filmy s rokem, ne Epizoda N', () => {
+    const { seriesPageHtml } = loadSeriesPage();
+    const show = groupSearchResults([
+        m('Spiderman 2 (2004) 1080p, cz', 'c1', '2004'),
+        m('Spiderman Zbrusu nový den (2026) CZ DABING', 'c2', '2026'),
+    ]).find(e => e.type === 'series').series;
+
+    const html = seriesPageHtml(show);
+    assert.equal((html.match(/class="ep-row"/g) || []).length, 2);
+    assert.match(html, /Filmy/);
+    assert.ok(!/Epizoda 1/.test(html));
+    assert.match(html, /ep-num">2004</);
+    assert.match(html, /Spiderman Zbrusu nový den/);
+    assert.match(html, /Spiderman 2/);
+});
+
+test('diakritika a české slovo „seriál“ v názvu nerozbijí název série', () => {
+    const show = groupSearchResults([
+        m('žena za pultem 2 český seriál', 'z2', ''),
+        m('žena za pultem 6 český seriál', 'z6', ''),
+    ]).find(e => e.type === 'series').series;
+    assert.equal(show.title, 'žena za pultem');
+    assert.equal(show.unit, 'dil');
+    assert.deepEqual(show.seasons[0].episodes.map(e => e.label), ['Díl 2', 'Díl 6']);
+    assert.equal(seriesMeta(show), '2 díly');
+});

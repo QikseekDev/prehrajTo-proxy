@@ -256,7 +256,7 @@
         for (var r = 0; r < fin.raw.length; r++) out.push({ type: 'movie', movie: fin.raw[r].movie });
       }
     }
-    return out;
+    return groupCollections(out);
   }
 
   function finalizeSeries(raw) {
@@ -315,6 +315,235 @@
     };
   }
 
+  /* ------------------------------------------------------------------ *
+   *  Série bez číslování dílů (franšízy)
+   *  U franšíz prehraj.to číslo dílu nemá: "Spider-Man: Brand New Day"
+   *  je jen název. Když víc výsledků začíná stejným názvem, slijeme je
+   *  do jedné série (kolekce) – otevře se stejně jako seriál s SxxExx.
+   * ------------------------------------------------------------------ */
+  var COLLECTION_STOP = {};
+  ('a i k o s u v z ve ze do na po pro se si za je the an and of to in on for la le el de der die das')
+    .split(' ').forEach(function (w) { COLLECTION_STOP[w] = true; });
+  // Za těmito značkami název končí - uploader za ně přidává vlastní zkratky
+  // ("Spiderman 2004 UHD CZ ned"), které by jinak z každého uploadu udělaly jiný film.
+  var COLLECTION_CUT = /(?:^|[\s._,\-(])(?:cz|sk|en|český|česky|cesky|dabing|dab|titulky|subtitles|tit|sub|1080p|720p|2160p|480p|4k|uhd|full|fhd|hd|hdtv|web|webdl|webrip|bluray|brrip|dvdrip|dvd|x264|x265|h264|h265|hevc|aac|ac3|mkv|mp4|avi|topkvalita|kvalita|serial|seriál)(?=$|[\s._\-,;:)\]])/i;
+
+  // Název bez ozdob, přípony, roku a všeho za první značkou kvality/jazyka.
+  function collectionCore(title) {
+    var t = String(title || '')
+      .replace(/_+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^[-–—.\s#~+*:;|/\\]+/, '')
+      .replace(/\.[a-z0-9]{2,4}$/i, '')
+      .replace(/^(?:seri[aá]l|serial)\s+(?=[A-ZÁ-Ž0-9])/i, '')   // "Seriál Hospoda ..." = Hospoda
+      .trim();
+    var cut = t.search(COLLECTION_CUT);
+    if (cut > 0) t = t.slice(0, cut);
+    // Rok u prostřed názvu: za ním už jsou jen značky uploadera ("Matrix 1999 ned").
+    var year = /(?:^|[\s._\-–—(\[])(?:19[5-9]\d|20[0-2]\d)(?=$|[\s._\-–—(\[)\].,;:])/.exec(t);
+    if (year && year.index > 0) t = t.slice(0, year.index);
+    return t.replace(/[,\s._-]+$/, '')
+      .replace(/\s*[\(\[]\s*(?:19|20)\d{2}\s*[\)\]]\s*$/, '')
+      .replace(/(?:^|[\s._-])(?:19|20)\d{2}$/, '')
+      .replace(/[,\s._-]+$/, '')
+      .trim();
+  }
+
+  // nejdelší společný začátek názvů (po slovech)
+  function commonWordPrefix(lists) {
+    var min = lists[0].length;
+    for (var i = 1; i < lists.length; i++) if (lists[i].length < min) min = lists[i].length;
+    var take = 0;
+    for (var k = 0; k < min; k++) {
+      var w = lists[0][k], all = true;
+      for (var j = 1; j < lists.length; j++) if (lists[j][k] !== w) { all = false; break; }
+      if (!all) break;
+      take = k + 1;
+    }
+    return take;
+  }
+
+  // Skupiny výsledků, které začínají stejným názvem a nejsou to díly seriálu.
+  function collectionGroups(items) {
+    var buckets = {}, order = [];
+    for (var i = 0; i < items.length; i++) {
+      var first = items[i].words[0];
+      if (!buckets[first]) { buckets[first] = []; order.push(first); }
+      buckets[first].push(items[i]);
+    }
+
+    var groups = [];
+    for (var b = 0; b < order.length; b++) {
+      var list = buckets[order[b]];
+      var head = order[b];
+      if (COLLECTION_STOP[head] || head.length < 3) continue;
+      var keys = [];
+      for (var q = 0; q < list.length; q++) if (keys.indexOf(list[q].key) < 0) keys.push(list[q].key);
+      if (keys.length < 2) continue;                 // samé uploady jednoho filmu
+      var words = [];
+      for (var w = 0; w < list.length; w++) words.push(list[w].words);
+      var take = commonWordPrefix(words);
+      if (!take) continue;
+      var baseTokens = list[0].words.slice(0, take);
+      // Jedno slovo jako název série jen když existuje i holý název ("Spiderman")
+      // nebo je dost dlouhé - ať se neslijí filmy se stejnou předložkou na začátku.
+      if (take === 1 && keys.indexOf(baseTokens[0]) < 0 && head.length < 6) continue;
+      var bare = list[0];
+      for (var f = 0; f < list.length; f++) if (list[f].key === baseTokens.join(' ')) { bare = list[f]; break; }
+      var base = bare.core.split(/\s+/).slice(0, take).join(' ');
+      var first_ = 1e9;
+      for (var o = 0; o < list.length; o++) if (list[o].index < first_) first_ = list[o].index;
+      groups.push({ base: base, baseTokens: baseTokens, items: list, order: first_ });
+    }
+    groups.sort(function (a, c) { return a.order - c.order; });
+    return groups;
+  }
+
+  // Řádky kolekce: jeden název = jeden film, ostatní uploady téhož názvu jsou varianty.
+  function collectionRows(items, baseTokens) {
+    var keys = [], rows = {};
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i], movie = item.movie;
+      var row = rows[item.key];
+      if (!row) {
+        row = { key: item.key, core: item.core, year: '', variants: [], urls: {}, titles: {} };
+        rows[item.key] = row;
+        keys.push(item.key);
+      }
+      var titleKey = normText(movie.title);
+      if (row.urls[movie.url] || (titleKey && row.titles[titleKey])) continue;
+      row.urls[movie.url] = true;
+      if (titleKey) row.titles[titleKey] = true;
+      if (!row.year && movie.year) row.year = movie.year;
+      row.variants.push(movie);
+    }
+
+    var out = [];
+    for (var k = 0; k < keys.length; k++) {
+      var r = rows[keys[k]];
+      var rest = r.core.split(/\s+/).slice(baseTokens.length).join(' ')
+        .replace(/^[\s._\-–—:,]+|[\s._\-–—:,]+$/g, '').trim();
+      // "Bylo nás pět 2 Andělíček policajt" = číslo a za ním název dílu
+      var num = /^(\d{1,3})(?:[.)\]]|,|\s)+\s*(\S.*)$/.exec(rest);
+      var named = num && !/^[\(\[]/.test(num[2].trim());
+      // "žena za pultem 2" = díl 2 i když za číslem nic není
+      var sole = /^\d{1,3}$/.test(rest);
+      out.push({
+        row: r,
+        rest: rest || r.core,
+        episode: named ? Number(num[1]) : (sole ? Number(rest) : null),
+        name: named ? num[2].trim() : ''
+      });
+    }
+    return out;
+  }
+
+  function buildCollection(base, baseTokens, key, items) {
+    var rows = collectionRows(items, baseTokens);
+
+    // Číslování bereme jako díly jen když je v názvech opravdu celé (seriál).
+    // U franšíz ("Matrix 2 Reloaded") zůstává číslo součástí názvu filmu.
+    var numbered = 0;
+    for (var i = 0; i < rows.length; i++) if (rows[i].episode != null) numbered++;
+    var episodic = numbered >= 2 && numbered === rows.length;
+    if (!episodic) for (var n = 0; n < rows.length; n++) rows[n].episode = null;
+
+    rows.sort(function (a, b) {
+      if ((a.episode == null) !== (b.episode == null)) return a.episode == null ? 1 : -1;
+      if (a.episode != null && a.episode !== b.episode) return a.episode - b.episode;
+      var ay = Number(a.row.year) || 9999, by = Number(b.row.year) || 9999;
+      if (ay !== by) return ay - by;
+      return a.row.key < b.row.key ? -1 : (a.row.key > b.row.key ? 1 : 0);
+    });
+
+    var episodes = [];
+    for (var e = 0; e < rows.length; e++) {
+      var r = rows[e];
+      var num = r.episode != null ? 'Díl ' + r.episode : (r.row.year || '');
+      var name = r.episode != null ? (r.name || r.row.core) : r.row.core;
+      var variants = [];
+      for (var v = 0; v < r.row.variants.length; v++) {
+        var m = r.row.variants[v];
+        variants.push({ title: m.title, url: m.url, thumbnail: m.thumbnail || '', year: m.year || '', name: name });
+      }
+      episodes.push({ season: null, episode: r.episode != null ? r.episode : e + 1, num: num, label: num, variants: variants });
+    }
+
+    var years = [];
+    for (var y = 0; y < rows.length; y++) {
+      var yr = Number(rows[y].row.year);
+      if (yr > 1900) years.push(yr);
+    }
+    years.sort(function (a, b) { return a - b; });
+
+    var poster = '';
+    for (var t = 0; t < items.length; t++) if (items[t].movie.thumbnail) { poster = items[t].movie.thumbnail; break; }
+
+    var raw = [];
+    for (var w2 = 0; w2 < items.length; w2++) raw.push({ movie: items[w2].movie, parsed: null });
+
+    return {
+      key: key,
+      kind: 'collection',
+      unit: episodic ? 'dil' : 'film',
+      title: base,
+      baseTokens: baseTokens,
+      year: years.length > 1 ? years[0] + '–' + years[years.length - 1] : (years.length ? String(years[0]) : ''),
+      poster: poster,
+      raw: raw,
+      seasons: [{ key: '?', season: null, episodes: episodes }],
+      episodeCount: episodes.length,
+      seasonCount: 0
+    };
+  }
+
+  function groupCollections(entries) {
+    var items = [];
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      if (e.type !== 'movie') continue;
+      if (parseEpisodeTitle(e.movie.title)) continue;      // díl seriálu, ne franšíza
+      var core = collectionCore(e.movie.title);
+      var words = normText(core).split(' ').filter(Boolean);
+      if (!words.length) continue;
+      items.push({ index: i, movie: e.movie, core: core, words: words, key: words.join(' ') });
+    }
+    if (items.length < 2) return entries;
+
+    var groups = collectionGroups(items);
+    if (!groups.length) return entries;
+
+    var at = {}, drop = {};
+    for (var g = 0; g < groups.length; g++) {
+      var grp = groups[g], first = 1e9;
+      for (var j = 0; j < grp.items.length; j++) if (grp.items[j].index < first) first = grp.items[j].index;
+      at[first] = {
+        type: 'series',
+        series: buildCollection(grp.base, grp.baseTokens, 'c:' + grp.baseTokens.join(' '), grp.items)
+      };
+      for (var k = 0; k < grp.items.length; k++) if (grp.items[k].index !== first) drop[grp.items[k].index] = true;
+    }
+
+    var out = [];
+    for (var x = 0; x < entries.length; x++) {
+      if (drop[x]) continue;
+      out.push(at[x] || entries[x]);
+    }
+    return out;
+  }
+
+  // Patří film do otevřené série? U kolekce rozhoduje stejný začátek názvu.
+  function seriesAccepts(series, movie) {
+    if (series.kind === 'collection') {
+      if (parseEpisodeTitle(movie.title)) return false;
+      var words = normText(collectionCore(movie.title)).split(' ').filter(Boolean);
+      for (var i = 0; i < series.baseTokens.length; i++) if (words[i] !== series.baseTokens[i]) return false;
+      return true;
+    }
+    var parsed = parseEpisodeTitle(movie.title);
+    return !!parsed && seriesKeyOf(parsed.base) === series.key;
+  }
+
   // Další stránka hledání: přidá jen epizody stejného seriálu, ostatní ignoruje.
   function mergeSeriesMovies(series, movies) {
     var known = {};
@@ -324,19 +553,33 @@
     for (var j = 0; j < movies.length; j++) {
       var movie = movies[j];
       if (!movie || !movie.url || known[movie.url]) continue;
-      var parsed = parseEpisodeTitle(movie.title);
-      if (!parsed || seriesKeyOf(parsed.base) !== series.key) continue;
+      if (!seriesAccepts(series, movie)) continue;
       known[movie.url] = true;
-      series.raw.push({ movie: movie, parsed: parsed });
+      series.raw.push({ movie: movie, parsed: parseEpisodeTitle(movie.title) });
       added++;
       if (!series.poster && movie.thumbnail) series.poster = movie.thumbnail;
       if (!series.year && movie.year) series.year = movie.year;
     }
     if (!added) return { added: 0, series: series };
+    if (series.kind === 'collection') {
+      var items = [];
+      for (var r = 0; r < series.raw.length; r++) {
+        var core = collectionCore(series.raw[r].movie.title);
+        var words = normText(core).split(' ').filter(Boolean);
+        if (!words.length) continue;
+        items.push({ index: 0, movie: series.raw[r].movie, core: core, words: words, key: words.join(' ') });
+      }
+      return { added: added, series: buildCollection(series.title, series.baseTokens, series.key, items) };
+    }
     return { added: added, series: finalizeSeries(series) };
   }
 
   function seriesMeta(series) {
+    if (series.kind === 'collection') {
+      return series.unit === 'dil'
+        ? czCount(series.episodeCount, 'díl', 'díly', 'dílů')
+        : czCount(series.episodeCount, 'film', 'filmy', 'filmů');
+    }
     return czCount(series.seasonCount, 'série', 'série', 'sérií') + ' · '
       + czCount(series.episodeCount, 'díl', 'díly', 'dílů');
   }
@@ -1044,7 +1287,7 @@
       : '';
     return '<button class="f card wide" type="button" data-idx="' + idx + '">'
       + '<span class="art">' + artImg + '<span class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</span>'
-      + '<span class="badge">Seriál</span></span>'
+      + '<span class="badge">' + (series.kind === 'collection' ? 'Série' : 'Seriál') + '</span></span>'
       + '<span class="cap"><span class="t">' + esc(series.title) + '</span>'
       + '<span class="y">' + esc(seriesMeta(series)) + '</span></span>'
       + '</button>';
@@ -1103,11 +1346,14 @@
     return best;
   }
 
-  function episodeHtml(ep) {
+  function episodeHtml(ep, series) {
     var v = bestVariant(ep);
     var label = String(v.name || v.title || '').replace(/\s+/g, ' ').trim();
     if (label.length > 58) label = label.slice(0, 55) + '…';
-    return '<div class="ep-row"><span class="ep-num">' + esc('Epizoda ' + ep.episode) + '</span><div class="ep-srcs">'
+    // Kolekce nemá čísla dílů - u filmu bez roku se popisek prostě vynechá.
+    var collection = series && series.kind === 'collection';
+    var num = ep.num || (collection ? '' : 'Epizoda ' + ep.episode);
+    return '<div class="ep-row">' + (num ? '<span class="ep-num">' + esc(num) + '</span>' : '') + '<div class="ep-srcs">'
       + '<button class="f ep-src" type="button" data-ep-url="' + esc(v.url) + '"'
       + ' data-fk="' + esc(String(ep.season == null ? 'x' : ep.season) + 'e' + ep.episode + '-0') + '"'
       + ' title="' + esc(v.title || '') + '">' + esc(label) + '</button>'
@@ -1118,10 +1364,16 @@
     var html = '';
     for (var i = 0; i < series.seasons.length; i++) {
       var s = series.seasons[i];
-      html += '<section class="season"><div class="season-head"><h2>'
-        + (s.season == null ? 'Díly' : esc(s.season + '. série')) + '</h2><span>'
-        + czCount(s.episodes.length, 'díl', 'díly', 'dílů') + '</span></div>';
-      for (var j = 0; j < s.episodes.length; j++) html += episodeHtml(s.episodes[j]);
+      var col = series.kind === 'collection';
+      var head = col ? (series.unit === 'dil' ? 'Díly' : 'Filmy')
+                     : (s.season == null ? 'Díly' : esc(s.season + '. série'));
+      var count = col
+        ? (series.unit === 'dil' ? czCount(s.episodes.length, 'díl', 'díly', 'dílů')
+                                 : czCount(s.episodes.length, 'film', 'filmy', 'filmů'))
+        : czCount(s.episodes.length, 'díl', 'díly', 'dílů');
+      html += '<section class="season"><div class="season-head"><h2>' + head + '</h2><span>'
+        + count + '</span></div>';
+      for (var j = 0; j < s.episodes.length; j++) html += episodeHtml(s.episodes[j], series);
       html += '</section>';
     }
     return html;

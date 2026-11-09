@@ -346,13 +346,14 @@
             });
 
             // jediná epizoda nemá smysl seskupovat - zůstane normální kartou
-            return entries.flatMap(e => {
+            const flat = entries.flatMap(e => {
                 if (e.type !== 'series') return [e];
                 const series = finalizeSeries(e.series);
                 return series.episodeCount >= 2
                     ? [{ type: 'series', series }]
                     : e.series.raw.map(r => ({ type: 'movie', movie: r.movie }));
             });
+            return groupCollections(flat);
         }
 
         function finalizeSeries(raw) {
@@ -397,6 +398,194 @@
             };
         }
 
+        // ===== Série bez číslování dílů (franšízy) =====
+        // U franšíz prehraj.to číslo dílu nemá: "Spider-Man: Brand New Day" je jen název,
+        // žádné SxxExx. Když víc výsledků začíná stejným názvem, slijeme je do jedné série
+        // (kolekce) - otevře se stejně jako seriál a jde z ní přehrát.
+        const COLLECTION_STOP = new Set([
+            'a','i','k','o','s','u','v','z','ve','ze','do','na','po','pro','se','si','za','je',
+            'the','an','and','of','to','in','on','for','la','le','el','de','der','die','das',
+        ]);
+        // Za těmito značkami název končí - uploader za ně přidává vlastní zkratky
+        // ("Spiderman 2004 UHD CZ ned"), které by jinak z každého uploadu udělaly jiný film.
+        const COLLECTION_CUT = /(?:^|[\s._,\-(])(?:cz|sk|en|český|česky|cesky|dabing|dab|titulky|subtitles|tit|sub|1080p|720p|2160p|480p|4k|uhd|full|fhd|hd|hdtv|web|webdl|webrip|bluray|brrip|dvdrip|dvd|x264|x265|h264|h265|hevc|aac|ac3|mkv|mp4|avi|topkvalita|kvalita|serial|seriál)(?=$|[\s._\-,;:)\]])/i;
+
+        // Název bez ozdob, přípony, roku a všeho za první značkou kvality/jazyka.
+        function collectionCore(title) {
+            let t = String(title || '')
+                .replace(/_+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .replace(/^[-–—.\s#~+*:;|/\\]+/, '')
+                .replace(/\.[a-z0-9]{2,4}$/i, '')
+                .replace(/^(?:seri[aá]l|serial)\s+(?=[A-ZÁ-Ž0-9])/i, '')   // "Seriál Hospoda ..." = Hospoda
+                .trim();
+            const cut = t.search(COLLECTION_CUT);
+            if (cut > 0) t = t.slice(0, cut);
+            // Rok u prostřed názvu: za ním už jsou jen značky uploadera ("Matrix 1999 ned").
+            const year = /(?:^|[\s._\-–—(\[])(?:19[5-9]\d|20[0-2]\d)(?=$|[\s._\-–—(\[)\].,;:])/.exec(t);
+            if (year && year.index > 0) t = t.slice(0, year.index);
+            return t.replace(/[,\s._-]+$/, '')
+                .replace(/\s*[\(\[]\s*(?:19|20)\d{2}\s*[\)\]]\s*$/, '')
+                .replace(/(?:^|[\s._-])(?:19|20)\d{2}$/, '')
+                .replace(/[,\s._-]+$/, '')
+                .trim();
+        }
+
+        // nejdelší společný začátek názvů (po slovech)
+        function commonWordPrefix(lists) {
+            const min = Math.min(...lists.map(l => l.length));
+            let take = 0;
+            for (let i = 0; i < min; i++) {
+                const w = lists[0][i];
+                if (lists.every(l => l[i] === w)) take = i + 1; else break;
+            }
+            return take;
+        }
+
+        // Skupiny výsledků, které začínají stejným názvem a nejsou to díly seriálu.
+        function collectionGroups(items) {
+            const buckets = new Map();
+            items.forEach(item => {
+                const first = item.words[0];
+                if (!buckets.has(first)) buckets.set(first, []);
+                buckets.get(first).push(item);
+            });
+
+            const groups = [];
+            buckets.forEach((list, first) => {
+                if (COLLECTION_STOP.has(first) || first.length < 3) return;
+                const keys = [...new Set(list.map(it => it.key))];
+                if (keys.length < 2) return;                 // samé uploady jednoho filmu
+                const take = commonWordPrefix(list.map(it => it.words));
+                if (!take) return;
+                const baseTokens = list[0].words.slice(0, take);
+                // Jedno slovo jako název série jen když existuje i holý název ("Spiderman")
+                // nebo je dost dlouhé - ať se neslijí filmy se stejnou předložkou na začátku.
+                if (take === 1 && !keys.includes(baseTokens[0]) && first.length < 6) return;
+                const bare = list.find(it => it.key === baseTokens.join(' ')) || list[0];
+                const base = bare.core.split(/\s+/).slice(0, take).join(' ');
+                groups.push({ base, baseTokens, items: list, order: Math.min(...list.map(it => it.index)) });
+            });
+            return groups.sort((a, b) => a.order - b.order);
+        }
+
+        // Řádky kolekce: jeden název = jeden film, ostatní uploady téhož názvu jsou varianty.
+        function collectionRows(items, baseTokens) {
+            const rows = new Map();
+            items.forEach(item => {
+                const movie = item.movie;
+                let row = rows.get(item.key);
+                if (!row) {
+                    row = { key: item.key, core: item.core, year: '', variants: [], urls: new Set(), titles: new Set() };
+                    rows.set(item.key, row);
+                }
+                const titleKey = seriesKeyOf(movie.title);
+                if (row.urls.has(movie.url) || (titleKey && row.titles.has(titleKey))) return;
+                row.urls.add(movie.url);
+                if (titleKey) row.titles.add(titleKey);
+                if (!row.year && movie.year) row.year = movie.year;
+                row.variants.push(movie);
+            });
+
+            return [...rows.values()].map(row => {
+                const rest = row.core.split(/\s+/).slice(baseTokens.length).join(' ')
+                    .replace(/^[\s._\-–—:,]+|[\s._\-–—:,]+$/g, '').trim();
+                // "Bylo nás pět 2 Andělíček policajt" = číslo a za ním název dílu
+                const num = /^(\d{1,3})(?:[.)\]]|,|\s)+\s*(\S.*)$/.exec(rest);
+                const named = num && !/^[\(\[]/.test(num[2].trim());
+                // "žena za pultem 2" = díl 2 i když za číslem nic není
+                const sole = /^\d{1,3}$/.test(rest);
+                return {
+                    row,
+                    rest: rest || row.core,
+                    episode: named ? Number(num[1]) : (sole ? Number(rest) : null),
+                    name: named ? num[2].trim() : '',
+                };
+            });
+        }
+
+        function buildCollection(base, baseTokens, key, items) {
+            const rows = collectionRows(items, baseTokens);
+
+            // Číslování bereme jako díly jen když je v názvech opravdu celé (seriál).
+            // U franšíz ("Matrix 2 Reloaded") zůstává číslo součástí názvu filmu.
+            const numbered = rows.filter(r => r.episode != null).length;
+            const episodic = numbered >= 2 && numbered === rows.length;
+            rows.forEach(r => { if (!episodic) r.episode = null; });
+
+            rows.sort((a, b) => {
+                if ((a.episode == null) !== (b.episode == null)) return a.episode == null ? 1 : -1;
+                if (a.episode != null && a.episode !== b.episode) return a.episode - b.episode;
+                const ay = Number(a.row.year) || 9999, by = Number(b.row.year) || 9999;
+                if (ay !== by) return ay - by;
+                return a.row.key < b.row.key ? -1 : (a.row.key > b.row.key ? 1 : 0);
+            });
+
+            const episodes = rows.map((r, i) => {
+                const num = r.episode != null ? `Díl ${r.episode}` : (r.row.year || '');
+                const name = r.episode != null ? (r.name || r.row.core) : r.row.core;
+                return {
+                    season: null,
+                    episode: r.episode != null ? r.episode : i + 1,
+                    num,
+                    label: num,
+                    variants: r.row.variants.map(movie => ({ ...movie, name })),
+                };
+            });
+
+            const years = rows.map(r => Number(r.row.year)).filter(y => y > 1900).sort((a, b) => a - b);
+            const withThumb = items.find(it => it.movie.thumbnail);
+            return {
+                key,
+                kind: 'collection',
+                unit: episodic ? 'dil' : 'film',
+                title: base,
+                baseTokens,
+                year: years.length > 1 ? `${years[0]}–${years[years.length - 1]}` : (years.length ? String(years[0]) : ''),
+                poster: withThumb ? (withThumb.movie.thumbnail || '') : '',
+                raw: items.map(it => ({ movie: it.movie, parsed: null })),
+                seasons: [{ key: '?', season: null, episodes }],
+                episodeCount: episodes.length,
+                seasonCount: 0,
+            };
+        }
+
+        function groupCollections(entries) {
+            const items = [];
+            entries.forEach((e, index) => {
+                if (e.type !== 'movie') return;
+                if (parseEpisodeTitle(e.movie.title)) return;      // díl seriálu, ne franšíza
+                const core = collectionCore(e.movie.title);
+                const words = tokens(core);
+                if (!words.length) return;
+                items.push({ index, movie: e.movie, core, words, key: words.join(' ') });
+            });
+            if (items.length < 2) return entries;
+
+            const groups = collectionGroups(items);
+            if (!groups.length) return entries;
+
+            const at = new Map();
+            const drop = new Set();
+            groups.forEach(g => {
+                const first = Math.min(...g.items.map(it => it.index));
+                at.set(first, { type: 'series', series: buildCollection(g.base, g.baseTokens, 'c:' + g.baseTokens.join(' '), g.items) });
+                g.items.forEach(it => { if (it.index !== first) drop.add(it.index); });
+            });
+            return entries.flatMap((e, i) => drop.has(i) ? [] : [at.get(i) || e]);
+        }
+
+        // Patří film do otevřené série? U kolekce rozhoduje stejný začátek názvu.
+        function seriesAccepts(series, movie) {
+            if (series.kind === 'collection') {
+                if (parseEpisodeTitle(movie.title)) return false;
+                const words = tokens(collectionCore(movie.title));
+                return series.baseTokens.every((w, i) => words[i] === w);
+            }
+            const parsed = parseEpisodeTitle(movie.title);
+            return !!parsed && seriesKeyOf(parsed.base) === series.key;
+        }
+
         // Stránka 2+ hledání: připojí jen epizody stejného seriálu, ostatní výsledky ignoruje.
         // Vrací nový finalizovaný seriál a nově přidané filmy (kvůli přehrávání z currentResults).
         function mergeSeriesMovies(series, movies) {
@@ -404,19 +593,31 @@
             const addedMovies = [];
             (movies || []).forEach(movie => {
                 if (!movie || !movie.url || known.has(movie.url)) return;
-                const parsed = parseEpisodeTitle(movie.title);
-                if (!parsed || seriesKeyOf(parsed.base) !== series.key) return;
+                if (!seriesAccepts(series, movie)) return;
                 known.add(movie.url);
-                series.raw.push({ movie, parsed });
+                series.raw.push({ movie, parsed: parseEpisodeTitle(movie.title) });
                 addedMovies.push(movie);
                 if (!series.poster && movie.thumbnail) series.poster = movie.thumbnail;
                 if (!series.year && movie.year) series.year = movie.year;
             });
             if (!addedMovies.length) return { added: 0, series, addedMovies };
+            if (series.kind === 'collection') {
+                const items = series.raw.map(r => {
+                    const core = collectionCore(r.movie.title);
+                    const words = tokens(core);
+                    return { index: 0, movie: r.movie, core, words, key: words.join(' ') };
+                }).filter(it => it.key);
+                return { added: addedMovies.length, series: buildCollection(series.title, series.baseTokens, series.key, items), addedMovies };
+            }
             return { added: addedMovies.length, series: finalizeSeries(series), addedMovies };
         }
 
         function seriesMeta(series) {
+            if (series.kind === 'collection') {
+                return series.unit === 'dil'
+                    ? czCount(series.episodeCount, 'díl', 'díly', 'dílů')
+                    : czCount(series.episodeCount, 'film', 'filmy', 'filmů');
+            }
             return [czCount(series.seasonCount, 'série', 'série', 'sérií'),
                     czCount(series.episodeCount, 'díl', 'díly', 'dílů')].join(' · ');
         }
@@ -1236,7 +1437,7 @@
             };
             card.innerHTML = `
                     <div class="card-play"><i>▶</i></div>
-                    <div class="series-badge">SERIÁL</div>
+                    <div class="series-badge">${series.kind === 'collection' ? 'SÉRIE' : 'SERIÁL'}</div>
                     <img src="${series.poster || THUMB_PLACEHOLDER}" alt="${escapeHtml(series.title)}">
                     <div class="info">
                         <div class="title">${escapeHtml(series.title)}</div>
@@ -1270,8 +1471,9 @@
         function seriesLoadNote(series) {
             const st = seriesLoad.get(series.key);
             if (!st) return '';
-            if (st.busy) return 'Načítám další epizody…';
-            if (st.error) return 'Další epizody se nepodařilo načíst.';
+            const what = series.kind === 'collection' ? 'filmy' : 'epizody';
+            if (st.busy) return `Načítám další ${what}…`;
+            if (st.error) return `Další ${what} se nepodařilo načíst.`;
             if (st.done && st.pages > 1) return 'Načteno vše dostupné.';
             return '';
         }
@@ -1350,21 +1552,29 @@
                     ${poster}
                     <div class="series-head-text">
                         <div class="series-sub">${escapeHtml([series.year, seriesMeta(series)].filter(Boolean).join(' · '))}</div>
-                        <p class="series-note">Epizody se skládají z výsledků hledání – prehraj.to nevede stránku seriálu. Appka u otevřeného seriálu dotahuje další stránky, dokud něco vrací.</p>
+                        <p class="series-note">${series.kind === 'collection'
+                            ? 'Série se skládá z výsledků hledání – prehraj.to nevede stránku série. Appka u otevřené série dotahuje další stránky, dokud něco vrací.'
+                            : 'Epizody se skládají z výsledků hledání – prehraj.to nevede stránku seriálu. Appka u otevřeného seriálu dotahuje další stránky, dokud něco vrací.'}</p>
                     </div>
                 </div>
                 ${loadNote ? `<div class="series-load">${escapeHtml(loadNote)}</div>` : ''}
-                ${series.seasons.map(seriesSeasonHtml).join('')}
+                ${series.seasons.map(s => seriesSeasonHtml(s, series)).join('')}
             `;
         }
 
-        function seriesSeasonHtml(season) {
-            const title = season.season == null ? 'Nezařazené epizody' : `${season.season}. série`;
-            const count = czCount(season.episodes.length, 'díl', 'díly', 'dílů');
+        function seriesSeasonHtml(season, series) {
+            const collection = !!series && series.kind === 'collection';
+            const title = collection
+                ? (series.unit === 'dil' ? 'Díly' : 'Filmy')
+                : (season.season == null ? 'Nezařazené epizody' : `${season.season}. série`);
+            const count = collection
+                ? (series.unit === 'dil' ? czCount(season.episodes.length, 'díl', 'díly', 'dílů')
+                                         : czCount(season.episodes.length, 'film', 'filmy', 'filmů'))
+                : czCount(season.episodes.length, 'díl', 'díly', 'dílů');
             return `
                 <section class="series-season">
                     <h2>${escapeHtml(title)} <span class="season-count">${count}</span></h2>
-                    <div class="ep-list">${season.episodes.map(episodeHtml).join('')}</div>
+                    <div class="ep-list">${season.episodes.map(ep => episodeHtml(ep, series)).join('')}</div>
                 </section>`;
         }
 
@@ -1385,13 +1595,15 @@
             return best;
         }
 
-        function episodeHtml(ep) {
+        function episodeHtml(ep, series) {
             const first = bestVariant(ep);
-            const num = `Epizoda ${ep.episode}`;
+            // Kolekce nemá čísla dílů - u filmu bez roku se popisek prostě vynechá.
+            const collection = !!series && series.kind === 'collection';
+            const num = ep.num || (collection ? '' : `Epizoda ${ep.episode}`);
             return `
                 <div class="ep-row">
                     <button type="button" class="ep-play" data-ep-url="${escapeHtml(first.url)}" title="${escapeHtml(first.title)}">
-                        <span class="ep-num">${escapeHtml(num)}</span>
+                        ${num ? `<span class="ep-num">${escapeHtml(num)}</span>` : ''}
                         <span class="ep-name">${escapeHtml(first.name || first.title)}</span>
                     </button>
                 </div>`;
