@@ -2177,65 +2177,78 @@
    * ------------------------------------------------------------------ */
   function showStateError(st, msg) {
     if (!st) return;
-    st.className = 'state show err';
-    st.innerHTML = '<div>' + esc(String(msg || 'Chyba')) + '</div><div class="health-inline"><button class="f btn ghost" type="button" data-open-health="1">Status</button></div>';
-    var btn = st.querySelector('[data-open-health]');
-    if (btn) btn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); openHealthOverlay(btn); });
+    try {
+      st.className = 'state show err';
+      st.innerHTML = '<div>' + esc(String(msg || 'Chyba')) + '</div><div class="health-inline"><button class="f btn ghost" type="button" data-open-health="1">Status</button></div>';
+      var btn = st.querySelector('[data-open-health]');
+      if (btn) btn.addEventListener('click', function (e) { if(e){e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();} try{openHealthOverlay(btn);}catch(_){} });
+    } catch(e) { try { st.textContent = String(msg||'Chyba'); } catch(_){} }
   }
 
   function healthFormatRows(items, nameKey) {
-    if (!items || !items.length) return '<div class="health-row"><span class="err">Žádná data.</span></div>';
-    var out = '';
-    for (var i = 0; i < items.length; i++) {
-      var it = items[i] || {};
-      var ok = !!(it.ok === true || it.status === 200 || it.note === 'mapped');
-      var name = esc(String(it[nameKey] || it.endpoint || it.name || it.check || '—'));
-      var statusText = it.status != null ? ('HTTP ' + esc(String(it.status))) : (it.note ? esc(String(it.note)) : '');
-      var ms = it.ms != null ? (esc(String(it.ms)) + ' ms') : '';
-      var err = it.error ? esc(String(it.error)) : '';
-      out += '<div class="health-row"><span class="name">' + name + '</span><span class="st ' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'OK' : 'Chyba') + '</span>'
-        + '<span class="meta">' + statusText + (ms ? (' · ' + ms) : '') + '</span><span class="err">' + err + '</span></div>';
-    }
-    return out;
+    try {
+      if (!items || !items.length) return '<div class="health-row"><span class="err">Žádná data.</span></div>';
+      var out = '';
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i] || {};
+        var ok = !!(it.ok === true || it.status === 200 || it.note === 'mapped' || it.success === true);
+        var name = esc(String(it[nameKey] || it.endpoint || it.name || it.check || it.url || '—'));
+        var statusText = it.status != null ? ('HTTP ' + esc(String(it.status))) : (it.note ? esc(String(it.note)) : '');
+        var ms = (it.ms != null || it.latency != null) ? (esc(String(it.ms != null ? it.ms : it.latency)) + ' ms') : '';
+        var err = it.error ? esc(String(it.error)) : (it.message && !ok ? esc(String(it.message)) : '');
+        out += '<div class="health-row"><span class="name">' + name + '</span><span class="st ' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'OK' : 'Chyba') + '</span>'
+          + '<span class="meta">' + statusText + (ms ? (' · ' + ms) : '') + '</span><span class="err">' + err + '</span></div>';
+      }
+      return out;
+    } catch(e) { return '<div class="health-row"><span class="err">Chyba formátování.</span></div>'; }
   }
   function renderHealthData(data, httpStatus) {
-    var overall = data && (data.ok === true || data.success === true || data.status === 'ok');
-    var html = '<div class="health-summary"><span class="health-badge ' + (overall ? 'ok' : 'bad') + '">' + (overall ? 'OK' : 'Problém') + '</span>'
-      + '<span>/api/health' + (httpStatus ? (' · HTTP ' + esc(String(httpStatus))) : '') + '</span></div>';
-    var checks = data && (data.checks || data.results || data.probes);
-    var endpoints = data && (data.endpoints || data.handlers);
-    var upstreams = data && (data.upstreams || data.upstream);
-    if (checks) html += '<div class="health-section"><h3>Kontroly</h3>' + healthFormatRows(checks, 'endpoint') + '</div>';
-    if (endpoints && endpoints !== checks) html += '<div class="health-section"><h3>Endpointy</h3>' + healthFormatRows(endpoints, 'endpoint') + '</div>';
-    if (upstreams) html += '<div class="health-section"><h3>Upstreamy</h3>' + healthFormatRows(upstreams, 'name') + '</div>';
-    if (!checks && !endpoints && !upstreams && data) html += '<div class="health-section"><h3>Odpověď</h3><pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></div>';
-    if (!data) html += '<div class="health-section"><pre>Bez dat</pre></div>';
-    html += '<details class="health-section"><summary>Raw JSON</summary><pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></details>';
-    return html;
+    try {
+      var overall = data && (data.ok === true || data.success === true || data.status === 'ok' || data.healthy === true);
+      var html = '<div class="health-summary"><span class="health-badge ' + (overall ? 'ok' : 'bad') + '">' + (overall ? 'OK' : 'Problém') + '</span>'
+        + '<span>/api/health' + (httpStatus ? (' · HTTP ' + esc(String(httpStatus))) : '') + '</span></div>';
+      var checks = data && (data.checks || data.results || data.probes);
+      var endpoints = data && (data.endpoints || data.handlers);
+      var upstreams = data && (data.upstreams || data.upstream || data.services);
+      if (checks) html += '<div class="health-section"><h3>Kontroly</h3>' + healthFormatRows(checks, 'endpoint') + '</div>';
+      if (endpoints && endpoints !== checks) html += '<div class="health-section"><h3>Endpointy</h3>' + healthFormatRows(endpoints, 'endpoint') + '</div>';
+      if (upstreams) html += '<div class="health-section"><h3>Upstreamy</h3>' + healthFormatRows(upstreams, 'name') + '</div>';
+      if (!checks && !endpoints && !upstreams && data) html += '<div class="health-section"><h3>Odpověď</h3><pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></div>';
+      if (!data) html += '<div class="health-section"><pre>Bez dat</pre></div>';
+      html += '<details class="health-section"><summary>Raw JSON</summary><pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></details>';
+      return html;
+    } catch(e) { return '<div class="health-section"><pre>' + esc(String(e && e.message || e)) + '</pre></div>'; }
   }
   function closeHealthOverlay() {
-    var dlg = $('health');
-    if (!dlg || dlg.hidden) return;
-    hide(dlg);
-    focusAfterOverlay();
+    try {
+      var dlg = $('health');
+      if (!dlg || dlg.hidden) return;
+      dlg.hidden = true;
+      if (typeof hide === 'function') { try { hide(dlg); } catch(_){} }
+      if (typeof focusAfterOverlay === 'function') { try { focusAfterOverlay(); } catch(_){} }
+    } catch(e) {}
   }
   function openHealthOverlay(fromEl) {
-    var dlg = $('health');
-    var content = $('healthContent');
-    if (!dlg || !content) return;
-    if (fromEl) lastFocus = fromEl;
-    else if (document.activeElement && document.activeElement !== document.body) lastFocus = document.activeElement;
-    content.innerHTML = '<span class="spinner"></span> Načítám /api/health…';
-    show(dlg);
-    var closeBtn = $('healthClose');
-    if (closeBtn) focusEl(closeBtn);
-    apiJson('/api/health?ts=' + Date.now(), 15000).then(function (d) {
-      if (dlg.hidden) return;
-      content.innerHTML = renderHealthData(d, d && d._httpStatus);
-    }).catch(function (e) {
-      if (dlg.hidden) return;
-      content.innerHTML = renderHealthData({ ok: false, error: e && e.message ? e.message : String(e) }, 0);
-    });
+    try {
+      var dlg = $('health'), content = $('healthContent');
+      if (!dlg || !content) { if (typeof toast==='function') toast('Status overlay není k dispozici.'); return; }
+      try { if (fromEl) lastFocus = fromEl; else if (document.activeElement && document.activeElement !== document.body) lastFocus = document.activeElement; } catch(_){}
+      content.innerHTML = '<span class="spinner"></span> Načítám /api/health…';
+      dlg.hidden = false;
+      if (typeof show === 'function') { try { show(dlg); } catch(_){} }
+      try { var closeBtn = $('healthClose'); if (closeBtn) { if (typeof focusEl === 'function') focusEl(closeBtn); else if (closeBtn.focus) closeBtn.focus(); } } catch(_){}
+      var done = false;
+      function finish(data, status) { if (done) return; done = true; try { if (!dlg.hidden) content.innerHTML = renderHealthData(data, status); } catch(_){} }
+      try {
+        var p = apiJson('/api/health?ts=' + Date.now(), 15000);
+        if (p && p.then) p.then(function (d) {
+          var st = 200; try { if (d && d._httpStatus) st = d._httpStatus; } catch(_){}
+          finish(d, st);
+        }).catch(function (e) { finish({ ok: false, error: e && e.message ? e.message : String(e) }, 0); });
+        else finish({ ok:false, error:'Neočekávaná odpověď apiJson.' }, 0);
+      } catch(e) { finish({ ok: false, error: String(e && e.message || e) }, 0); }
+      setTimeout(function(){ if(!done) finish({ok:false,error:'Timeout při načítání /api/health.'},0); }, 16000);
+    } catch(e) { try { if(typeof toast==='function') toast('Chyba: '+(e&&e.message||e)); } catch(_){} }
   }
 
   function closeOverlays() {
