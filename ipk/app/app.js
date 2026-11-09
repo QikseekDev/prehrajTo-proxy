@@ -1959,13 +1959,33 @@
     if($('player')&&$('player').hidden) return;
     if(player.kind==='live') return;
     if(video.ended) return;
+    if(player._stallBusy) return;
     if(video.readyState >= 3 && !video.paused) return; // has data/playing enough
     var d = video.duration, t = video.currentTime;
-    if(isFinite(d) && d>1 && isFinite(t)){
-      // uživatel to řeší ručně skokem cca 30 s dopředu a pak zpět – automatizujeme posun vpřed
-      var nt = Math.min(d - 2, Math.max(0, t + 30));
-      if(Math.abs(nt-t) > 0.5) { video.currentTime = nt; setPlayerState('Stream se zasekl – posouvám o 30 s…'); }
+    var resumeAt = (isFinite(t)?t:0) + 30;
+    if(isFinite(d) && d>2) resumeAt = Math.min(d - 2, Math.max(0, resumeAt));
+    // plná obnova streamu (čerstvý odkaz/zdroj) + skok ~30 s, jako na webu
+    if(player.page && typeof apiJson === 'function'){
+      player._stallBusy = true;
+      setPlayerState('Stream se zasekl – obnovuji přehrávání (+30 s)…');
+      apiJson('/api/proxy?url=' + encodeURIComponent(player.page) + '&_=' + Date.now(), 30000).then(function(data){
+        if(!$('player')||$('player').hidden||player.kind==='live') return;
+        if(!data || !data.success || !data.videoUrl){ player._stallBusy=false; return; }
+        player.cdn = data.videoUrl;
+        try { setSubtitles(data.subtitles || []); } catch(_){}
+        var isHls = /\.m3u8(\?|$)/i.test(data.videoUrl);
+        var src = (!settings.direct && !isHls) ? streamUrl(player.page, false, player.title, data.videoUrl) : data.videoUrl;
+        player._resumeApplied = false; player.resumeAt = resumeAt;
+        video.addEventListener('loadedmetadata', function(){ try{ applyResumeIfNeeded(); }catch(_){} }, { once: true });
+        attachSource(src, isHls, { onFatal: function(){ if(player.page && !player.triedRelay) switchToRelay(resumeAt); } });
+      }).catch(function(){
+        // fallback: přepnutí přes relay / malý posun
+        if(player.page && !player.triedRelay) switchToRelay(resumeAt);
+        else try{ if(isFinite(d)&&d>1){ video.currentTime = resumeAt; } var p=video.play(); if(p&&p.catch) p.catch(function(){}); }catch(_){}
+      }).then(function(){ player._stallBusy=false; }, function(){ player._stallBusy=false; });
+      return;
     }
+    if(isFinite(d) && d>1) { video.currentTime = resumeAt; setPlayerState('Stream se zasekl – posouvám o 30 s…'); }
     try{ var p=video.play(); if(p&&p.catch) p.catch(function(){}); }catch(_){}
   }catch(_){} }
   function scheduleStallRecovery(){ try{
