@@ -1101,7 +1101,12 @@
 
         function showStatus(message, type) {
             status.className = 'status ' + type;
-            status.textContent = message;
+            if (type === 'error') {
+                status.innerHTML = '<span class="status-text">' + esc(String(message || '')) + '</span>'
+                    + '<span class="status-action"><button type="button" class="state-btn" data-open-health>Stav služby</button></span>';
+            } else {
+                status.textContent = message;
+            }
         }
 
         function hideStatus() {
@@ -1140,7 +1145,8 @@
         function resultsError(message) {
             resultsState.className = 'results-state show error';
             resultsState.innerHTML = `<span class="state-text">${esc(message)}</span>`
-                + '<button type="button" class="state-btn" onclick="retrySearch()">Zkusit znovu</button>';
+                + '<div class="status-action"><button type="button" class="state-btn" onclick="retrySearch()">Zkusit znovu</button>'
+                + '<button type="button" class="state-btn" data-open-health>Stav služby</button></div>';
             resultsInfo.textContent = '';
             resultsGrid.innerHTML = '';
         }
@@ -2917,6 +2923,86 @@
             playLive(liveChannels[Number(card.dataset.live)]);
         });
 
+        // ===== Stav služby (/api/health) overlay =====
+        function formatHealthValue(v) {
+            if (v == null) return '';
+            if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
+            try { return JSON.stringify(v); } catch (e) { return String(v); }
+        }
+        function renderHealthRows(items, nameKey) {
+            if (!Array.isArray(items) || !items.length) return '<div class="health-row"><span class="err">Žádná data.</span></div>';
+            return items.map(function (it) {
+                var ok = !!(it && (it.ok === true || it.status === 200 || it.note === 'mapped'));
+                var name = esc(formatHealthValue(it && (it[nameKey] || it.endpoint || it.name || it.check || '—')));
+                var statusText = it && it.status != null ? ('HTTP ' + esc(formatHealthValue(it.status))) : (it && it.note ? esc(formatHealthValue(it.note)) : '');
+                var ms = it && it.ms != null ? (esc(formatHealthValue(it.ms)) + ' ms') : '';
+                var err = it && it.error ? esc(formatHealthValue(it.error)) : '';
+                return '<div class="health-row"><span class="name">' + name + '</span>'
+                    + '<span class="st ' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'OK' : 'Chyba') + '</span>'
+                    + '<span class="meta">' + statusText + (ms ? (' · ' + ms) : '') + '</span>'
+                    + '<span class="err">' + err + '</span></div>';
+            }).join('');
+        }
+        function renderHealth(data, httpStatus) {
+            var overall = data && (data.ok === true || data.success === true || data.status === 'ok');
+            var html = '<div class="health-summary"><span class="health-badge ' + (overall ? 'ok' : 'bad') + '">' + (overall ? 'OK' : 'Problém') + '</span>'
+                + '<span>/api/health' + (httpStatus ? (' · HTTP ' + esc(String(httpStatus))) : '') + '</span></div>';
+            var checks = data && (data.checks || data.results || data.probes);
+            var endpoints = data && (data.endpoints || data.handlers);
+            var upstreams = data && (data.upstreams || data.upstream);
+            if (checks) html += '<div class="health-section"><h3>Kontroly</h3>' + renderHealthRows(checks, 'endpoint') + '</div>';
+            if (endpoints && endpoints !== checks) html += '<div class="health-section"><h3>Endpointy</h3>' + renderHealthRows(endpoints, 'endpoint') + '</div>';
+            if (upstreams) html += '<div class="health-section"><h3>Upstreamy</h3>' + renderHealthRows(upstreams, 'name') + '</div>';
+            if (!checks && !endpoints && !upstreams && data && typeof data === 'object') {
+                html += '<div class="health-section"><h3>Odpověď</h3><pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></div>';
+            }
+            if (!data) html += '<div class="health-section"><pre>' + esc('Bez dat') + '</pre></div>';
+            html += '<details class="health-section"><summary>Raw JSON</summary><pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></details>';
+            return html;
+        }
+        var healthReturnFocus = null;
+        function closeHealthOverlay() {
+            var dlg = document.getElementById('healthDlg');
+            if (!dlg) return;
+            dlg.hidden = true;
+            dlg.setAttribute('aria-hidden', 'true');
+            document.removeEventListener('keydown', onHealthKeydown, true);
+            var rf = healthReturnFocus;
+            healthReturnFocus = null;
+            if (rf && typeof rf.focus === 'function') try { rf.focus(); } catch (e) {}
+        }
+        function onHealthKeydown(e) {
+            if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); }
+        }
+        async function openHealthOverlay() {
+            var dlg = document.getElementById('healthDlg');
+            var content = document.getElementById('healthContent');
+            if (!dlg || !content) return;
+            healthReturnFocus = document.activeElement;
+            dlg.hidden = false;
+            dlg.removeAttribute('aria-hidden');
+            content.innerHTML = '<span class="spinner"></span><span class="state-text">Načítám /api/health…</span>';
+            document.addEventListener('keydown', onHealthKeydown, true);
+            var closeBtn = document.getElementById('healthClose');
+            if (closeBtn) try { closeBtn.focus(); } catch (e) {}
+            try {
+                var r = await fetch('/api/health?ts=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' });
+                var data = null;
+                try { data = await r.json(); } catch (e) { data = { ok: false, error: 'Neplatná JSON odpověď', status: r.status }; }
+                if (!dlg.hidden) content.innerHTML = renderHealth(data, r.status);
+            } catch (e) {
+                if (!dlg.hidden) content.innerHTML = renderHealth({ ok: false, error: (e && e.message) ? e.message : String(e) }, 0);
+            }
+        }
+        document.addEventListener('click', function (e) {
+            var t = e.target;
+            if (!t) return;
+            if (t.closest && t.closest('[data-open-health]')) { e.preventDefault(); e.stopPropagation(); openHealthOverlay(); return; }
+            if (t.id === 'healthClose') { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); return; }
+            var dlg = document.getElementById('healthDlg');
+            if (dlg && !dlg.hidden && t === dlg) { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); }
+        }, true);
+
         // ===== Nastavení: samostatná stránka (avatar vpravo nahoře) =====
         // Volby se do rozbalovacího panelu nevešly, takže je Nastavení stránka jako odkazy
         // v patičce - otevírá ji avatar a chová se stejně jako nápověda nebo o projektu.
@@ -2978,6 +3064,11 @@
                         <span id="onlineCountValue" style="opacity:.9">…</span>
                     </div>
                     <div class="set-hint">Orientační počet aktivních klientů za poslední chvíli. Hodí se jako indikátor, když hledání naráží na limit.</div>
+                    <div class="set-row">
+                        <label>Stav služby</label>
+                        <button type="button" class="state-btn" id="openHealthBtn">Status</button>
+                    </div>
+                    <div class="set-hint">Zobrazí formátovaný výstup <code>/api/health</code> (endpointy a upstreamy).</div>
 
                     <h2>Náhledy</h2>
                     <div class="set-row">
@@ -3012,6 +3103,8 @@
             onlinePingTimer = setInterval(() => refreshOnlineCount(root), 15000);
 
             const q = id => root.querySelector('#' + id);
+            const healthBtn = q('openHealthBtn');
+            if (healthBtn) healthBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); openHealthOverlay(); });
 
             const themeTog = q('themeToggle');
             if (themeTog) {

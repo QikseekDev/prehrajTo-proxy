@@ -474,3 +474,19 @@ body:not(.touch) .search-main .state{padding-left:0}
 .hint{display:flex;align-items:center;gap:.9rem;width:100%;min-height:3.2rem;padding:0 1rem;border-radius:8px;
   font-size:1.1rem;font-weight:600;text-align:left;color:var(--text-2)}
 .hint:hover,.hint:focus{background:var(--surface-2);color:#fff}
+
+/* Health/status overlay */
+.overlay.health{background:rgba(0,0,0,.72);align-items:center;justify-content:center;padding:1rem;z-index:80}
+.health-box{width:min(52rem,100%);max-height:85vh;overflow:auto;background:var(--surface,#17181c);color:var(--text,#f3f3f3);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:1rem 1.1rem;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.health-box h2{margin:0 0 .75rem;font-size:1.15rem}
+.health-content{font-size:.92rem;line-height:1.4}
+.health-content pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.health-summary{display:flex;gap:.6rem;align-items:center;margin-bottom:.7rem;font-size:.95rem}
+.health-badge{padding:.1rem .55rem;border-radius:999px;font-weight:700;font-size:.78rem}
+.health-badge.ok{background:rgba(70,211,105,.18);color:#46d369}.health-badge.bad{background:rgba(229,9,20,.18);color:#ff6b6b}
+.health-section{margin-top:.75rem}.health-section h3{margin:0 0 .35rem;font-size:.78rem;color:var(--muted,#9aa0a6);text-transform:uppercase}
+.health-row{display:grid;grid-template-columns:minmax(120px,1.4fr) auto auto minmax(0,2fr);gap:.5rem;padding:.35rem 0;border-bottom:1px solid rgba(127,127,127,.18);align-items:start}
+.health-row .name{font-weight:600;word-break:break-word}.health-row .st.ok{color:#46d369}.health-row .st.bad{color:#ff6b6b}
+.health-row .meta{color:var(--muted,#9aa0a6);white-space:nowrap}.health-row .err{color:var(--muted,#9aa0a6);word-break:break-word}
+.health-actions{margin-top:.9rem;display:flex;gap:.5rem;flex-wrap:wrap}
+.state .health-inline{margin-top:.5rem}

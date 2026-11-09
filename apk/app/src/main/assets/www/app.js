@@ -2070,6 +2070,7 @@
       + '  <div class="lab"><b>Server</b><span>' + esc(settings.server || '—') + '</span></div>'
       + '  <div class="set-actions">'
       + '    <button class="f btn ghost" type="button" id="setTest">Otestovat</button>'
+      + '    <button class="f btn ghost" type="button" id="setHealth">Status</button>'
       + '  </div>'
       + '</div>'
       + '<div class="set-row">'
@@ -2112,6 +2113,8 @@
         toast('Server neodpovídá: ' + e.message, 4500);
       });
     });
+    var setHealth = $('setHealth');
+    if (setHealth) setHealth.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); openHealthOverlay(setHealth); });
     $('setDirect').addEventListener('click', function () {
       settings.direct = !settings.direct;
       saveSettings();

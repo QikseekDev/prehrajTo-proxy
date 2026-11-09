@@ -359,6 +359,13 @@
             <button type="button" id="castClose" class="dl-btn cast-close">Zavřít</button>
         </div>
     </div>
+    <div id="healthDlg" class="cast-dlg health-dlg" hidden role="dialog" aria-modal="true" aria-labelledby="healthTitle">
+        <div class="cast-box health-box" onclick="event.stopPropagation()">
+            <h2 id="healthTitle">Status služby</h2>
+            <div id="healthContent" class="health-content" aria-live="polite">Načítám stav…</div>
+            <button type="button" id="healthClose" class="dl-btn cast-close">← Zpět</button>
+        </div>
+    </div>
 
     <script src="script.js?v=20261109-1"></script>
 </body>

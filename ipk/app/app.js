@@ -1245,8 +1245,8 @@
     return apiJson('/api/search?q=' + encodeURIComponent(q) + (settings.searchMerge ? '&source=all' : '')).then(function (d) {
       if (!quiet) loading(null);
       if (token !== searchToken) return;          // mezitím se psalo dál
-      if (!d) { st.className = 'state show err'; st.textContent = 'Server nevrátil platnou odpověď.'; return; }
-      if (!d.success) { st.className = 'state show err'; st.textContent = d.error || 'Chyba při vyhledávání.'; return; }
+      if (!d) { showStateError(st, 'Server nevrátil platnou odpověď.'); return; }
+      if (!d.success) { showStateError(st, d.error || 'Chyba při vyhledávání.'); return; }
       var movies = d.movies || [];
       if (!movies.length) {
         state.results = []; state.entries = [];
@@ -1263,8 +1263,7 @@
     }).catch(function (e) {
       if (!quiet) loading(null);
       if (token !== searchToken) return;
-      st.className = 'state show err';
-      st.textContent = 'Chyba: ' + e.message;
+      showStateError(st, 'Chyba: ' + e.message);
     });
   }
 
@@ -1645,8 +1644,7 @@
     }).catch(function (e) {
       loading(null);
       state.channels = [];
-      st.className = 'state show err';
-      st.textContent = e.message + ' – zkontroluj adresu serveru a jestli backend /api/live povoluje CORS.';
+      showStateError(st, e.message + ' – zkontroluj adresu serveru a jestli backend /api/live povoluje CORS.');
       $('liveGrid').innerHTML = '';
     });
   }
@@ -2070,6 +2068,7 @@
       + '  <div class="lab"><b>Server</b><span>' + esc(settings.server || '—') + '</span></div>'
       + '  <div class="set-actions">'
       + '    <button class="f btn ghost" type="button" id="setTest">Otestovat</button>'
+      + '    <button class="f btn ghost" type="button" id="setHealth">Status</button>'
       + '  </div>'
       + '</div>'
       + '<div class="set-row">'
@@ -2112,6 +2111,8 @@
         toast('Server neodpovídá: ' + e.message, 4500);
       });
     });
+    var setHealth = $('setHealth');
+    if (setHealth) setHealth.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); openHealthOverlay(setHealth); });
     $('setDirect').addEventListener('click', function () {
       settings.direct = !settings.direct;
       saveSettings();
@@ -2174,7 +2175,72 @@
   /* ------------------------------------------------------------------ *
    *  Klávesy / dálkové ovládání
    * ------------------------------------------------------------------ */
+  function showStateError(st, msg) {
+    if (!st) return;
+    st.className = 'state show err';
+    st.innerHTML = '<div>' + esc(String(msg || 'Chyba')) + '</div><div class="health-inline"><button class="f btn ghost" type="button" data-open-health="1">Status</button></div>';
+    var btn = st.querySelector('[data-open-health]');
+    if (btn) btn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); openHealthOverlay(btn); });
+  }
+
+  function healthFormatRows(items, nameKey) {
+    if (!items || !items.length) return '<div class="health-row"><span class="err">Žádná data.</span></div>';
+    var out = '';
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i] || {};
+      var ok = !!(it.ok === true || it.status === 200 || it.note === 'mapped');
+      var name = esc(String(it[nameKey] || it.endpoint || it.name || it.check || '—'));
+      var statusText = it.status != null ? ('HTTP ' + esc(String(it.status))) : (it.note ? esc(String(it.note)) : '');
+      var ms = it.ms != null ? (esc(String(it.ms)) + ' ms') : '';
+      var err = it.error ? esc(String(it.error)) : '';
+      out += '<div class="health-row"><span class="name">' + name + '</span><span class="st ' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'OK' : 'Chyba') + '</span>'
+        + '<span class="meta">' + statusText + (ms ? (' · ' + ms) : '') + '</span><span class="err">' + err + '</span></div>';
+    }
+    return out;
+  }
+  function renderHealthData(data, httpStatus) {
+    var overall = data && (data.ok === true || data.success === true || data.status === 'ok');
+    var html = '<div class="health-summary"><span class="health-badge ' + (overall ? 'ok' : 'bad') + '">' + (overall ? 'OK' : 'Problém') + '</span>'
+      + '<span>/api/health' + (httpStatus ? (' · HTTP ' + esc(String(httpStatus))) : '') + '</span></div>';
+    var checks = data && (data.checks || data.results || data.probes);
+    var endpoints = data && (data.endpoints || data.handlers);
+    var upstreams = data && (data.upstreams || data.upstream);
+    if (checks) html += '<div class="health-section"><h3>Kontroly</h3>' + healthFormatRows(checks, 'endpoint') + '</div>';
+    if (endpoints && endpoints !== checks) html += '<div class="health-section"><h3>Endpointy</h3>' + healthFormatRows(endpoints, 'endpoint') + '</div>';
+    if (upstreams) html += '<div class="health-section"><h3>Upstreamy</h3>' + healthFormatRows(upstreams, 'name') + '</div>';
+    if (!checks && !endpoints && !upstreams && data) html += '<div class="health-section"><h3>Odpověď</h3><pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></div>';
+    if (!data) html += '<div class="health-section"><pre>Bez dat</pre></div>';
+    html += '<details class="health-section"><summary>Raw JSON</summary><pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></details>';
+    return html;
+  }
+  function closeHealthOverlay() {
+    var dlg = $('health');
+    if (!dlg || dlg.hidden) return;
+    hide(dlg);
+    focusAfterOverlay();
+  }
+  function openHealthOverlay(fromEl) {
+    var dlg = $('health');
+    var content = $('healthContent');
+    if (!dlg || !content) return;
+    if (fromEl) lastFocus = fromEl;
+    else if (document.activeElement && document.activeElement !== document.body) lastFocus = document.activeElement;
+    content.innerHTML = '<span class="spinner"></span> Načítám /api/health…';
+    show(dlg);
+    var closeBtn = $('healthClose');
+    if (closeBtn) focusEl(closeBtn);
+    apiJson('/api/health?ts=' + Date.now(), 15000).then(function (d) {
+      if (dlg.hidden) return;
+      content.innerHTML = renderHealthData(d, d && d._httpStatus);
+    }).catch(function (e) {
+      if (dlg.hidden) return;
+      content.innerHTML = renderHealthData({ ok: false, error: e && e.message ? e.message : String(e) }, 0);
+    });
+  }
+
   function closeOverlays() {
+    var health = $('health');
+    if (health && !health.hidden) { closeHealthOverlay(); return true; }
     if (!$('kbd').hidden) { hide($('kbd')); return true; }
     if (!$('player').hidden) { closePlayer(); renderRows(); focusAfterOverlay(); return true; }
     if (!$('detail').hidden) { closeDetail(); focusAfterOverlay(); return true; }
@@ -2413,6 +2479,13 @@
     $('series').addEventListener('click', function (e) {
       if (e.target === $('series')) { closeSeries(); focusAfterOverlay(); }
     });
+    var healthClose = $('healthClose'), healthDlg = $('health');
+    if (healthClose) healthClose.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); });
+    if (healthDlg) {
+      healthDlg.addEventListener('click', function (e) { if (e.target === healthDlg) { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); } });
+      var hbox = healthDlg.querySelector('.health-box');
+      if (hbox) hbox.addEventListener('click', function (e) { e.stopPropagation(); });
+    }
 
     document.addEventListener('mousemove', function () { if (!$('player').hidden) bumpIdle(); });
 
