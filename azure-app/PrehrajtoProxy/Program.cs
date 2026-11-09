@@ -1512,7 +1512,7 @@ app.MapGet("/api/health", async (IHttpClientFactory f) =>
     probes.Add(Probe(f, "upstream:iptv-org", "https://iptv-org.github.io/api/countries.json"));
     probes.Add(Probe(f, "upstream:prehraj.to", "https://prehraj.to/"));
     probes.Add(Probe(f, "upstream:sledujteto.cz", "https://www.sledujteto.cz/api/web/videos?query=test&limit=1&page=1&sort=relevance",
-        new Dictionary<string,string> { ["Accept"]="application/json", ["X-Requested-With"]="XMLHttpRequest", ["Referer"]="https://www.sledujteto.cz/vyhledat/?search=test&page=1", ["Origin"]="https://www.sledujteto.cz" }));
+        headers: new Dictionary<string,string> { ["Accept"]="application/json", ["X-Requested-With"]="XMLHttpRequest", ["Referer"]="https://www.sledujteto.cz/vyhledat/?search=test&page=1", ["Origin"]="https://www.sledujteto.cz" }));
     probes.Add(Probe(f, "upstream:bombuj.si", "https://www.bombuj.si/uvod.php"));
     foreach (var proxy in serverProxies.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).Take(6))
     {
