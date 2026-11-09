@@ -2028,6 +2028,7 @@
   // Klik/tap do obrazu (ne na ovládací prvky) přehraje nebo pozastaví.
   $('player').addEventListener('click', function (e) {
     if (e.target === $('player') || e.target === video) {
+      if ($('player').classList.contains('idle')) { bumpIdle(); return; }
       if (liveLocked()) { bumpIdle(); return; }
       if (video.paused) play(); else video.pause();
       bumpIdle();
@@ -2035,6 +2036,7 @@
   });
 
   $('pPlay').addEventListener('click', function () {
+    if ($('player').classList.contains('idle')) { bumpIdle(); return; }
     if (liveLocked()) return;
     if (video.ended) { video.currentTime = 0; }
     if (video.paused) play(); else video.pause();
@@ -2448,6 +2450,12 @@
 
     var playerOpen = !$('player').hidden;
     var kbdOpen = !$('kbd').hidden;
+    // skryté ovládání přehrávače: první vstup jen zobrazí menu, akce se neprovede
+    if (playerOpen && $('player').classList.contains('idle')) {
+      var isBackKey = (k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || (k === 'Backspace' && !typing));
+      if (!isBackKey) { e.preventDefault(); try{e.stopPropagation();}catch(_){} bumpIdle(); return; }
+      bumpIdle();
+    }
 
     // Na TV v hledání píše i fyzická klávesnice; Backspace maže znak, dokud je co mazat.
     if (state.view === 'search' && !isTouch && !typing && !playerOpen && !kbdOpen
