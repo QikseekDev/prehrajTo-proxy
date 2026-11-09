@@ -1941,15 +1941,7 @@
             player.busy = true;
             player.fixes++;
             const page = player.page;
-            // při zaseknutí streamu pomáhá skok ~30 s dopředu (uživatel pak může vrátit zpět)
-            let resumeAt = player.lastTime || 0;
-            if (reason === 'stall' || reason === 'predcasny konec') {
-                try {
-                    const d = videoPlayer.duration;
-                    if (isFinite(d) && d > 2) resumeAt = Math.min(d - 2, resumeAt + 30);
-                    else resumeAt = resumeAt + 30;
-                } catch(_){ resumeAt = resumeAt + 30; }
-            }
+            const resumeAt = player.lastTime || 0;
             player.resumeAt = resumeAt;
             // Po dvou neúspěšných pokusech s čerstvým CDN odkazem zkusíme server. Je to jen
             // pro tohle přehrávání: nastavení zůstává zapnuté a další video zkusí CDN znovu,
@@ -1963,7 +1955,7 @@
             if (player.mode === 'direct' && player.fixes >= 2) proxyBtn.hidden = false;
             console.warn('Obnova přehrávání:', reason, 'mode=' + player.mode, 'od', resumeAt);
             showStatus((reason === 'stall' || reason === 'predcasny konec')
-                ? '🔄 Stream se zasekl – posouvám o 30 s…'
+                ? '🔄 Stream se zasekl – obnovuji přehrávání…'
                 : (player.mode === 'relay' ? '🔄 Přímé přehrávání selhalo, pokračuji přes server…' : '🔄 Obnovuju přehrávání…'), 'loading');
             try {
                 let src;

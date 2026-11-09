@@ -1962,15 +1962,15 @@
     if(player._stallBusy) return;
     if(video.readyState >= 3 && !video.paused) return; // has data/playing enough
     var d = video.duration, t = video.currentTime;
-    var resumeAt = (isFinite(t)?t:0) + 30;
-    if(isFinite(d) && d>2) resumeAt = Math.min(d - 2, Math.max(0, resumeAt));
-    // plná obnova streamu (čerstvý odkaz/zdroj) + skok ~30 s, jako na webu
+    var resumeAt = (isFinite(t) ? t : 0);
+    if(isFinite(d) && d>2) resumeAt = Math.min(d - 1, Math.max(0, resumeAt));
+    // plná obnova streamu jako na webu: čerstvý odkaz/zdroj, reload, návrat na stejnou pozici
     if(player.page && typeof apiJson === 'function'){
       player._stallBusy = true;
-      setPlayerState('Stream se zasekl – obnovuji přehrávání (+30 s)…');
+      setPlayerState('Stream se zasekl – obnovuji přehrávání…');
       apiJson('/api/proxy?url=' + encodeURIComponent(player.page) + '&_=' + Date.now(), 30000).then(function(data){
         if(!$('player')||$('player').hidden||player.kind==='live') return;
-        if(!data || !data.success || !data.videoUrl){ player._stallBusy=false; return; }
+        if(!data || !data.success || !data.videoUrl){ player._stallBusy=false; if(player.page && !player.triedRelay) switchToRelay(resumeAt); return; }
         player.cdn = data.videoUrl;
         try { setSubtitles(data.subtitles || []); } catch(_){}
         var isHls = /\.m3u8(\?|$)/i.test(data.videoUrl);
@@ -1979,14 +1979,13 @@
         video.addEventListener('loadedmetadata', function(){ try{ applyResumeIfNeeded(); }catch(_){} }, { once: true });
         attachSource(src, isHls, { onFatal: function(){ if(player.page && !player.triedRelay) switchToRelay(resumeAt); } });
       }).catch(function(){
-        // fallback: přepnutí přes relay / malý posun
+        // fallback: přepnutí přes relay
         if(player.page && !player.triedRelay) switchToRelay(resumeAt);
-        else try{ if(isFinite(d)&&d>1){ video.currentTime = resumeAt; } var p=video.play(); if(p&&p.catch) p.catch(function(){}); }catch(_){}
+        else try{ var p=video.play(); if(p&&p.catch) p.catch(function(){}); }catch(_){}
       }).then(function(){ player._stallBusy=false; }, function(){ player._stallBusy=false; });
       return;
     }
-    if(isFinite(d) && d>1) { video.currentTime = resumeAt; setPlayerState('Stream se zasekl – posouvám o 30 s…'); }
-    try{ var p=video.play(); if(p&&p.catch) p.catch(function(){}); }catch(_){}
+    if(player.page && !player.triedRelay) switchToRelay(resumeAt);
   }catch(_){} }
   function scheduleStallRecovery(){ try{
     if(player.kind==='live' || video.ended) return;
