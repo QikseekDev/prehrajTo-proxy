@@ -2066,16 +2066,41 @@
     toast(ok ? 'Zapni Přenést obrazovku (Smart View, Screen Cast) a vyber TV. U LG televize spusť aplikaci Sdílení obrazovky. Pak se vrať sem.' : 'Tohle zařízení přenos obrazovky nepodporuje. Otevři Wflix v prohlížeči na TV.', 6000);
   });
 
-  $('pBar').addEventListener('click', function (e) {
-    var r = $('pBar').getBoundingClientRect();
-    var f = (e.clientX - r.left) / r.width;
-    seekFraction(Math.max(0, Math.min(1, f)));
-  });
-  $('pBar').addEventListener('pointerdown', function (e) {
-    var r = $('pBar').getBoundingClientRect();
-    var f = (e.clientX - r.left) / r.width;
-    seekFraction(Math.max(0, Math.min(1, f)));
-  });
+  // Posouvání času: klik/tap i táhnutí (drag) po liště. pointer capture drží tah i mimo pruh.
+  (function initSeekBarDrag() {
+    var bar = $('pBar');
+    if (!bar) return;
+    var dragging = false;
+    function fracFromEvent(e) {
+      var r = bar.getBoundingClientRect();
+      var w = r.width || 1;
+      var x = (e && typeof e.clientX === 'number') ? e.clientX : r.left;
+      return Math.max(0, Math.min(1, (x - r.left) / w));
+    }
+    function seekAt(e) { if (player.kind !== 'live') seekFraction(fracFromEvent(e)); }
+    function stopDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { if (e && e.pointerId != null && bar.releasePointerCapture) bar.releasePointerCapture(e.pointerId); } catch (_) {}
+      bar.classList.remove('dragging');
+    }
+    bar.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+    bar.addEventListener('touchstart', function (e) { e.stopPropagation(); }, { passive: true });
+    bar.addEventListener('pointerdown', function (e) {
+      if (player.kind === 'live') return;
+      dragging = true;
+      bar.classList.add('dragging');
+      try { if (e.pointerId != null && bar.setPointerCapture) bar.setPointerCapture(e.pointerId); } catch (_) {}
+      seekAt(e);
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    bar.addEventListener('pointermove', function (e) { if (!dragging) return; seekAt(e); e.preventDefault(); });
+    bar.addEventListener('pointerup', stopDrag);
+    bar.addEventListener('pointercancel', stopDrag);
+    bar.addEventListener('lostpointercapture', function () { dragging = false; bar.classList.remove('dragging'); });
+    bar.addEventListener('click', function (e) { if (!dragging) seekAt(e); });
+  })();
 
   /* --- titulky --- */
   function setSubtitles(subs) {
