@@ -102,7 +102,7 @@
             { name: 'České klasiky', genres: ['České'] },
             { name: 'Komedie', genres: ['Komedie'] },
         ];
-        const CHIPS = ['Vše','Pokračovat','Akční','Drama','Thriller','Horror','Fantasy','Rodinné','České','Komedie'];
+        const CHIPS = ['Vše','Akční','Drama','Thriller','Horror','Fantasy','Rodinné','České','Komedie'];
         let activeChip = 'Vše';
         let heroOffset = 0;
 
@@ -905,41 +905,9 @@
             if (firstPaint.done) fn(); else firstPaint.waiters.push(fn);
         }
 
-        function continueCardHtml(it) {
-            const title = escapeHtml(it.title || 'Video');
-            const pct = (it._d > 0) ? Math.max(0, Math.min(100, (it._t / it._d) * 100)) : 0;
-            const prog = pct ? `<span class="cprog"><i style="width:${pct}%"></i></span>` : '';
-            const art = it.poster
-                ? `<img class="thumb portrait" alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(it.poster)}" onerror="this.remove();this.parentElement.querySelector('.emoji').style.display='block'">`
-                : '';
-            const note = escapeHtml(it.note || 'Rozkoukané');
-            return `<button class="poster" data-hist="${escapeHtml(it.url || '')}" aria-label="${title}">
-                <span class="art" style="background:${posterGradient(it.title || '')}">
-                    ${art}
-                    <span class="emoji"${it.poster ? ' style="display:none"' : ''}>🎬</span>
-                    <span class="shade"></span>
-                    <span class="play">▶</span>
-                    ${prog}
-                    <span class="p-title">${title}</span>
-                    <span class="p-meta"><b>${note}</b></span>
-                </span>
-            </button>`;
-        }
-
         function renderCatalog() {
             document.getElementById('chips').innerHTML = CHIPS.map(c =>
                 `<button class="chip ${c === activeChip ? 'active' : ''}" data-chip="${c}">${c}</button>`).join('');
-
-            // "Pokračovat" = rozkoukané tituly (místo Sci-fi), ne žánrový filtr.
-            if (activeChip === 'Pokračovat') {
-                const cont = (typeof getWebContinueItems === 'function') ? getWebContinueItems() : [];
-                const html = cont.length
-                    ? carouselHtml('Pokračovat ve sledování', cont.map(continueCardHtml).join(''))
-                    : `<section class="cat-row"><h3>Pokračovat ve sledování</h3><div class="empty-note">Zatím nemáš nic rozkoukaného. Pusť si film nebo díl a objeví se tady.</div></section>`;
-                document.getElementById('catalogRows').innerHTML = html;
-                syncFavButtons();
-                return;
-            }
 
             // Historie a oblíbené mají vlastní stránku (Knihovna v liště), takže úvodní
             // stránka zůstává čistě katalog a hledání.
@@ -1238,8 +1206,8 @@
                     <h2>Přehrávač a klávesy</h2>
                     <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ Obraz v obraze</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa). Tlačítko <b>📺 Přehrát na TV</b> otevře možnosti: Chromecast (Chrome, Edge), AirPlay (Safari, iPhone, LG webOS) nebo odkaz, který otevřeš v prohlížeči na jakékoli TV. Video se do TV posílá přes Wi-Fi, Bluetooth na to nestačí.</p>
                     <p>Velikost a pozadí titulků se nastavují v Nastavení (avatar vpravo nahoře).</p>
-                    <h2>Knihovna: oblíbené</h2>
-                    <p>Hvězdička na kartě přidá titul do oblíbených, stejně jako tlačítko u přehrávače. Odkaz <b>Knihovna</b> v liště (před Živě) ukazuje oblíbené. Každý titul jde odebrat hvězdičkou. Appka si historii přehrávání neukládá. Vše se ukládá jen v tvém prohlížeči.</p>
+                    <h2>Knihovna: historie a oblíbené</h2>
+                    <p>Odkaz <b>Knihovna</b> v liště ukazuje dvě sekce: <b>Pokračovat ve sledování</b> (rozkoukané filmy a díly, odkud se naváže tam, kde jsi skončil) a <b>Oblíbené</b>. Hvězdička na kartě nebo u přehrávače titul přidá či odebere z oblíbených. Rozkoukaný záznam se sám smaže, když je do konce méně než 2 minuty. Vše se ukládá jen v tvém prohlížeči.</p>
                     <h2>Chyba 429 (Too Many Requests)</h2>
                     <p>Prehraj.to limituje počet dotazů. Když se to objeví, dej appce minutu pauzu a v Nastavení (avatar vpravo nahoře) zapni „Omezit souběžné dotazy na náhledy“ – načítání náhledů je nejčastější příčina.</p>
                     <h2>Proxy servery</h2>
@@ -3332,19 +3300,26 @@
 
         function libRowHtml(entry, i) {
             const it = entry.item;
+            const isCont = entry.kind === 'continue';
             const title = escapeHtml(it.title || 'Video');
-            const art = it.poster
-                ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(it.poster)}" onerror="this.remove()">`
+            const img = it.poster || '';
+            const art = img
+                ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(img)}" onerror="this.remove()">`
                 : '<span class="emoji">🎬</span>';
-            const del = `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">★</button>`;
+            const pct = (isCont && it._d > 0) ? Math.max(0, Math.min(100, (it._t / it._d) * 100)) : 0;
+            const prog = pct ? `<span class="progress"><i style="width:${pct}%"></i></span>` : '';
+            const meta = isCont ? escapeHtml(it.note || 'Rozkoukané') : 'Oblíbené';
+            const del = isCont
+                ? ''
+                : `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">★</button>`;
             return `<div class="lib-item" data-name="${escapeHtml(norm(it.title))}">
                 <button class="lib-open" type="button" onclick="libPlay(${i})" aria-label="Přehrát ${title}">
                     <span class="lib-art" style="background:${posterGradient(it.title || '')}">
-                        ${art}
+                        ${art}${prog}
                     </span>
                     <span class="lib-info">
                         <b>${title}</b>
-                        <span class="lib-meta">Oblíbené</span>
+                        <span class="lib-meta">${meta}</span>
                     </span>
                 </button>
                 ${del}
@@ -3355,9 +3330,11 @@
             return `
                     <input class="row-filter lib-filter" id="libFilter" type="search" autocomplete="off"
                         placeholder="Filtrovat knihovnu…" aria-label="Filtrovat knihovnu">
-                    <h2>Oblíbené</h2>
+                    <h2>Pokračovat ve sledování</h2>
+                    <div class="lib-list" id="libHistList"></div>
+                    <h2 class="lib-h2-second">Oblíbené</h2>
                     <div class="lib-list" id="libFavList"></div>
-                    <div class="set-hint">Hvězdička na kartě filmu titul přidá sem, hvězdička tady ho zase odebere. Knihovna je jen v tomhle prohlížeči - nikam se neposílá.</div>
+                    <div class="set-hint">Historie i oblíbené jsou jen v tomhle prohlížeči - nikam se neposílají. Hvězdička titul přidá/odebere z oblíbených, rozkoukané se maže samo po dohrání.</div>
             `;
         }
 
@@ -3370,11 +3347,25 @@
 
         function renderLibraryBody() {
             const favEl = document.getElementById('libFavList');
+            const histEl = document.getElementById('libHistList');
             if (!favEl) return;
-            libOrder = favorites.map(f => ({ kind: 'fav', item: f }));
-            const rows = libOrder.map(libRowHtml);
-            favEl.innerHTML = rows.length
-                ? rows.join('')
+            const cont = (typeof getWebContinueItems === 'function') ? getWebContinueItems() : [];
+            libOrder = [];
+            cont.forEach(it => libOrder.push({ kind: 'continue', item: it }));
+            favorites.forEach(f => libOrder.push({ kind: 'fav', item: f }));
+
+            const histRows = [], favRows = [];
+            libOrder.forEach((entry, i) => {
+                if (entry.kind === 'continue') histRows.push(libRowHtml(entry, i));
+                else favRows.push(libRowHtml(entry, i));
+            });
+            if (histEl) {
+                histEl.innerHTML = histRows.length
+                    ? histRows.join('')
+                    : '<div class="lib-empty">Zatím nic rozkoukaného. Pusť si film nebo díl a objeví se tady.</div>';
+            }
+            favEl.innerHTML = favRows.length
+                ? favRows.join('')
                 : '<div class="lib-empty">Zatím žádné oblíbené. Hvězdička na kartě filmu ho přidá sem.</div>';
             applyLibFilter();
         }

@@ -2722,30 +2722,53 @@
    *  Start
    * ------------------------------------------------------------------ */
   /* Levý panel: kategorie skočí na řadu na úvodní stránce (nebo otevře pokračování). */
-  function renderContinueView() {
+  /* Knihovna: historie (rozkoukané) + oblíbené, mimo běžné řady domů. */
+  function renderLibraryView() {
     var cont = (typeof getContinueItems === 'function') ? getContinueItems() : [];
     var html = '';
+
+    html += '<section class="row"><div class="row-head"><h2 class="row-title">Pokračovat ve sledování</h2>'
+      + '<span class="row-sub">' + cont.length + '</span></div>';
     if (cont && cont.length) {
-      html += '<section class="row"><div class="row-head"><h2 class="row-title">Pokračovat ve sledování</h2><span class="row-sub">' + cont.length + '</span></div>'
-        + '<div class="row-scroll" data-row="cont">';
+      html += '<div class="row-scroll" data-row="cont">';
       for (var k = 0; k < cont.length; k++) {
         cont[k]._continue = true;
         html += libCardHtml(cont[k], 'continue', 'cont:' + k);
       }
-      html += '</div></section>';
+      html += '</div>';
     } else {
-      html += '<section class="row"><div class="row-head"><h2 class="row-title">Pokračovat ve sledování</h2></div>'
-        + '<div class="state show">Zatím nemáš nic rozkoukaného. Pusť si film nebo díl a objeví se tady.</div></section>';
+      html += '<div class="state show">Zatím nemáš nic rozkoukaného. Pusť si film nebo díl a objeví se tady.</div>';
     }
+    html += '</section>';
+
+    html += '<section class="row"><div class="row-head"><h2 class="row-title">Moje oblíbené</h2>'
+      + '<span class="row-sub">' + favorites.length + '</span></div>';
+    if (favorites.length) {
+      html += '<div class="row-scroll" data-row="fav">';
+      for (var f = 0; f < favorites.length; f++) html += libCardHtml(favorites[f], 'fav', 'fav:' + f);
+      html += '</div>';
+    } else {
+      html += '<div class="state show">Zatím žádné oblíbené. Hvězdička v detailu titul přidá sem.</div>';
+    }
+    html += '</section>';
+
     $('rows').innerHTML = html;
-    var cards = $('rows').querySelectorAll('.card[data-idx^="cont:"]');
+
+    var cards = $('rows').querySelectorAll('.card');
     for (var c = 0; c < cards.length; c++) {
       (function (el) {
         el.addEventListener('click', function () {
-          var idx = parseInt(el.getAttribute('data-idx').split(':')[1], 10);
-          var it = cont[idx];
-          if (!it) return;
-          playMovie({ url: it.url, title: it.title, thumbnail: it.img || it.thumb || it.poster || '' });
+          var parts = el.getAttribute('data-idx').split(':');
+          var idx = parseInt(parts[1], 10);
+          if (parts[0] === 'cont') {
+            var it = cont[idx];
+            if (!it) return;
+            playMovie({ url: it.url, title: it.title, thumbnail: it.img || it.thumb || it.poster || '' });
+            return;
+          }
+          var fav = favorites[idx];
+          if (!fav) return;
+          openLibEntry('fav', fav);
         });
       })(cards[c]);
     }
@@ -2753,8 +2776,8 @@
 
   function openCategory(name, btn) {
     setView('home');
-    if (name === 'continue' || name === 'Pokračovat') {
-      renderContinueView();
+    if (name === 'library' || name === 'Knihovna') {
+      renderLibraryView();
       $('main').scrollTop = 0;
       var navs = document.querySelectorAll('.navbtn');
       for (var nj = 0; nj < navs.length; nj++) navs[nj].classList.remove('active');
@@ -2764,7 +2787,7 @@
       return;
     }
     // návrat z "Pokračovat" pohledu na normální domovské řady
-    if (!$('rows').querySelector('.row-title') || $('rows').querySelector('[data-row="cont"]')) renderRows();
+    if (!$('rows').querySelector('.row-title') || $('rows').querySelector('[data-row="fav"]') || $('rows').querySelector('[data-row="cont"]')) renderRows();
     var rows = $('rows').querySelectorAll('.row');
     var target = null;
     for (var i = 0; i < rows.length; i++) {
@@ -2951,8 +2974,8 @@
       (function (el) {
         el.addEventListener('click', function () {
           var v = el.getAttribute('data-nav');
-          if (v === 'continue') {
-            openCategory('continue', el);
+          if (v === 'library') {
+            openCategory('library', el);
             return;
           }
           setView(v);

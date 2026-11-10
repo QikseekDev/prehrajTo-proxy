@@ -966,3 +966,5 @@
 .art .cprog { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.25); z-index: 4; }
 .art .cprog i { display: block; height: 100%; background: #e50914; }
 .cat-row .empty-note { padding: 18px 4px; color: #a6a6a6; font-size: 14px; }
+
+.lib-h2-second { margin-top: 34px; }
