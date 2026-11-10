@@ -32,3 +32,4 @@ Workflowy `.github/workflows/build-ipk.yml` a `.github/workflows/android.yml` p�
 ## Ověření
 - Rychlá kontrola JS: `node --check ipk/app/app.js && node --check apk/app/src/main/assets/www/app.js && node --check azure-app/PrehrajtoProxy/wwwroot/script.js`
 - Plné ověření UI/přehrávání vyžaduje reálné zařízení/buil z CI (webOS TV, Android). Git push přes `cloud_git`/projektový postup; nerozbíjet remote/user změny, řešit merge konflikty citlivě.
+- **Vždy pushuj:** po dokončení změn je (pokud uživatel výslovně neřekne jinak) commitni a pushni na remote; při odmítnutí push (non-fast-forward) nejdřív stáhni/začni rebase a push zopakuj, bez ztráty změn.
