@@ -366,7 +366,8 @@ body.touch .ep-src{font-size:.78rem;max-width:100%}
   min-height:2.9rem;display:flex;align-items:center;padding:.4rem .9rem;border-radius:var(--radius);
   background:var(--bg);border:1px solid var(--line-strong);font-size:1.1rem;word-break:break-all;
 }
-.kbd-value .caret{display:inline-block;width:2px;height:1.2em;background:#fff;margin-left:2px;animation:blink 1s steps(2,start) infinite}
+.kbd-input{width:100%;border:none;background:transparent;color:var(--text);font:inherit;font-size:1.4rem;letter-spacing:.02em;outline:none;padding:.2rem .2rem;caret-color:#fff}
+.kbd-value .caret{display:none}
 @keyframes blink{to{visibility:hidden}}
 .kbd-keys{display:flex;flex-direction:column;gap:.4rem;margin-top:1rem}
 .kbd-row{display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap}
@@ -477,9 +478,9 @@ body:not(.touch) .search-side{position:sticky;top:1.6rem;flex:0 0 24rem;margin-l
 .search-field{display:flex;align-items:center;gap:.8rem;min-height:3.6rem;margin-bottom:1rem;padding:0 1.1rem;border-radius:10px;
   background:var(--surface);border:1px solid var(--line-strong);font-size:1.45rem;font-weight:600}
 .search-field .s-ico{position:static;display:grid;flex:none;color:var(--muted)}
-.search-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}
+.search-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre;border:none;background:transparent;color:var(--text);font:inherit;font-size:1.1rem;font-weight:500;outline:none;padding:0;caret-color:#fff;cursor:text}
 .search-field .caret{flex:none;width:2px;height:1.3em;background:#fff;animation:blink 1s steps(2,start) infinite}
-.search-field.empty .search-text::before{content:"Hledat filmy a seriály";color:var(--muted);font-size:1.1rem;font-weight:500}
+.search-field .search-text::placeholder{color:var(--muted);font-size:1.1rem;font-weight:500}
 .skeys{display:grid;grid-template-columns:repeat(6,1fr);gap:.45rem}
 .skey{height:3.2rem;border-radius:8px;background:var(--surface-2);font-size:1.2rem;font-weight:700;text-transform:uppercase}
 .skey:hover{background:var(--surface-3)}

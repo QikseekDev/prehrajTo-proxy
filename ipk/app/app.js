@@ -1013,15 +1013,28 @@
   /* ------------------------------------------------------------------ *
    *  Obrazovková klávesnice (TV)
    * ------------------------------------------------------------------ */
-  var kbdState = { value: '', title: '', onDone: null, onCancel: null, physical: false };
-  var KBD_ROWS = [
-    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '.'],
-    ['q', 'w', 'e', 'r', 't', 'z', 'u', 'i', 'o', 'p', '/', ':'],
-    ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '@'],
-    ['y', 'x', 'c', 'v', 'b', 'n', 'm', '_', ' '],
-    ['ě', 'š', 'č', 'ř', 'ž', 'ý', 'á', 'í', 'é', 'ú', 'ů', '!'],
-    ['?', '&', '=', '+', '%', '#', '(', ')', '*']
-  ];
+  var kbdState = { value: '', title: '', onDone: null, onCancel: null, physical: false, caret: 0, layout: 'abc' };
+  var KBD_LAYOUTS = {
+    abc: [
+      ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '.'],
+      ['q', 'w', 'e', 'r', 't', 'z', 'u', 'i', 'o', 'p', '/', ':'],
+      ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '@'],
+      ['y', 'x', 'c', 'v', 'b', 'n', 'm', '_', ' ']
+    ],
+    cz: [
+      ['á', 'č', 'ď', 'é', 'ě', 'í', 'ň', 'ó', 'ř', 'š'],
+      ['ť', 'ú', 'ů', 'ý', 'ž', 'Á', 'Č', 'Ď', 'É', 'Ě'],
+      ['Í', 'Ň', 'Ó', 'Ř', 'Š', 'Ť', 'Ú', 'Ů', 'Ý', 'Ž'],
+      ['q', 'w', 'e', 'r', 't', 'z', 'u', 'i', 'o', 'p']
+    ],
+    sym: [
+      ['!', '?', '.', ',', ':', ';', '"', "'", '(', ')'],
+      ['@', '#', '$', '%', '&', '*', '+', '-', '=', '/'],
+      ['\\', '|', '_', '~', '^', '[', ']', '{', '}', '<'],
+      ['>', '€', '£', '§', '°', '…', '•', '„', '“', ' ']
+    ]
+  };
+  var KBD_ROWS = KBD_LAYOUTS.abc;
 
   function openKeyboard(opts) {
     if (isTouch) {                                   // na mobilu ať to udělá systém
@@ -1035,7 +1048,9 @@
       title: opts.title || 'Zadej text',
       onDone: opts.onDone || null,
       onCancel: opts.onCancel || null,
-      physical: false
+      physical: false,
+      caret: String(opts.value || '').length,
+      layout: 'abc'
     };
     $('kbdTitle').textContent = kbdState.title;
     renderKeyboard();
@@ -1045,18 +1060,30 @@
   }
 
   function renderKeyboard() {
-    $('kbdValue').innerHTML = esc(kbdState.value) + '<span class="caret"></span>';
+    var rows = KBD_LAYOUTS[kbdState.layout] || KBD_LAYOUTS.abc;
+    var layoutLabel = kbdState.layout === 'abc' ? 'ÁČ' : (kbdState.layout === 'cz' ? '#+=' : 'ABC');
+    var val = String(kbdState.value || '');
+    if (typeof kbdState.caret !== 'number' || kbdState.caret < 0 || kbdState.caret > val.length) kbdState.caret = val.length;
+    $('kbdValue').innerHTML = '<input id="kbdInput" class="kbd-input" type="text" readonly autocomplete="off" spellcheck="false" aria-label="Zadaný text">';
+    var inp = $('kbdInput');
+    if (inp) {
+      inp.value = val;
+      try { inp.setSelectionRange(kbdState.caret, kbdState.caret); } catch (e) {}
+      inp.onclick = function () { try { kbdState.caret = inp.selectionStart || 0; } catch (e) {} };
+      inp.onkeyup = function () { try { kbdState.caret = inp.selectionStart || 0; } catch (e) {} };
+    }
     var html = '';
-    for (var r = 0; r < KBD_ROWS.length; r++) {
+    for (var r = 0; r < rows.length; r++) {
       html += '<div class="kbd-row">';
-      for (var c = 0; c < KBD_ROWS[r].length; c++) {
-        var ch = KBD_ROWS[r][c];
+      for (var c = 0; c < rows[r].length; c++) {
+        var ch = rows[r][c];
         var label = ch === ' ' ? 'mezera' : ch;
         html += '<button class="key f' + (ch === ' ' ? ' wide' : '') + '" type="button" data-k="' + esc(ch) + '">' + esc(label) + '</button>';
       }
       html += '</div>';
     }
     html += '<div class="kbd-row">'
+      + '<button class="key wide f" type="button" data-k="__layout">' + esc(layoutLabel) + '</button>'
       + '<button class="key wide f" type="button" data-k="__back">Smazat</button>'
       + '<button class="key wide f" type="button" data-k="__clear">vymazat</button>'
       + '<button class="key wide gold f" type="button" data-k="__ok">Hotovo</button>'
@@ -1066,9 +1093,16 @@
   }
 
   function kbdPress(k) {
-    if (k === '__back') kbdState.value = kbdState.value.slice(0, -1);
-    else if (k === '__clear') kbdState.value = '';
-    else if (k === '__ok') {
+    var val = String(kbdState.value || '');
+    var caret = (typeof kbdState.caret === 'number') ? kbdState.caret : val.length;
+    if (caret < 0) caret = 0; if (caret > val.length) caret = val.length;
+    if (k === '__layout') {
+      kbdState.layout = kbdState.layout === 'abc' ? 'cz' : (kbdState.layout === 'cz' ? 'sym' : 'abc');
+    } else if (k === '__back') {
+      if (caret > 0) { kbdState.value = val.slice(0, caret - 1) + val.slice(caret); kbdState.caret = caret - 1; }
+    } else if (k === '__clear') {
+      kbdState.value = ''; kbdState.caret = 0;
+    } else if (k === '__ok') {
       var v = kbdState.value, cb = kbdState.onDone;
       hide($('kbd'));
       if (cb) cb(v);
@@ -1079,7 +1113,8 @@
       if (c) c();
       return;
     } else {
-      kbdState.value += k;
+      kbdState.value = val.slice(0, caret) + k + val.slice(caret);
+      kbdState.caret = caret + String(k).length;
     }
     renderKeyboard();
     var all = $('kbdKeys').querySelectorAll('[data-k]');
@@ -1260,32 +1295,55 @@
    *  Hledání jako na Netflixu / Oneplay: vlevo pole + klávesnice, vpravo výsledky
    *  (na TV se výsledky ukazují za pochodu, při psaní)
    * ------------------------------------------------------------------ */
-  var SK_ROWS = ['abcdef', 'ghijkl', 'mnopqr', 'stuvwx', 'yz0123', '456789'];
+  var SK_LAYOUTS = {
+    abc: ['abcdef', 'ghijkl', 'mnopqr', 'stuvwx', 'yz0123', '456789'],
+    cz:  ['áčďéěí', 'ňóřšťú', 'ůýžabc', 'defghi', 'jklmno', 'pqrstu'],
+    sym: ['!@#$%&', '*()_+-', '=[]{}:', ';\'"\\/|', '<>,.?~', '012345', '6789  ']
+  };
+  var skLayout = 'abc';
   var searchTimer = null;
   var searchToken = 0;
 
+  function skLayoutLabel() {
+    if (skLayout === 'abc') return 'ÁČ';
+    if (skLayout === 'cz') return '#+=';
+    return 'ABC';
+  }
+
   function renderSearchKeys() {
+    var rows = SK_LAYOUTS[skLayout] || SK_LAYOUTS.abc;
     var html = '';
-    for (var r = 0; r < SK_ROWS.length; r++) {
-      for (var c = 0; c < SK_ROWS[r].length; c++) {
-        var ch = SK_ROWS[r].charAt(c);
-        html += '<button class="skey f" type="button" data-sk="' + ch + '">' + ch + '</button>';
+    for (var r = 0; r < rows.length; r++) {
+      for (var c = 0; c < rows[r].length; c++) {
+        var ch = rows[r].charAt(c);
+        if (ch === ' ') continue;
+        html += '<button class="skey f" type="button" data-sk="' + esc(ch) + '">' + esc(ch) + '</button>';
       }
     }
     html += '<button class="skey wide f" type="button" data-sk=" ">mezera</button>'
       + '<button class="skey wide f" type="button" data-sk="__back">smazat</button>'
       + '<button class="skey wide f" type="button" data-sk="__clear">vymazat</button>'
+      + '<button class="skey wide f" type="button" data-sk="__layout">' + esc(skLayoutLabel()) + '</button>'
       + '<button class="skey full f" type="button" data-sk="__go">Hledat</button>';
     $('skeys').innerHTML = html;
   }
 
   /* Text v poli vlevo (zdroj pravdy je skrytý #searchInput, ten používá i mobil). */
-  function setSearchText(v) {
+  function getSearchEl() { return $('searchText'); }
+  function syncSearchInputs(v, caret) {
     v = String(v || '');
-    $('searchInput').value = v;
-    $('searchText').textContent = v;
+    var main = $('searchInput');
+    var side = getSearchEl();
+    if (main) main.value = v;
+    if (side && side.value !== v) side.value = v;
+    if (side && typeof caret === 'number') {
+      try { side.setSelectionRange(caret, caret); } catch (e) {}
+    }
     $('searchField').classList.toggle('empty', !v);
     $('searchHint').hidden = !!v;
+  }
+  function setSearchText(v) {
+    syncSearchInputs(v, String(v || '').length);
   }
 
   function renderSearchHint() {
@@ -1322,12 +1380,30 @@
   }
 
   function searchKey(k) {
-    var v = $('searchInput').value;
+    var side = getSearchEl();
+    var v = side ? side.value : $('searchInput').value;
+    var start = 0, end = 0;
+    if (side && typeof side.selectionStart === 'number') { start = side.selectionStart; end = side.selectionEnd; }
+    else { start = end = v.length; }
     if (k === '__go') { clearTimeout(searchTimer); doSearch(v); return; }
-    if (k === '__back') v = v.slice(0, -1);
-    else if (k === '__clear') v = '';
-    else { if (v.length >= 60) return; v += k; }
-    setSearchText(v);
+    if (k === '__layout') {
+      skLayout = skLayout === 'abc' ? 'cz' : (skLayout === 'cz' ? 'sym' : 'abc');
+      renderSearchKeys();
+      focusFirst();
+      return;
+    }
+    if (k === '__back') {
+      if (start !== end) v = v.slice(0, start) + v.slice(end), end = start;
+      else if (start > 0) { v = v.slice(0, start - 1) + v.slice(end); start = end = start - 1; }
+    } else if (k === '__clear') {
+      v = ''; start = end = 0;
+    } else {
+      if (v.length >= 60) return;
+      v = v.slice(0, start) + k + v.slice(end);
+      start = end = start + String(k).length;
+    }
+    syncSearchInputs(v, start);
+    if (side) { try { side.focus(); side.setSelectionRange(start, end); } catch (e) {} }
     scheduleSearch(v);
   }
 
