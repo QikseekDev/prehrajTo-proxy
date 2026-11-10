@@ -1477,10 +1477,41 @@
     }
     return null;
   }
+  var NEXT_PROMPT_AT = 32;   // kolik sekund před koncem se karta objeví
+
+  function nextCountText(sec) {
+    return 'Další video začne za ' + Math.max(0, Math.ceil(sec)) + ' s';
+  }
+
+  function stopNextEpCountdown() {
+    if (player.nextEpTimer) { clearInterval(player.nextEpTimer); player.nextEpTimer = null; }
+  }
+
   function hideNextEpPrompt() {
     player.nextEpShown = false;
+    stopNextEpCountdown();
+    player.nextEpLeft = 0;
     var el = $('pNext'); if (el) el.hidden = true;
   }
+
+  // Odpočet se počítá ze skutečné zbývající délky, takže sedí i po pauze/seeku.
+  function startNextEpCountdown() {
+    stopNextEpCountdown();
+    function tick() {
+      var el = $('pNextCount');
+      var d = video.duration, t = video.currentTime;
+      var remain = (isFinite(d) && d > 0) ? Math.max(0, d - t) : 0;
+      if (el) el.textContent = nextCountText(remain);
+      if (video.paused || video.seeking) return;       // při pauze odpočet neběží
+      if (remain <= 0.4) {
+        stopNextEpCountdown();
+        if (!player.nextEpDismissed) playNextEp();
+      }
+    }
+    tick();
+    player.nextEpTimer = setInterval(tick, 400);
+  }
+
   function showNextEpPrompt(info) {
     if (!info || !info.next) return;
     var el = $('pNext'), t = $('pNextTitle');
@@ -1489,11 +1520,16 @@
     var n = info.next;
     var txt = (info.seriesTitle ? (info.seriesTitle + ' · ') : '') + (n.label ? (n.label + (n.name ? ' – ' + n.name : '')) : (n.name || n.title || 'Další díl'));
     t.textContent = txt;
-    var im = $('pNextImg'); if (im) { if (n.thumbnail) { im.src = n.thumbnail; im.hidden = false; } else { im.removeAttribute('src'); im.hidden = true; } }
+    var im = $('pNextImg');
+    if (im) {
+      if (n.thumbnail) { im.src = n.thumbnail; im.hidden = false; } else { im.removeAttribute('src'); im.hidden = true; }
+    }
     el.hidden = false;
     player.nextEpShown = true;
+    startNextEpCountdown();
     if (wasBar) { try { focusEl($('pNextPlay')); } catch(_){ } }
   }
+
   function playNextEp() {
     var info = player.nextEpInfo;
     hideNextEpPrompt();
@@ -1506,16 +1542,22 @@
     } catch(_){ player.nextEpInfo = null; player._keepNextEp = false; }
     playMovie({ url: nextUrl, title: info.next.title || info.next.name || 'Další díl', thumbnail: info.next.thumbnail || player.poster || '' });
   }
+
   function checkNextEpisodePrompt() {
     try {
       if (!$('player') || $('player').hidden) return;
       if (player.kind === 'live') return;
       if (!player.nextEpInfo || !player.nextEpInfo.next) return;
-      if (player.nextEpShown || player.nextEpDismissed) return;
       var d = video.duration, t = video.currentTime;
       if (!isFinite(d) || d <= 0 || !isFinite(t)) return;
       var remain = d - t;
-      if (remain <= 18 && remain > 1.5) showNextEpPrompt(player.nextEpInfo);
+      if (player.nextEpShown) {
+        // Uživatel odjel od konce -> kartu schovat, ať nepřekáží.
+        if (remain > NEXT_PROMPT_AT + 5) hideNextEpPrompt();
+        return;
+      }
+      if (player.nextEpDismissed) return;
+      if (remain <= NEXT_PROMPT_AT && remain > 1.2) showNextEpPrompt(player.nextEpInfo);
     } catch(_){}
   }
 
@@ -1793,7 +1835,9 @@
     hls: null,
     subs: [], subIndex: -1,
     triedRelay: false,
-    idleTimer: null
+    idleTimer: null,
+    nextEpInfo: null, nextEpShown: false, nextEpDismissed: false,
+    nextEpTimer: null, nextEpLeft: 0
   };
 
   var video = $('video');
@@ -2043,6 +2087,12 @@
     var d = video.duration;
     var finished = isFinite(d) && d > 0 && video.currentTime >= d - 1.5;
     if (finished) {
+      // Dohráno: pokud je další díl, přejde se na něj automaticky.
+      if (player.nextEpInfo && player.nextEpInfo.next && !player.nextEpDismissed) {
+        try { clearVideoProgress(player.resumeKey || player.page); } catch(_){}
+        playNextEp();
+        return;
+      }
       // Film dohrál do konce – není to chyba CDN, nic nepřepínáme.
       try { clearVideoProgress(player.resumeKey || player.page); } catch(_){}
       $('player').classList.remove('idle');
@@ -2085,9 +2135,23 @@
   });
   $('pBack').addEventListener('click', function () { closePlayer(); renderRows(); focusAfterOverlay(); });
   
-    var pNextPlay = $('pNextPlay'), pNextCancel = $('pNextCancel');
-    if (pNextPlay) pNextPlay.addEventListener('click', function(e){ if(e){e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();} playNextEp(); });
-    if (pNextCancel) pNextCancel.addEventListener('click', function(e){ if(e){e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();} player.nextEpDismissed=true; hideNextEpPrompt(); });
+    var pNextPlay = $('pNextPlay'), pNextCancel = $('pNextCancel'), pNextBack = $('pNextBack');
+    function stopEv(e){ if(e){ e.preventDefault&&e.preventDefault(); e.stopPropagation&&e.stopPropagation(); } }
+    if (pNextPlay) pNextPlay.addEventListener('click', function(e){ stopEv(e); playNextEp(); });
+    if (pNextCancel) pNextCancel.addEventListener('click', function(e){ stopEv(e); player.nextEpDismissed = true; hideNextEpPrompt(); });
+    // "Zpět" = zruší odpočet a vrátí video o kus zpět, aby se dal dohrát konec bez přechodu.
+    if (pNextBack) pNextBack.addEventListener('click', function(e){
+      stopEv(e);
+      player.nextEpDismissed = true;
+      hideNextEpPrompt();
+      try {
+        var d = video.duration;
+        if (isFinite(d) && d > 0) {
+          video.currentTime = Math.max(0, Math.min(d - 1, video.currentTime - 30));
+          play();
+        }
+      } catch(_){}
+    });
 
     $('pRelay').addEventListener('click', function () { switchToRelay(video.currentTime); });
 

@@ -150,11 +150,19 @@
       </div>
     </div>
       <div id="pNext" class="p-next" hidden>
-        <div class="p-next-media">
+        <div class="p-next-head">Další video</div>
+        <button id="pNextPlay" class="f p-next-media" type="button" aria-label="Přehrát další video">
           <img id="pNextImg" class="p-next-img" alt="" hidden>
-          <div class="p-next-overlay"><div class="p-next-kicker">Další díl</div><div id="pNextTitle" class="p-next-title"></div></div>
+          <span class="p-next-ph" aria-hidden="true"><svg class="i fill" aria-hidden="true"><use href="#i-play" xlink:href="#i-play"/></svg></span>
+        </button>
+        <div id="pNextTitle" class="p-next-title"></div>
+        <div class="p-next-bar">
+          <div id="pNextCount" class="p-next-count">Další video začne za 30 s</div>
+          <div class="p-next-actions">
+            <button id="pNextBack" class="f btn ghost" type="button">Zpět</button>
+            <button id="pNextCancel" class="f btn ghost" type="button">Zrušit</button>
+          </div>
         </div>
-        <div class="p-next-actions"><button id="pNextPlay" class="f btn primary" type="button">Přehrát</button><button id="pNextCancel" class="f btn ghost" type="button">Zrušit</button></div>
       </div>
     <div id="pState" class="p-state" hidden></div>
   </div>
