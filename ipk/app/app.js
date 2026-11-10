@@ -671,6 +671,21 @@
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
 
+  function seriesItem() {
+    if (!state.series) return null;
+    return { url: '', title: state.series.title || 'Seriál', poster: state.series.poster || '' };
+  }
+
+  function updateSeriesFav() {
+    var btn = $('seriesFav');
+    if (!btn) return;
+    var item = seriesItem();
+    var on = item ? isFav(item) : false;
+    btn.innerHTML = icon('star', on ? 'fill' : '') + '<span>' + (on ? 'V oblíbených' : 'Do oblíbených') + '</span>';
+    if (on) btn.classList.add('on'); else btn.classList.remove('on');
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
   /* ------------------------------------------------------------------ *
    *  API – s nativním mostem (Android) obejde CORS, jinak fetch
    * ------------------------------------------------------------------ */
@@ -1423,9 +1438,10 @@
     $('seriesPoster').style.visibility = series.poster ? 'visible' : 'hidden';
     setSeriesNote(null);
     renderSeriesBody(false);
+    updateSeriesFav();
     show($('series'));
     var first = $('seriesBody').querySelector('.f');
-    focusEl(first || $('seriesClose'));
+    focusEl(first || $('seriesFav') || $('seriesClose'));
     loadSeriesPages(token, 2, 0);
   }
 
@@ -2603,6 +2619,18 @@
       updateDetailFav();
       toast(added ? 'Přidáno do oblíbených' : 'Odebráno z oblíbených');
       focusEl(detailFavBtn);
+    });
+  }
+
+  var seriesFavBtn = $('seriesFav');
+  if (seriesFavBtn) {
+    seriesFavBtn.addEventListener('click', function () {
+      var item = seriesItem();
+      if (!item) return;
+      var added = toggleFav(item);
+      updateSeriesFav();
+      toast(added ? 'Přidáno do oblíbených' : 'Odebráno z oblíbených');
+      focusEl(seriesFavBtn);
     });
   }
 
