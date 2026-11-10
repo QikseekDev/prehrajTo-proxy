@@ -2093,6 +2093,9 @@
       if (j === 0) tr.default = false;
       video.appendChild(tr);
     }
+    // Titulky jsou vždy defaultně vypnuté - i když je zdroj označí jako výchozí.
+    for (var k = 0; k < video.textTracks.length; k++) { try { video.textTracks[k].mode = 'disabled'; } catch(_){} }
+    setTimeout(function(){ try { for (var m = 0; m < video.textTracks.length; m++) video.textTracks[m].mode = 'disabled'; } catch(_){} }, 0);
     $('pSub').textContent = player.subs.length ? 'Titulky' : 'Bez titulků';
     $('pSub').disabled = !player.subs.length;
   }
@@ -2120,6 +2123,7 @@
     player.poster = m.thumbnail || '';
     player.title = m.title || 'Video';
     player.resumeKey = m.url || '';
+    player.subIndex = -1; player.subs = [];
     try { player.resumeAt = getSavedProgress(player.resumeKey); } catch(_){ player.resumeAt = 0; }
     player._resumeApplied = false;
     if (!player._keepNextEp) { player.nextEpInfo = null; player.nextEpDismissed = false; }

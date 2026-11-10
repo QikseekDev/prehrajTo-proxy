@@ -1875,7 +1875,6 @@
 
             subtitleSelect.appendChild(new Option('Vypnuto', ''));
             const els = [];
-            let defaultIndex = -1;
             subs.forEach((s, i) => {
                 const track = document.createElement('track');
                 track.kind = 'subtitles';
@@ -1887,28 +1886,18 @@
                 track.addEventListener('error', () => {
                     if (player.subEls[i] === track && player.subIndex === i) subNote.hidden = false;
                 });
-                if (s.default) {
-                    track.default = true;
-                    defaultIndex = i;
-                }
                 videoPlayer.appendChild(track);
                 els.push(track);
                 subtitleSelect.appendChild(new Option(track.label, String(i)));
             });
             player.subEls = els;
 
-            // Zachovat volbu diváka; jinak výchozí stopa z přehrávače, a když ji web
-            // neoznačí, vzít první českou (jinak by titulky zůstaly rovnou vypnuté).
-            let index = -1;
-            if (!player.subOff) {
-                if (player.subLang) index = subs.findIndex(s => (s.lang || '') === player.subLang);
-                if (index < 0) index = defaultIndex;
-                if (index < 0) index = subs.findIndex(s => /^(cs|ces|cze)$/i.test(s.lang || '') || /^cze/i.test(s.label || ''));
-            }
-            // Stopu zapneme hned a ještě jednou po chvíli, až prohlížeč <track> zařadí.
-            applySubtitle(index);
-            setTimeout(() => { if (player.subSig === sig) applySubtitle(index); }, 0);
-            setTimeout(() => { if (player.subSig === sig) applySubtitle(index, true); }, 700);
+            // Titulky jsou vždy defaultně vypnuté - i když je zdroj označí jako výchozí
+            // nebo má českou stopu. Divák si je zapne ručně ve výběru titulků.
+            player.subLang = null;
+            player.subOff = true;
+            applySubtitle(-1);
+            setTimeout(() => { if (player.subSig === sig) applySubtitle(-1); }, 0);
         }
 
         function selectSubtitle(index) {
