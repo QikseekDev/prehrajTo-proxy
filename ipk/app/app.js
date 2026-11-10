@@ -956,7 +956,7 @@
     if (typeof el.focus === 'function') el.focus();
     if (el.scrollIntoView) {
       try {
-        el.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+        el.scrollIntoView({ block: 'nearest', inline: 'center', behavior: isTouch ? 'auto' : 'smooth' });
       } catch (e) {
         el.scrollIntoView(false);
       }
