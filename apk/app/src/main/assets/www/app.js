@@ -669,7 +669,7 @@
   function openLibEntry(kind, rec) {
     if (!rec) return;
     if (rec.url) { openMovieDetail({ url: rec.url, title: rec.title, thumbnail: rec.poster || '' }); return; }
-    searchThenPlay(rec.title || '', { seriesFirst: true });
+    searchThenPlay(rec.title || '', { seriesFirst: true, from: 'library' });
   }
 
   function applyCueStyle() {
@@ -859,6 +859,7 @@
     results: [],
     entries: [],        // výsledky hledání po seskupení do seriálů
     series: null,       // otevřený seriál
+    seriesFrom: 'results', // odkud se seriál otevřel (results | library)
     seriesQuery: '',    // dotaz, kterým se dotahují další stránky
     channels: [],
     liveFilter: 'cz',
@@ -1454,9 +1455,10 @@
     }
   }
 
-  function openSeries(series) {
+  function openSeries(series, opts) {
     lastFocus = document.activeElement;
     state.series = series;
+    state.seriesFrom = (opts && opts.from) || 'results';
     state.seriesQuery = state.query;
     seriesToken++;
     var token = seriesToken;
@@ -1468,16 +1470,39 @@
     setSeriesNote(null);
     renderSeriesBody(false);
     updateSeriesFav();
+    updateSeriesBack();
     show($('series'));
     var first = $('seriesBody').querySelector('.f');
     focusEl(first || $('seriesFav') || $('seriesClose'));
     loadSeriesPages(token, 2, 0);
   }
 
+  /* Tlačítko zpět mluví jazykem místa, odkud se seriál otevřel. */
+  function updateSeriesBack() {
+    var btn = $('seriesClose');
+    if (btn) btn.textContent = state.seriesFrom === 'library' ? 'Zpět do knihovny' : 'Zpět na výsledky';
+  }
+
   function closeSeries() {
     seriesToken++;
     state.series = null;
     hide($('series'));
+  }
+
+  /* Zavření seriálu: z knihovny zpátky do knihovny, jinak na výsledky hledání. */
+  function closeSeriesAndReturn() {
+    var from = state.seriesFrom;
+    closeSeries();
+    state.seriesFrom = 'results';
+    if (from === 'library') {
+      setView('library');
+      renderLibraryView();
+      $('main').scrollTop = 0;
+      var first = $('libRows') ? $('libRows').querySelector('.f') : null;
+      if (first) focusEl(first);
+      return;
+    }
+    focusAfterOverlay();
   }
 
 
@@ -1724,6 +1749,7 @@
   /* Z katalogu: najdi film a ukaž výsledky hledání (nic se nespouští samo) */
   function searchThenPlay(q, opts) {
     var seriesFirst = !!(opts && opts.seriesFirst);
+    var fromLibrary = !!(opts && opts.from === 'library');
     loading('Hledám „' + q + '“ …');
     apiJson('/api/search?q=' + encodeURIComponent(q) + (settings.searchMerge ? '&source=all' : '')).then(function (d) {
       loading(null);
@@ -1736,16 +1762,26 @@
       state.entries = groupSearchResults(ranked);
       state.query = q;
       closeDetail();
+      // Uložený seriál z knihovny: otevřít jeho stránku a nechat pod ní knihovnu.
+      if (seriesFirst) {
+        var series = findSeriesEntry(state.entries, q);
+        if (series) {
+          if (!fromLibrary) {
+            setView('search');
+            setSearchText(q);
+            $('searchState').className = 'state show';
+            $('searchState').textContent = 'Nalezeno ' + state.entries.length + ' výsledků pro „' + q + '“';
+            renderResults();
+          }
+          openSeries(series, { from: fromLibrary ? 'library' : 'results' });
+          return;
+        }
+      }
       setView('search');
       setSearchText(q);
       $('searchState').className = 'state show';
       $('searchState').textContent = 'Nalezeno ' + state.entries.length + ' výsledků pro „' + q + '“';
       renderResults();
-      // Uložený seriál: otevřít rovnou jeho stránku (jinak zůstanou výsledky hledání).
-      if (seriesFirst) {
-        var series = findSeriesEntry(state.entries, q);
-        if (series) { openSeries(series); return; }
-      }
       var firstCard = $('searchGrid').querySelector('.f.card');
       if (firstCard) focusEl(firstCard);
     }).catch(function (e) {
@@ -2602,7 +2638,7 @@
     if (!$('kbd').hidden) { hide($('kbd')); return true; }
     if (!$('player').hidden) { closePlayer(); renderActiveView(); focusAfterOverlay(); return true; }
     if (!$('detail').hidden) { closeDetail(); focusAfterOverlay(); return true; }
-    if (!$('series').hidden) { closeSeries(); focusAfterOverlay(); return true; }
+    if (!$('series').hidden) { closeSeriesAndReturn(); return true; }
     return false;
   }
 
@@ -3097,9 +3133,9 @@
 
     $('detailClose').addEventListener('click', function () { closeDetail(); focusAfterOverlay(); });
     $('detail').addEventListener('click', function (e) { if (e.target === $('detail')) closeDetail(); });
-    $('seriesClose').addEventListener('click', function () { closeSeries(); focusAfterOverlay(); });
+    $('seriesClose').addEventListener('click', function () { closeSeriesAndReturn(); });
     $('series').addEventListener('click', function (e) {
-      if (e.target === $('series')) { closeSeries(); focusAfterOverlay(); }
+      if (e.target === $('series')) { closeSeriesAndReturn(); }
     });
     var healthClose = $('healthClose'), healthDlg = $('health');
     if (healthClose) healthClose.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); });
