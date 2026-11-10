@@ -1311,7 +1311,7 @@
     }).catch(function (e) {
       if (!quiet) loading(null);
       if (token !== searchToken) return;
-      showStateError(st, 'Chyba: ' + e.message);
+      showStateError(st, 'Chyba: ' + e.message, function () { doSearch(q); });
     });
   }
 
@@ -1864,7 +1864,7 @@
     }).catch(function (e) {
       loading(null);
       state.channels = [];
-      showStateError(st, e.message + ' – zkontroluj adresu serveru a jestli backend /api/live povoluje CORS.');
+      showStateError(st, e.message + ' – zkontroluj adresu serveru a jestli backend /api/live povoluje CORS.', function () { loadLive(); });
       $('liveGrid').innerHTML = '';
     });
   }
@@ -2556,13 +2556,20 @@
   /* ------------------------------------------------------------------ *
    *  Klávesy / dálkové ovládání
    * ------------------------------------------------------------------ */
-  function showStateError(st, msg) {
+  function showStateError(st, msg, retry) {
     if (!st) return;
     try {
       st.className = 'state show err';
-      st.innerHTML = '<div>' + esc(String(msg || 'Chyba')) + '</div><div class="health-inline"><button class="f btn ghost" type="button" data-open-health="1">Status</button></div>';
+      var retryBtn = '';
+      if (retry && typeof retry === 'function') retry = { label: 'Zkusit znovu', fn: retry };
+      if (retry && retry.fn) {
+        retryBtn = '<button class="f btn" type="button" data-retry="1">' + esc(retry.label || 'Zkusit znovu') + '</button>';
+      }
+      st.innerHTML = '<div>' + esc(String(msg || 'Chyba')) + '</div><div class="health-inline">' + retryBtn + '<button class="f btn ghost" type="button" data-open-health="1">Status</button></div>';
       var btn = st.querySelector('[data-open-health]');
       if (btn) btn.addEventListener('click', function (e) { if(e){e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();} try{openHealthOverlay(btn);}catch(_){} });
+      var rbtn = st.querySelector('[data-retry]');
+      if (rbtn && retry && retry.fn) rbtn.addEventListener('click', function (e) { if(e){e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();} try{retry.fn();}catch(_){} });
     } catch(e) { try { st.textContent = String(msg||'Chyba'); } catch(_){} }
   }
 

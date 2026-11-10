@@ -131,6 +131,21 @@ ares-package -I cz.qikseek.wflix_1.1.0_all.ipk   # kontrola obsahu/manifestu
 Po změně `appinfo.json` (verze, název) balíček přebal. Nová verze musí mít vyšší `version`,
 jinak ji TV odmítne aktualizovat.
 
+
+---
+
+## Kontrolní seznam před vydáním (LG webOS TV)
+
+- [ ] **Instalace a spuštění:** instalace `.ipk` přes Developer Mode (`ares-install`), ikona/název ve launcheru, splash při startu (ne černá obrazovka bez vysvětlení), první obrazovka po startu.
+- [ ] **Ovládání dálkovým ovladačem:** šipky/OK/Zpět na všech obrazovkách, vždy viditelný fokus, žádné zacyklení fokusu, obrazovková klávesnice, návrat z přehrávače/detailu/nastavení.
+- [ ] **Navigace a Zpět:** zavírání překryvů před opuštěním obrazovky, chování Zpět na vstupní obrazovce podle cílové verze webOS, opětovné otevření/návrat do appky (pokud je podporováno).
+- [ ] **Katalog, hledání, detail:** načtení dat, prázdné výsledky, chybové stavy a opakování pokusu tam, kde je dostupné.
+- [ ] **Přehrávač:** přehrávání (přímé/relay), pauza/seek, titulky, pokračování, skrytí/zobrazení ovládání, chování při chybě streamu a při pomalé síti.
+- [ ] **Živé vysílání:** načtení/filtry kanálů, přehrávání (vč. HLS), chybový stav a opakování pokusu.
+- [ ] **Výkon na cílových TV:** odezva fokusu/scrollu, načítání obrázků, delší přehrávání bez zamrznutí (ověřit na starších/slabších modelech, kde je to možné).
+- [ ] **Balíček a metadata:** `appinfo.json` (id/verze/ikony/splash/rozlišení), správné cesty k assetům, výstup `ares-package -I`, verze vyšší než předchozí release.
+- [ ] **Distribuce (pokud cílíš na LG Content Store):** připravit store ikonu/screenshoty/UX scénář a vyplněný self-checklist dle Seller Lounge; veřejně dostupné požadavky na podpis balíčku ověřit přímo v Seller Lounge/LG procesu.
+
 ---
 
 ## Omezení

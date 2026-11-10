@@ -159,6 +159,23 @@ UI je stejné jako u TV appky, zdroj je v `../ipk/app`. Po úpravě klienta zkop
 cp ../ipk/app/{index.html,styles.css,app.js,hls.min.js} app/src/main/assets/www/
 ```
 
+
+---
+
+## Kontrolní seznam před vydáním (telefony, bez Android TV)
+
+> Android TV specifika (Leanback banner/launcher chování na TV, TV ovladač na skutečné TV) jsou záměrně vynechána, pokud nemáš TV k testu.
+
+- [ ] **Instalace/aktualizace:** čistá instalace i update přes předchozí verzi (stejný podpis) na telefonu/tabletu (Android 6+ / cílové verze).
+- [ ] **První spuštění a server:** zadání/adresa backendu, úspěšné připojení, chyba při nedostupném serveru, změna adresy v Nastavení.
+- [ ] **Katalog a hledání:** načtení domů, vyhledávání, otevření detailu, prázdné výsledky a chybový stav (včetně „Zkusit znovu“ tam, kde je dostupné).
+- [ ] **Přehrávání:** přímé/CDN i přes server (fallback), pauza/seek, návrat na pozici (pokračování), titulky, chování při chybě/obnovení streamu, rotace/displej/immersive během přehrávání.
+- [ ] **Živé vysílání:** načtení kanálů, filtry, přehrávání HLS, chybový stav a opakování pokusu.
+- [ ] **Knihovna/uživatelská data:** oblíbené, historie/pokračování, stahování (DownloadManager, oprávnění dle verze Androidu), nastavení titulků.
+- [ ] **Síť a bezpečnost:** HTTPS backend (doporučeno), chování na HTTP/LAN podle potřeby, žádné načítání cizích stránek ve WebView (externí odkazy jen ven).
+- [ ] **Výkon/stabilita:** delší přehrávání bez pádu WebView, reakce na ztrátu/obnovení sítě, rozumná odezva UI.
+- [ ] **Release artefakty:** správný `versionName`/`versionCode`, podepsaný release keystore (ne debug), ověřený podpis (`apksigner verify`) a kontrolní součet.
+
 ---
 
 ## Omezení

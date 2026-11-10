@@ -13,6 +13,7 @@
   "disableBackHistoryAPI": true,
   "handlesRelaunch": true,
   "requiredMemory": 128,
+  "iconColor": "#0b0c0f",
   "supportedOrientations": [
     "landscape"
   ],
