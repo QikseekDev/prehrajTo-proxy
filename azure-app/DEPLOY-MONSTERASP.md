@@ -1,6 +1,11 @@
 # Nasazení na MonsterASP.NET (free)
 
-Cíl: po každém pushi do `main` se backend **sám sestaví a nasadí** na MonsterASP.NET, bez placeného plánu.
+Cíl: po každém pushi do `main` se backend **sám sestaví a nasadí** na oba MonsterASP weby, bez placeného plánu.
+
+| Web | Web Deploy (site) | Veřejná adresa |
+| --- | --- | --- |
+| **Wflix** | `site104887` → `https://site104887.siteasp.net:8172` | `wflix.runasp.net` |
+| **WTZI** | `site104437` → `https://site104437.siteasp.net:8172` | `wtzi.runasp.net` |
 
 ## Co free plán umí a co ne
 
@@ -11,58 +16,61 @@ Cíl: po každém pushi do `main` se backend **sám sestaví a nasadí** na Mons
 | **Web Deploy** (publish z VS / z CI) | ✅ | ✅ |
 | FTP / SFTP, ZIP, command line | ✅ | ✅ |
 
-Auto-deploy webhookem je tedy na free plánu nedostupný. Zdarma se stejný výsledek dělá takto:
-**build běží na GitHub Actions a hotový výstup se nahraje na hosting přes Web Deploy.**
+Auto-deploy webhookem je na free plánu nedostupný. Zdarma se stejný výsledek dělá takto:
+**build běží na GitHub Actions a hotový výstup se nahraje na oba weby přes Web Deploy.**
 Workflow je v repu: [`.github/workflows/deploy-monsterasp.yml`](../.github/workflows/deploy-monsterasp.yml).
 
-## 1. Založit web
+## 1. Weby a Web Deploy
 
-1. Přihlas se na [monsterasp.net](https://www.monsterasp.net/) a vytvoř **Free** website (Windows / .NET).
-2. Zapamatuj si ID webu ve tvaru `siteXXXXXX` – používá se jako uživatelské jméno i název webu.
-3. Aplikace cílí na **.NET 9** (`net9.0`). Pokud by hosting .NET 9 ještě nenabízel, změň
-   `TargetFramework` v `azure-app/PrehrajtoProxy/PrehrajtoProxy.csproj` (a `dotnet-version` ve workflow).
+Pro každý web (Wflix `site104887`, WTZI `site104437`):
 
-## 2. Zapnout Web Deploy a opsat údaje
+1. Přihlas se na [monsterasp.net](https://www.monsterasp.net/), otevři daný web.
+2. Control Panel → **Websites** → web → **Deploy** → karta **Visual Studio access**.
+3. Přepni **WebDeploy** na **Enabled**.
+4. Opiš **Password** (Server/Site/Login jsou u těchto webů už vyplněné ve workflow:
+   `https://siteXXXXXX.siteasp.net:8172`, `siteXXXXXX`, `siteXXXXXX`).
 
-Control Panel → **Websites** → tvůj web → **Deploy** → karta **Visual Studio access**:
+Aplikace cílí na **.NET 9** (`net9.0`). Pokud by některý web .NET 9 nenabízel, změň
+`TargetFramework` v `azure-app/PrehrajtoProxy/PrehrajtoProxy.csproj` a `dotnet-version` ve workflow.
 
-1. Přepni **WebDeploy** na **Enabled**.
-2. Opiš čtyři hodnoty z karty:
-   - **Server** → `https://siteXXXXXX.siteasp.net:8172`
-   - **Site** (ID webu) → `siteXXXXXX`
-   - **Login** → `siteXXXXXX`
-   - **Password** → vygenerované heslo pro Web Deploy
-
-> Když heslo v panelu změníš, musíš ho změnit i v GitHub secrets níže.
-
-## 3. Nastavit GitHub secrets
+## 2. GitHub secrets (stačí dvě hesla)
 
 Repo → **Settings** → **Secrets and variables** → **Actions** → *New repository secret*:
 
-| Secret | Hodnota z karty Visual Studio access |
+| Secret | Hodnota |
 | --- | --- |
-| `WEBSITE_NAME` | `siteXXXXXX` |
-| `SERVER_COMPUTER_NAME` | `https://siteXXXXXX.siteasp.net:8172` |
-| `SERVER_USERNAME` | `siteXXXXXX` |
-| `SERVER_PASSWORD` | heslo pro Web Deploy |
+| `WFLIX_SERVER_PASSWORD` | heslo z karty Visual Studio access u `site104887` |
+| `WTZI_SERVER_PASSWORD` | heslo z karty Visual Studio access u `site104437` |
 
-Heslo patří **jen** do secrets – nikdy do workflow souboru ani do repa.
+Volitelně jde přepsat i zbytek (kdyby se site ID změnilo) – workflow má tyto defaults:
 
-## 4. Push = build + publish
+| Secret | Default |
+| --- | --- |
+| `WFLIX_WEBSITE_NAME` / `WFLIX_SERVER_USERNAME` | `site104887` |
+| `WFLIX_SERVER_COMPUTER_NAME` | `https://site104887.siteasp.net:8172` |
+| `WTZI_WEBSITE_NAME` / `WTZI_SERVER_USERNAME` | `site104437` |
+| `WTZI_SERVER_COMPUTER_NAME` | `https://site104437.siteasp.net:8172` |
+
+Hesla patří **jen** do secrets – nikdy do workflow souboru ani do repa. Když heslo v panelu změníš,
+změň ho i v secrets.
+
+## 3. Push = build + publish na oba weby
 
 Workflow se spustí při pushi do `main`, který mění `azure-app/PrehrajtoProxy/**`
 (nebo ručně: **Actions** → *Deploy to MonsterASP.NET* → **Run workflow**). Dělá:
 
-1. `dotnet publish -c Release -o publish` na `windows-latest`,
-2. nahraje obsah `publish/` do `/wwwroot` přes Web Deploy (inkrementálně – posílají se jen změněné soubory).
+1. `dotnet publish -c Release -o publish` na `windows-latest` (jednou),
+2. nahraje obsah `publish/` do `/wwwroot` na **Wflix** a pak na **WTZI** (Web Deploy, inkrementálně).
+
+Web bez nastaveného hesla se přeskočí s warningem – workflow nespadne.
 
 Nasazuje se **jen ASP.NET backend** (`azure-app/PrehrajtoProxy`). PHP proxy (`index.php`) a klientské
 appky (APK/IPK) mají vlastní cesty a tímhle workflowem se nenahrazují.
 
-## 5. Po prvním nasazení zkontrolovat
+## 4. Po nasazení zkontrolovat
 
-- `https://<web>.runasp.net/` → načte se UI (Wflix).
-- `https://<web>.runasp.net/api/search?q=matrix` → `{"success":true,...}`.
+- `https://wflix.runasp.net/` a `https://wtzi.runasp.net/` → načte se UI (Wflix).
+- `/api/search?q=matrix` na obou → `{"success":true,...}`.
 - Hlavičky: `/` musí mít `Cache-Control: no-store`, `script.js` verzi s hashem (`?v=<hash>`) –
   `Program.cs` ji počítá z obsahu, takže se po každém nasazení sama změní.
 
@@ -71,9 +79,9 @@ appky (APK/IPK) mají vlastní cesty a tímhle workflowem se nenahrazují.
 - Free tarif má omezené CPU/paměť a app pool se po nečinnosti uspává → první request je pomalejší
   (cold start). Pro produkci s provozem je vhodný placený tarif.
 - Produkční nastavení (např. `Prehraj__ProxyUrls__0`, `Prehraj__LivePlaylists__0`) patří do
-  konfigurace v panelu (App settings / Environment variables), ne do repa.
-- Web Deploy nahrává jen změny, takže opakované nasazení je rychlé; `app_offline.htm` není potřeba,
-  deploy sám aplikaci restartuje.
+  konfigurace v panelu (App settings / Environment variables), ne do repa. **Každý web má vlastní
+  app settings** – WTZI může mít jiné proxy adresy než Wflix.
+- Web Deploy nahrává jen změny, takže opakované nasazení je rychlé; deploy sám aplikaci restartuje.
 - HTTPS a vlastní doména se řeší v panelu (Let's Encrypt), mimo tento workflow.
 
 ## Alternativa: Git deploy v panelu (bez CI)

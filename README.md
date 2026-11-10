@@ -303,9 +303,10 @@ cd publish && zip -r ../deploy.zip .
 ```
 
 ### MonsterASP.NET (free, GitHub Actions)
-Push do `main` sestaví backend na GitHub Actions a nasadí ho přes Web Deploy – zdarma, bez
-placeného auto-deploy webhooku. Workflow: `.github/workflows/deploy-monsterasp.yml`.
-Nastavení (WebDeploy v panelu, čtyři GitHub secrets, limity free plánu):
+Push do `main` sestaví backend na GitHub Actions a nasadí ho přes Web Deploy na oba weby –
+**Wflix** (`site104887`) a **WTZI** (`site104437`) – zdarma, bez placeného auto-deploy webhooku.
+Workflow: `.github/workflows/deploy-monsterasp.yml`.
+Nastavení (WebDeploy v panelu, dvě hesla v GitHub secrets, limity free plánu):
 [`azure-app/DEPLOY-MONSTERASP.md`](azure-app/DEPLOY-MONSTERASP.md).
 
 ### PHP Proxy

@@ -3,6 +3,10 @@ name: Deploy to MonsterASP.NET
 # Zdarma varianta "auto pull + build + publish": build běží na GitHub Actions,
 # na hosting se posílá jen hotový publish výstup přes Web Deploy (inkrementálně).
 # Free plán MonsterASP nemá auto-deploy webhook (ten je Premium), tohle ho nahradí.
+#
+# Nasazuje se do dvou webů (stejný build, každý má vlastní Web Deploy účet):
+#   Wflix - site104887.siteasp.net  (wflix.runasp.net)
+#   WTZI  - site104437.siteasp.net  (wtzi.runasp.net)
 # Návod k nastavení: azure-app/DEPLOY-MONSTERASP.md
 
 on:
@@ -23,7 +27,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -38,25 +42,50 @@ jobs:
           --configuration Release
           --output publish
 
-      - name: Check Web Deploy secrets
-        id: secrets
+      # --- Wflix -------------------------------------------------------
+      - name: Check Wflix Web Deploy password
+        id: wflix
         shell: bash
         env:
-          WEBSITE_NAME: ${{ secrets.WEBSITE_NAME }}
+          PW: ${{ secrets.WFLIX_SERVER_PASSWORD }}
         run: |
-          if [ -z "$WEBSITE_NAME" ]; then
+          if [ -z "$PW" ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Web Deploy secrets nejsou nastavene - deploy preskocen (viz azure-app/DEPLOY-MONSTERASP.md)."
+            echo "::warning::WFLIX_SERVER_PASSWORD neni nastaven - deploy na Wflix preskocen (viz azure-app/DEPLOY-MONSTERASP.md)."
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy via Web Deploy
-        if: steps.secrets.outputs.configured == 'true'
+      - name: Deploy to Wflix (site104887)
+        if: steps.wflix.outputs.configured == 'true'
         uses: rasmusbuchholdt/simply-web-deploy@2.2.0
         with:
-          website-name: ${{ secrets.WEBSITE_NAME }}
-          server-computer-name: ${{ secrets.SERVER_COMPUTER_NAME }}
-          server-username: ${{ secrets.SERVER_USERNAME }}
-          server-password: ${{ secrets.SERVER_PASSWORD }}
+          website-name: ${{ secrets.WFLIX_WEBSITE_NAME || 'site104887' }}
+          server-computer-name: ${{ secrets.WFLIX_SERVER_COMPUTER_NAME || 'https://site104887.siteasp.net:8172' }}
+          server-username: ${{ secrets.WFLIX_SERVER_USERNAME || 'site104887' }}
+          server-password: ${{ secrets.WFLIX_SERVER_PASSWORD }}
+          source-path: '\publish\'
+
+      # --- WTZI --------------------------------------------------------
+      - name: Check WTZI Web Deploy password
+        id: wtzi
+        shell: bash
+        env:
+          PW: ${{ secrets.WTZI_SERVER_PASSWORD }}
+        run: |
+          if [ -z "$PW" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::WTZI_SERVER_PASSWORD neni nastaven - deploy na WTZI preskocen (viz azure-app/DEPLOY-MONSTERASP.md)."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy to WTZI (site104437)
+        if: steps.wtzi.outputs.configured == 'true'
+        uses: rasmusbuchholdt/simply-web-deploy@2.2.0
+        with:
+          website-name: ${{ secrets.WTZI_WEBSITE_NAME || 'site104437' }}
+          server-computer-name: ${{ secrets.WTZI_SERVER_COMPUTER_NAME || 'https://site104437.siteasp.net:8172' }}
+          server-username: ${{ secrets.WTZI_SERVER_USERNAME || 'site104437' }}
+          server-password: ${{ secrets.WTZI_SERVER_PASSWORD }}
           source-path: '\publish\'
