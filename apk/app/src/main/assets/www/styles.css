@@ -328,12 +328,14 @@ body.touch .ep-src{font-size:.78rem;max-width:100%}
 .p-row{display:flex;align-items:center;gap:.7rem;margin-top:.5rem;flex-wrap:wrap}
 .p-time{font-size:.84rem;color:var(--text-2);font-variant-numeric:tabular-nums}
 .p-spacer{flex:1}
-.p-bar{position:relative;height:1.6rem;display:flex;align-items:center;cursor:pointer}
+.p-bar{position:relative;height:3rem;display:flex;align-items:center;cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+/* neviditelná zvětšená zóna zásahu, aby se do lišty trefilo i prstem */
+.p-bar::before{content:"";position:absolute;left:-.4rem;right:-.4rem;top:-.6rem;bottom:-.6rem}
 .p-track{position:relative;width:100%;height:.28rem;border-radius:999px;background:rgba(255,255,255,.22);overflow:hidden;transition:height .1s ease}
 /* Vyplnění jde zleva doprava; nechat jen left:0 + width, aby se pruh neobracel. */
 .p-buf{position:absolute;top:0;bottom:0;left:0;width:0;background:rgba(255,255,255,.3)}
 .p-prog{position:absolute;top:0;bottom:0;left:0;width:0;background:var(--accent);max-width:100%}
-.p-knob{position:absolute;top:50%;left:0;width:.8rem;height:.8rem;border-radius:50%;background:#fff;transform:translate(-50%,-50%);pointer-events:none}
+.p-knob{position:absolute;top:50%;left:0;width:1rem;height:1rem;border-radius:50%;background:#fff;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .p-bar.dragging .p-track{height:.44rem}
 /* Pruh pozice má vlastní zvýraznění fokusu – rám kolem celého pruhu by byl druhá lišta. */
 .p-bar.f:focus{outline:none}

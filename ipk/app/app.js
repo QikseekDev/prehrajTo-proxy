@@ -1908,16 +1908,21 @@
     var d = video.duration;
     var t = video.currentTime;
     var pct = (isFinite(d) && d > 0) ? (t / d * 100) : 0;
-    $('pProg').style.width = pct + '%';
-    $('pKnob').style.left = pct + '%';
+    // Během tažení ukazuje lišta pozici tahu; nepřepisovat ji skutečným časem videa.
+    if (!_scrub || !_scrub.active) {
+      $('pProg').style.width = pct + '%';
+      $('pKnob').style.left = pct + '%';
+      $('pTime').textContent = fmtTime(t) + ' / ' + (isFinite(d) ? fmtTime(d) : '—');
+    }
     try {
       if (video.buffered && video.buffered.length) {
         var end = video.buffered.end(video.buffered.length - 1);
         $('pBuf').style.width = (isFinite(d) && d > 0 ? end / d * 100 : 0) + '%';
       }
     } catch (e) { }
-    $('pTime').textContent = fmtTime(t) + ' / ' + (isFinite(d) ? fmtTime(d) : '—');
   }
+
+  var _scrub = { active: false, f: 0, raf: 0 };
 
   function seekBy(sec) {
     if (player.kind === 'live') return;
@@ -1929,12 +1934,29 @@
     bumpIdle();
   }
 
-  function seekFraction(f) {
+  function seekFraction(f, opts) {
     if (player.kind === 'live') return;
     var d = video.duration;
     if (!isFinite(d) || d <= 0) return;
-    try { video.pause(); } catch(_){}
-    video.currentTime = Math.max(0, Math.min(d - 0.3, d * f));
+    var scrubbing = opts && opts.scrub;
+    if (!scrubbing) { try { video.pause(); } catch(_){} }
+    var t = Math.max(0, Math.min(d - 0.3, d * f));
+    // Při tažení jen naplánuj skok na poslední pozici (nezahlcovat seeking) a hned ukaž polohu.
+    if (scrubbing) {
+      _scrub.f = f;
+      $('pProg').style.width = (f * 100) + '%';
+      $('pKnob').style.left = (f * 100) + '%';
+      $('pTime').textContent = fmtTime(t) + ' / ' + fmtTime(d);
+      if (!_scrub.raf) {
+        _scrub.raf = (window.requestAnimationFrame || function(cb){ return setTimeout(cb, 16); })(function(){
+          _scrub.raf = 0;
+          if (!_scrub.active) return;
+          try { video.currentTime = Math.max(0, Math.min(d - 0.3, d * _scrub.f)); } catch(_){}
+        });
+      }
+    } else {
+      video.currentTime = t;
+    }
     updateProgress();
     bumpIdle();
   }
@@ -2066,40 +2088,53 @@
     toast(ok ? 'Zapni Přenést obrazovku (Smart View, Screen Cast) a vyber TV. U LG televize spusť aplikaci Sdílení obrazovky. Pak se vrať sem.' : 'Tohle zařízení přenos obrazovky nepodporuje. Otevři Wflix v prohlížeči na TV.', 6000);
   });
 
-  // Posouvání času: klik/tap i táhnutí (drag) po liště. pointer capture drží tah i mimo pruh.
+  // Posouvání času: klik/tap i táhnutí (drag). Pointer capture drží tah mimo pruh,
+  // touch-action:none (CSS) brání tomu, aby prohlížeč tah ukončil jako scroll.
   (function initSeekBarDrag() {
     var bar = $('pBar');
     if (!bar) return;
-    var dragging = false;
+    var dragging = false, pid = null;
     function fracFromEvent(e) {
       var r = bar.getBoundingClientRect();
       var w = r.width || 1;
       var x = (e && typeof e.clientX === 'number') ? e.clientX : r.left;
       return Math.max(0, Math.min(1, (x - r.left) / w));
     }
-    function seekAt(e) { if (player.kind !== 'live') seekFraction(fracFromEvent(e)); }
+    function seekAt(e, scrub) { if (player.kind !== 'live') seekFraction(fracFromEvent(e), { scrub: !!scrub }); }
     function stopDrag(e) {
       if (!dragging) return;
-      dragging = false;
+      dragging = false; pid = null;
+      _scrub.active = false;
+      // finální doskok na poslední pozici tahu
+      if (e && typeof e.clientX === 'number') seekAt(e, false);
       try { if (e && e.pointerId != null && bar.releasePointerCapture) bar.releasePointerCapture(e.pointerId); } catch (_) {}
       bar.classList.remove('dragging');
+      updateProgress();
     }
     bar.addEventListener('mousedown', function (e) { e.stopPropagation(); });
     bar.addEventListener('touchstart', function (e) { e.stopPropagation(); }, { passive: true });
     bar.addEventListener('pointerdown', function (e) {
       if (player.kind === 'live') return;
-      dragging = true;
+      dragging = true; pid = e.pointerId != null ? e.pointerId : 'm';
+      _scrub.active = true;
       bar.classList.add('dragging');
+      try { video.pause(); } catch(_){} // pauza jednou na začátku tahu, ne při každém pohybu
       try { if (e.pointerId != null && bar.setPointerCapture) bar.setPointerCapture(e.pointerId); } catch (_) {}
-      seekAt(e);
+      seekAt(e, true);
       e.preventDefault();
       e.stopPropagation();
     });
-    bar.addEventListener('pointermove', function (e) { if (!dragging) return; seekAt(e); e.preventDefault(); });
+    bar.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      if (pid !== 'm' && e.pointerId != null && e.pointerId !== pid) return;
+      seekAt(e, true);
+      if (e.preventDefault) e.preventDefault();
+    });
     bar.addEventListener('pointerup', stopDrag);
     bar.addEventListener('pointercancel', stopDrag);
-    bar.addEventListener('lostpointercapture', function () { dragging = false; bar.classList.remove('dragging'); });
-    bar.addEventListener('click', function (e) { if (!dragging) seekAt(e); });
+    bar.addEventListener('lostpointercapture', function () { dragging = false; pid = null; _scrub.active = false; bar.classList.remove('dragging'); });
+    // Fallback klik (bez Pointer Events / když tah nevznikl)
+    bar.addEventListener('click', function (e) { if (!dragging) seekAt(e, false); });
   })();
 
   /* --- titulky --- */
