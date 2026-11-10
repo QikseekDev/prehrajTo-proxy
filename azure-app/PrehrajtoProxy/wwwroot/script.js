@@ -1720,6 +1720,85 @@
         //  3) tlačítko Stáhnout jde vždy přes /api/stream (CDN odkaz napřímo se stáhnout nedá).
         const player = { page: '', cdn: '', title: '', poster: '', mode: 'direct', lastTime: 0, resumeAt: 0, fixes: 0, busy: false, stallTimer: null, subs: [], subSig: '', subLang: null, subOff: false, subIndex: -1, subEls: [] };
 
+        // ===== Pokračování ve sledování (localStorage, ~30 dní) =====
+        // Ukládá se každý rozkoukaný film i díl seriálu zvlášť (klíč = URL stránky). <=2 min
+        // před koncem se záznam bere jako dohraný a maže se.
+        const PROGRESS_KEY = 'wflix.progress';
+        const PROGRESS_TTL = 30 * 24 * 60 * 60 * 1000;
+        function pKey(u) { return String(u || '').trim(); }
+        function loadProgressMap() {
+            try {
+                const v = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+                if (!v || typeof v !== 'object') return {};
+                const now = Date.now(), out = {};
+                let changed = false;
+                Object.keys(v).forEach(k => {
+                    const it = v[k];
+                    if (it && typeof it === 'object' && isFinite(it.t) && (now - (it.ts || 0)) <= PROGRESS_TTL) out[k] = it;
+                    else changed = true;
+                });
+                if (changed) try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(out)); } catch (e) {}
+                return out;
+            } catch (e) { return {}; }
+        }
+        function saveProgressMap(m) {
+            try {
+                const now = Date.now(), clean = {};
+                Object.keys(m || {}).forEach(k => {
+                    const it = m[k];
+                    if (it && isFinite(it.t) && (now - (it.ts || 0)) <= PROGRESS_TTL) clean[k] = it;
+                });
+                const ks = Object.keys(clean);
+                if (ks.length > 80) {
+                    ks.sort((a, b) => (clean[b].ts || 0) - (clean[a].ts || 0));
+                    const trimmed = {};
+                    ks.slice(0, 60).forEach(k => { trimmed[k] = clean[k]; });
+                    localStorage.setItem(PROGRESS_KEY, JSON.stringify(trimmed));
+                    return;
+                }
+                localStorage.setItem(PROGRESS_KEY, JSON.stringify(clean));
+            } catch (e) {}
+        }
+        function progressGet(u) { const it = loadProgressMap()[pKey(u)]; return it && isFinite(it.t) ? it.t : 0; }
+        function progressClear(u) { try { const m = loadProgressMap(); delete m[pKey(u)]; saveProgressMap(m); } catch (e) {} }
+        function saveWebProgress(force) {
+            try {
+                if (!player.page) return;
+                const d = videoPlayer.duration, t = videoPlayer.currentTime;
+                if (!isFinite(d) || d <= 0 || !isFinite(t)) return;
+                if ((d - t) <= 120) { progressClear(player.page); return; }
+                if (t < 5) return;
+                if (!force && player._lastProgSave && Date.now() - player._lastProgSave < 5000) return;
+                const m = loadProgressMap();
+                m[pKey(player.page)] = { t: Math.floor(t), d: Math.floor(d), ts: Date.now(), title: player.title || '', thumb: player.poster || '', url: player.page };
+                saveProgressMap(m);
+                player._lastProgSave = Date.now();
+            } catch (e) {}
+        }
+        function applyWebResume() {
+            try {
+                if (player.resumeApplied) return;
+                const want = player.resumeAt || 0;
+                if (!want) { player.resumeApplied = true; return; }
+                const d = videoPlayer.duration;
+                if (!isFinite(d) || d <= 0) { scheduleWebResume(); return; }   // HLS: délka ještě není známá
+                const t = Math.max(0, Math.min(want, d - 6));
+                if (t > 3 && Math.abs(videoPlayer.currentTime - t) > 2) {
+                    try { videoPlayer.currentTime = t; } catch (e) { scheduleWebResume(); return; }
+                    showStatus('⏱️ Pokračuji od ' + fmtClock(t) + '…', 'success');
+                    setTimeout(hideStatus, 2500);
+                }
+                player.resumeApplied = true;
+                player.resumeAt = 0;
+                player._resumeTries = 0;
+            } catch (e) {}
+        }
+        function scheduleWebResume() {
+            if (player.resumeApplied || (player._resumeTries || 0) >= 25) return;
+            player._resumeTries = (player._resumeTries || 0) + 1;
+            setTimeout(() => { if (!player.resumeApplied) applyWebResume(); }, 400);
+        }
+
         // ===== Titulky (WebVTT z prehraj.to) =====
         // PHP proxy vytáhne stopy z inicializace přehrávače do "subtitles". Prohlížeč je
         // načítá přes /api/subtitles: CDN nemusí posílat CORS a token v odkazu vyprší.
@@ -1901,7 +1980,10 @@
             const useDirect = directPreferred();
             player.page = page; player.cdn = ''; player.title = title || 'video';
             player.mode = useDirect ? 'direct' : 'relay';
-            player.lastTime = 0; player.resumeAt = 0; player.fixes = 0; player.busy = false;
+            player.lastTime = 0; player.poster = poster || '';
+            player.resumeKey = page; player.resumeAt = progressGet(page);
+            player.resumeApplied = false; player._resumeTries = 0; player._lastProgSave = 0;
+            player.fixes = 0; player.busy = false;
             proxyBtn.hidden = true;
             clearTimeout(player.stallTimer);
             refreshDl();
@@ -2006,9 +2088,17 @@
         }
         proxyBtn.addEventListener('click', playThroughServer);
 
+        // Pozici zkoušet obnovit při každé změně stavu média (HLS hlásí délku později).
+        ['loadedmetadata', 'durationchange', 'canplay', 'playing'].forEach(ev =>
+            videoPlayer.addEventListener(ev, applyWebResume));
+        videoPlayer.addEventListener('pause', () => saveWebProgress(true));
+        window.addEventListener('pagehide', () => saveWebProgress(true));
+        window.addEventListener('beforeunload', () => saveWebProgress(true));
+
         videoPlayer.addEventListener('timeupdate', () => {
             clearTimeout(player.stallTimer);
             if (!videoPlayer.seeking && videoPlayer.currentTime > 0) player.lastTime = videoPlayer.currentTime;
+            if (!videoPlayer.seeking) saveWebProgress(false);
             // po minutě a půl bez problému počítadlo pokusů vynulujeme (odkaz vyprší klidně víckrát)
             if (player.fixes > 0 && videoPlayer.currentTime - player.resumeAt > 90) player.fixes = 0;
         });
@@ -2033,7 +2123,7 @@
                 return;
             }
             msSetState('paused');
-            if (player.page) showPlayerEnd();
+            if (player.page) { progressClear(player.page); showPlayerEnd(); }
         });
 
         // ===== Živé vysílání (IPTV) =====
@@ -2725,6 +2815,7 @@
         // Stop and cleanup video player
         function stopVideo() {
             if (videoPlayer) {
+                saveWebProgress(true);
                 player.page = ''; player.cdn = '';
                 proxyBtn.hidden = true;
                 if (favBtn) favBtn.hidden = true;

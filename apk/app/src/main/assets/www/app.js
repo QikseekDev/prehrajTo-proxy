@@ -2627,7 +2627,33 @@
     out.sort(function(a,b){ return (b._t||0)-(a._t||0); });
     return out.slice(0,20);
   }catch(_){ return []; } }
-  function applyResumeIfNeeded(){ try{ if(player.kind==='live'||!player.resumeAt||player._resumeApplied) return; var d=video.duration; if(!isFinite(d)||d<=0) return; var t=Math.max(0, Math.min(player.resumeAt, d-8)); if(t>5 && video.currentTime < Math.max(2, t-1)){ video.currentTime=t; try{ setPlayerState('Pokračuji od ' + formatTime(t) + '…'); }catch(_){} } player._resumeApplied=true; player.resumeAt=0; }catch(_){} }
+  function applyResumeIfNeeded(){ try{
+    if(player.kind==='live'||player._resumeApplied) return;
+    var want = player.resumeAt || 0;
+    if(!want){ player._resumeApplied = true; return; }
+    var d = video.duration;
+    if(!isFinite(d) || d <= 0){ scheduleResumeRetry(); return; }   // HLS: délka ještě není známá
+    var t = Math.max(0, Math.min(want, d - 6));
+    if(t > 3 && Math.abs(video.currentTime - t) > 2){
+      try { video.currentTime = t; } catch(_) { scheduleResumeRetry(); return; }
+      try { setPlayerState('Pokračuji od ' + formatTime(t) + '…'); } catch(_){}
+    }
+    player._resumeApplied = true; player.resumeAt = 0; player._resumeTries = 0;
+  }catch(_){} }
+  function scheduleResumeRetry(){
+    if(player._resumeApplied || (player._resumeTries||0) >= 25) return;
+    player._resumeTries = (player._resumeTries||0) + 1;
+    setTimeout(function(){ try { if(!video.paused || video.readyState>=2) applyResumeIfNeeded(); else applyResumeIfNeeded(); } catch(_){} }, 400);
+  }
+  // Délka u HLS dorazí až později -> zkoušet znovu na každé změně stavu média.
+  ['loadedmetadata','durationchange','canplay','playing','seeked'].forEach(function(ev){
+    video.addEventListener(ev, function(){ try{ applyResumeIfNeeded(); }catch(_){} });
+  });
+  try {
+    video.addEventListener('pause', function(){ saveVideoProgress(true); });
+    window.addEventListener('pagehide', function(){ saveVideoProgress(true); });
+    window.addEventListener('beforeunload', function(){ saveVideoProgress(true); });
+  } catch(_){}
 
   // Drag-to-scroll (mouse/pointer/touch drag) so content can be moved without only clicking.
   function addDragScroll(root, opts) {
