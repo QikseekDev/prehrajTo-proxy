@@ -302,6 +302,12 @@ cd publish && zip -r ../deploy.zip .
 # Upload deploy.zip přes Kudu API
 ```
 
+### MonsterASP.NET (free, GitHub Actions)
+Push do `main` sestaví backend na GitHub Actions a nasadí ho přes Web Deploy – zdarma, bez
+placeného auto-deploy webhooku. Workflow: `.github/workflows/deploy-monsterasp.yml`.
+Nastavení (WebDeploy v panelu, čtyři GitHub secrets, limity free plánu):
+[`azure-app/DEPLOY-MONSTERASP.md`](azure-app/DEPLOY-MONSTERASP.md).
+
 ### PHP Proxy
 Upload `index.php` na český hosting přes FTP.
 

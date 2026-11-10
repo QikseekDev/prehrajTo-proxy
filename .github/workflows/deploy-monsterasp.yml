@@ -1,0 +1,48 @@
+name: Deploy to MonsterASP.NET
+
+# Zdarma varianta "auto pull + build + publish": build běží na GitHub Actions,
+# na hosting se posílá jen hotový publish výstup přes Web Deploy (inkrementálně).
+# Free plán MonsterASP nemá auto-deploy webhook (ten je Premium), tohle ho nahradí.
+# Návod k nastavení: azure-app/DEPLOY-MONSTERASP.md
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'azure-app/PrehrajtoProxy/**'
+      - '.github/workflows/deploy-monsterasp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monsterasp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Publish
+        run: >
+          dotnet publish azure-app/PrehrajtoProxy/PrehrajtoProxy.csproj
+          --configuration Release
+          --output publish
+
+      - name: Deploy via Web Deploy
+        uses: rasmusbuchholdt/simply-web-deploy@2.2.0
+        with:
+          website-name: ${{ secrets.WEBSITE_NAME }}
+          server-computer-name: ${{ secrets.SERVER_COMPUTER_NAME }}
+          server-username: ${{ secrets.SERVER_USERNAME }}
+          server-password: ${{ secrets.SERVER_PASSWORD }}
+          source-path: '\publish\'
