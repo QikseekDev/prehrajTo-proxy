@@ -3246,7 +3246,7 @@
     try { ua = navigator.userAgent || ''; } catch (e) {}
     var isWebOS = /web0s|webos/i.test(ua) || !!(window.webOS || window.PalmSystem || window.webOSSystem);
     var lite = !!(reduce || isWebOS);
-    var duration = lite ? 900 : 3000;
+    var duration = lite ? 2400 : 3000;
     try { if (lite) intro.classList.add('intro-lite'); } catch (e) {}
     try { document.body.classList.add('intro-lock'); } catch (e) {}
     var done = false;
@@ -3259,7 +3259,7 @@
         try { intro.hidden = true; intro.style.display = 'none'; } catch (e) {}
       }, lite ? 120 : 380);
     }
-    setTimeout(finish, duration + (lite ? 120 : 250));
+    setTimeout(finish, duration + (lite ? 300 : 250));
   }
 
   function boot() {

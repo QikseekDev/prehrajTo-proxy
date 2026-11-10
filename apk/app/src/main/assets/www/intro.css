@@ -801,22 +801,26 @@
 }
 
 
-/* --- Lite intro (webOS/TV, reduced motion): lehká varianta bez lagů --- */
+/* --- Lite intro (webOS/TV): optimalizovaná, ale stále animovaná varianta --- */
 .intro.intro-lite { animation: none !important; background: #000 !important; }
 .intro.intro-lite .nf {
   width: min(300px, 62vw); height: min(300px, 62vw);
-  animation: intro-lite-in 0.6s ease-out forwards !important;
+  animation: intro-lite-fade 0.35s ease-out forwards !important;
   transform: none !important; translate: none !important;
-  will-change: opacity, transform; backface-visibility: hidden;
+  will-change: opacity;
 }
 .intro.intro-lite .nf::before { display: none !important; }
-.intro.intro-lite .nf[data-letter=W]::after { opacity: 1 !important; animation: none !important; }
+/* Jiskry jsou náročné - na TV je vynecháme, tahy W zůstávají animované */
 .intro.intro-lite .effect-lumieres,
 .intro.intro-lite .effect-lumieres * { display: none !important; animation: none !important; }
-.intro.intro-lite [class*=helper-] .effect-brush [class*=fur-] { display: none !important; animation: none !important; }
-.intro.intro-lite [class*=helper-] .effect-brush { animation: none !important; opacity: 1 !important; transform: none !important; }
-.intro.intro-lite [class*=helper-] .effect-brush::before { display: none !important; }
-@keyframes intro-lite-in {
-  0% { opacity: 0; transform: scale(0.92); }
-  100% { opacity: 1; transform: scale(1); }
+/* Zjednodušení kresby tahů bez odstranění animace kreslení */
+.intro.intro-lite [class*=helper-] .effect-brush [class*=fur-] { display: none !important; }
+.intro.intro-lite [class*=helper-] .effect-brush::before { box-shadow: none !important; }
+/* Výplň vrcholu W se zobrazí po dokreslení tahů */
+.intro.intro-lite .nf[data-letter=W]::after {
+  animation: showing-lumieres 0.2s ease-out 1.9s forwards !important;
+}
+@keyframes intro-lite-fade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
 }
