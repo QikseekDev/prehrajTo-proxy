@@ -1301,6 +1301,7 @@
     sym: ['!@#$%&', '*()_+-', '=[]{}:', ';\'"\\/|', '<>,.?~', '012345', '6789  ']
   };
   var skLayout = 'abc';
+  var skCaret = 0;
   var searchTimer = null;
   var searchToken = 0;
 
@@ -1334,10 +1335,23 @@
     v = String(v || '');
     var main = $('searchInput');
     var side = getSearchEl();
+    if (typeof caret === 'number') skCaret = Math.max(0, Math.min(caret, v.length));
+    else skCaret = Math.max(0, Math.min(skCaret, v.length));
     if (main) main.value = v;
     if (side && side.value !== v) side.value = v;
-    if (side && typeof caret === 'number') {
-      try { side.setSelectionRange(caret, caret); } catch (e) {}
+    if (side) {
+      try { side.setSelectionRange(skCaret, skCaret); } catch (e) {}
+      if (!side.dataset.caretBound) {
+        side.dataset.caretBound = '1';
+        var save = function () {
+          try { if (typeof side.selectionStart === 'number') skCaret = side.selectionStart; } catch (e) {}
+        };
+        side.addEventListener('click', save);
+        side.addEventListener('keyup', save);
+        side.addEventListener('select', save);
+        side.addEventListener('mouseup', save);
+        side.addEventListener('focus', save);
+      }
     }
     $('searchField').classList.toggle('empty', !v);
     $('searchHint').hidden = !!v;
@@ -1381,29 +1395,36 @@
 
   function searchKey(k) {
     var side = getSearchEl();
-    var v = side ? side.value : $('searchInput').value;
-    var start = 0, end = 0;
-    if (side && typeof side.selectionStart === 'number') { start = side.selectionStart; end = side.selectionEnd; }
-    else { start = end = v.length; }
+    var v = side ? side.value : ($('searchInput') ? $('searchInput').value : '');
+    v = String(v || '');
+    if (side && document.activeElement === side && typeof side.selectionStart === 'number') {
+      skCaret = side.selectionStart;
+    }
+    var start = Math.max(0, Math.min(skCaret, v.length));
+    var end = (side && document.activeElement === side && typeof side.selectionEnd === 'number')
+      ? Math.max(start, Math.min(side.selectionEnd, v.length))
+      : start;
     if (k === '__go') { clearTimeout(searchTimer); doSearch(v); return; }
     if (k === '__layout') {
       skLayout = skLayout === 'abc' ? 'cz' : (skLayout === 'cz' ? 'sym' : 'abc');
+      skCaret = start;
       renderSearchKeys();
       focusFirst();
       return;
     }
     if (k === '__back') {
-      if (start !== end) v = v.slice(0, start) + v.slice(end), end = start;
+      if (start !== end) { v = v.slice(0, start) + v.slice(end); end = start; }
       else if (start > 0) { v = v.slice(0, start - 1) + v.slice(end); start = end = start - 1; }
     } else if (k === '__clear') {
       v = ''; start = end = 0;
     } else {
+      if (k === '__space') k = ' ';
       if (v.length >= 60) return;
       v = v.slice(0, start) + k + v.slice(end);
       start = end = start + String(k).length;
     }
+    skCaret = start;
     syncSearchInputs(v, start);
-    if (side) { try { side.focus(); side.setSelectionRange(start, end); } catch (e) {} }
     scheduleSearch(v);
   }
 
