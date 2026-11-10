@@ -3230,7 +3230,27 @@
     } catch(_){}
   }
 
+  function runIntro() {
+    var intro = document.getElementById('intro');
+    if (!intro) return;
+    var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    var duration = reduce ? 800 : 3000;
+    try { document.body.classList.add('intro-lock'); } catch (e) {}
+    var done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      try { document.body.classList.remove('intro-lock'); } catch (e) {}
+      try { intro.classList.add('is-leaving'); } catch (e) {}
+      setTimeout(function () {
+        try { intro.hidden = true; intro.style.display = 'none'; } catch (e) {}
+      }, reduce ? 80 : 380);
+    }
+    setTimeout(finish, duration + 250);
+  }
+
   function boot() {
+    runIntro();
     document.body.classList.toggle('touch', isTouch);
     document.documentElement.classList.toggle('touch', isTouch);
     renderSearchKeys();
