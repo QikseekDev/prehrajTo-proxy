@@ -616,8 +616,18 @@
     }
     favorites = kept;
     saveFavorites();
-    renderRows();
+    refreshFavViews();
     return !had;
+  }
+
+  /* Po přidání/odebrání oblíbené se musí překreslit domů i otevřená knihovna.
+     Chyba v jednom z překreslení nesmí vzít celou akci (jinak tlačítko "nic nedělá"). */
+  function refreshFavViews() {
+    try { renderRows(); } catch (_) {}
+    try {
+      var view = $('view-library');
+      if (view && view.classList && view.classList.contains('active')) renderLibraryView();
+    } catch (_) {}
   }
 
   function libCardHtml(rec, kind, idx) {
@@ -630,7 +640,9 @@
     var note = isCont ? (rec.y || 'Rozkoukané') : (rec.type === 'series' ? 'Seriál' : 'Oblíbené');
     return '<button class="f card" type="button" data-idx="' + idx + '">'
       + '<span class="art">' + art + ph
-      + (pct ? '<span class="progress"><i style="width:' + pct + '%"></i></span>' : '') + '</span>'
+      + (pct ? '<span class="progress"><i style="width:' + pct + '%"></i></span>' : '')
+      + (!isCont && rec.key ? '<span class="fav-del" role="button" aria-label="Odebrat z oblíbených" data-favdel="' + esc(rec.key) + '">×</span>' : '')
+      + '</span>'
       + '<span class="cap"><span class="t">' + esc(rec.title || 'Video') + '</span>'
       + (note ? '<span class="y">' + esc(note) + '</span>' : '') + '</span>'
       + '</button>';
@@ -1422,7 +1434,7 @@
           var u = el.getAttribute('data-ep-url');
           if (!state.series) return;
           for (var r = 0; r < state.series.raw.length; r++) {
-            if (state.series.raw[r].movie.url === u) { playEpisode(state.series.raw[r].movie); return; }
+            if (state.series.raw[r].movie.url === u) { openEpisodeDetail(state.series.raw[r].movie); return; }
           }
         });
       })(btns[i]);
@@ -1587,6 +1599,20 @@
     playMovie({ url: movie.url, title: movie.title, thumbnail: (state.series && state.series.poster) || '' });
   }
 
+  /* Díl se chová jako film: nejdřív detail s Přehrát / Do oblíbených / Stáhnout / Zavřít. */
+  function openEpisodeDetail(movie) {
+    if (!movie || !movie.url) return;
+    var poster = (state.series && state.series.poster) || '';
+    openMovieDetail({
+      url: movie.url,
+      title: movie.title || 'Díl',
+      thumbnail: movie.thumbnail || poster,
+      year: movie.year || ''
+    }, {
+      play: function () { playEpisode(movie); }
+    });
+  }
+
   // Další stránky: přidává jen díly stejného seriálu, končí když nic nového
   // nepřijde dvakrát po sobě, když dojdou výsledky nebo po 10 stranách.
   function loadSeriesPages(token, page, emptyStreak) {
@@ -1640,7 +1666,7 @@
     focusEl($('detailPlay'));
   }
 
-  function openMovieDetail(m) {
+  function openMovieDetail(m, opts) {
     lastFocus = document.activeElement;
     state.detail = { kind: 'movie', movie: m };
     var img = m.thumbnail || thumbUrl(m.title);
@@ -1656,7 +1682,9 @@
       hide($('detailDl'));
     }
     updateDetailFav();
-    bindDetailActions(function () { playMovie(m); });
+    bindDetailActions((opts && opts.play) || function () { playMovie(m); });
+    // Otevřeno nad seznamem dílů seriálu? Pak musí být detail opravdu navrchu.
+    $('detail').classList.toggle('on-top', !!($('series') && !$('series').hidden));
     show($('detail'));
     focusEl($('detailPlay'));
   }
@@ -2702,14 +2730,38 @@
 
   document.addEventListener('keydown', onKeyDown, true);
 
+  /* Křížek na kartě oblíbeného titulu – odebrání jedním ťuknutím. Delegováno na #rows,
+     aby to fungovalo po každém překreslení řad; capture fáze, aby se neotevřel i titul. */
+  (function () {
+    var rowsEl = $('rows');
+    if (!rowsEl) return;
+    rowsEl.addEventListener('click', function (e) {
+      var del = e.target && e.target.closest ? e.target.closest('[data-favdel]') : null;
+      if (!del) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var key = del.getAttribute('data-favdel');
+      var had = false;
+      for (var i = 0; i < favorites.length; i++) if (favorites[i].key === key) had = true;
+      if (had) {
+        favorites = favorites.filter(function (f) { return f.key !== key; });
+        saveFavorites();
+      }
+      refreshFavViews();
+      toast(had ? 'Odebráno z oblíbených' : 'Už tam není');
+    }, true);
+  })();
+
   /* Záložka v detailu – přidá nebo odebere titul z oblíbených. */
   var detailFavBtn = $('detailFav');
   if (detailFavBtn) {
     detailFavBtn.addEventListener('click', function () {
       var item = detailItem();
       if (!item) return;
-      var added = toggleFav(item);
-      updateDetailFav();
+      var added = false;
+      try { added = toggleFav(item); }
+      catch (e) { toast('Oblíbené se nepodařilo uložit: ' + e.message, 4000); return; }
+      try { updateDetailFav(); } catch (_) {}
       toast(added ? 'Přidáno do oblíbených' : 'Odebráno z oblíbených');
       focusEl(detailFavBtn);
     });
@@ -2720,7 +2772,9 @@
     seriesFavBtn.addEventListener('click', function () {
       var item = seriesItem();
       if (!item) return;
-      var added = toggleFav(item);
+      var added = false;
+      try { added = toggleFav(item); }
+      catch (e) { toast('Oblíbené se nepodařilo uložit: ' + e.message, 4000); return; }
       updateSeriesFav();
       toast(added ? 'Přidáno do oblíbených' : 'Odebráno z oblíbených');
       focusEl(seriesFavBtn);

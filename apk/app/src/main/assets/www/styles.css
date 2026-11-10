@@ -241,6 +241,7 @@ body.touch .f:focus:not(.search-input):not(.p-bar){outline:none}
    ========================================================================== */
 .overlay{position:fixed;top:0;right:0;bottom:0;left:0;width:100%;height:100%;z-index:60;display:none;align-items:center;justify-content:center}.overlay:not([hidden]){display:flex}
 .detail{background:var(--bg);align-items:flex-end;overflow:hidden}
+.detail.on-top{z-index:70}
 .detail-bg{
   position:absolute;top:0;right:0;bottom:0;left:0;background-size:cover;background-position:center 25%;
   opacity:.35;filter:blur(40px) brightness(.5) saturate(.7);transform:scale(1.2);
@@ -373,6 +374,7 @@ body.touch .ep-src{font-size:.78rem;max-width:100%}
    ========================================================================== */
 .toast{
   position:fixed;left:50%;bottom:calc(2.4rem + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:90;
+  pointer-events:none;
   background:var(--surface-3);border:1px solid var(--line-strong);border-radius:var(--radius);
   padding:.7rem 1.1rem;font-size:.88rem;max-width:80vw;text-align:center;
 }
@@ -528,3 +530,11 @@ body:not(.touch) .search-main .state{padding-left:0}
 .p-next-actions{display:flex;gap:.45rem;flex-shrink:0}
 .p-next .btn{min-height:2.2rem;padding:.4rem .9rem}
 .player.idle .p-next{opacity:1;pointer-events:auto}
+
+/* Křížek na kartě oblíbeného titulu (knihovna i řada "Moje oblíbené"). */
+.card .fav-del{
+  position:absolute;top:.35rem;right:.35rem;z-index:4;
+  width:1.8rem;height:1.8rem;display:flex;align-items:center;justify-content:center;
+  border-radius:50%;background:rgba(0,0,0,.66);border:1px solid rgba(255,255,255,.45);
+  color:#fff;font-size:1.05rem;line-height:1;font-weight:600;
+}
