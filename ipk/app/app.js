@@ -2627,11 +2627,6 @@
     out.sort(function(a,b){ return (b._t||0)-(a._t||0); });
     return out.slice(0,20);
   }catch(_){ return []; } }
-  function fmtClockText(sec){
-    var s = Math.max(0, Math.floor(sec || 0));
-    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
-    return (h ? h + ':' : '') + (h && m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r;
-  }
   function applyResumeIfNeeded(){ try{
     if(player.kind==='live'||player._resumeApplied) return;
     var want = player.resumeAt || 0;
@@ -2641,7 +2636,6 @@
     var t = Math.max(0, Math.min(want, d - 6));
     if(t > 3 && Math.abs(video.currentTime - t) > 2){
       try { video.currentTime = t; } catch(_) { scheduleResumeRetry(); return; }
-      try { setPlayerState('Pokračuji od ' + fmtClockText(t) + '…'); } catch(_){}
     }
     player._resumeApplied = true; player.resumeAt = 0; player._resumeTries = 0;
   }catch(_){} }

@@ -1785,8 +1785,6 @@
                 const t = Math.max(0, Math.min(want, d - 6));
                 if (t > 3 && Math.abs(videoPlayer.currentTime - t) > 2) {
                     try { videoPlayer.currentTime = t; } catch (e) { scheduleWebResume(); return; }
-                    showStatus('⏱️ Pokračuji od ' + fmtClock(t) + '…', 'success');
-                    setTimeout(hideStatus, 2500);
                 }
                 player.resumeApplied = true;
                 player.resumeAt = 0;
