@@ -620,13 +620,15 @@
     return !had;
   }
 
-  /* Po přidání/odebrání oblíbené se musí překreslit domů i otevřená knihovna.
-     Chyba v jednom z překreslení nesmí vzít celou akci (jinak tlačítko "nic nedělá"). */
-  function refreshFavViews() {
-    try { renderRows(); } catch (_) {}
+  /* Po přidání/odebrání oblíbené se překreslí jen pohled, který je zrovna otevřený
+     (knihovna vs. domů). Chyba v překreslení nesmí vzít celou akci. */
+  function refreshFavViews() { renderActiveView(); }
+
+  /* Překreslí pohled, který je zrovna otevřený – domů nebo knihovnu. */
+  function renderActiveView() {
     try {
-      var view = $('view-library');
-      if (view && view.classList && view.classList.contains('active')) renderLibraryView();
+      if (state.view === 'library') renderLibraryView();
+      else renderRows();
     } catch (_) {}
   }
 
@@ -1120,7 +1122,6 @@
   function renderRows() {
     var cat = state.catalog;
     var rows = [];
-    if (favorites.length) rows.push({ name: 'Moje oblíbené', items: favorites, lib: 'fav' });
     rows.push({ name: 'Doporučujeme', items: cat.slice(0, 16) });
     for (var i = 0; i < GENRE_ORDER.length; i++) {
       var g = GENRE_ORDER[i];
@@ -2182,7 +2183,7 @@
     if (video.paused) play(); else video.pause();
     bumpIdle();
   });
-  $('pBack').addEventListener('click', function () { closePlayer(); renderRows(); focusAfterOverlay(); });
+  $('pBack').addEventListener('click', function () { closePlayer(); renderActiveView(); focusAfterOverlay(); });
   
     var pNextPlay = $('pNextPlay'), pNextCancel = $('pNextCancel'), pNextBack = $('pNextBack');
     function stopEv(e){ if(e){ e.preventDefault&&e.preventDefault(); e.stopPropagation&&e.stopPropagation(); } }
@@ -2599,7 +2600,7 @@
     var health = $('health');
     if (health && !health.hidden) { closeHealthOverlay(); return true; }
     if (!$('kbd').hidden) { hide($('kbd')); return true; }
-    if (!$('player').hidden) { closePlayer(); renderRows(); focusAfterOverlay(); return true; }
+    if (!$('player').hidden) { closePlayer(); renderActiveView(); focusAfterOverlay(); return true; }
     if (!$('detail').hidden) { closeDetail(); focusAfterOverlay(); return true; }
     if (!$('series').hidden) { closeSeries(); focusAfterOverlay(); return true; }
     return false;
@@ -2827,9 +2828,11 @@
     }
     html += '</section>';
 
-    $('rows').innerHTML = html;
+    var box = $('libRows');
+    if (!box) return;
+    box.innerHTML = html;
 
-    var cards = $('rows').querySelectorAll('.card');
+    var cards = box.querySelectorAll('.card');
     for (var c = 0; c < cards.length; c++) {
       (function (el) {
         el.addEventListener('click', function () {
@@ -2850,19 +2853,15 @@
   }
 
   function openCategory(name, btn) {
-    setView('home');
     if (name === 'library' || name === 'Knihovna') {
+      setView('library');
       renderLibraryView();
       $('main').scrollTop = 0;
-      var navs = document.querySelectorAll('.navbtn');
-      for (var nj = 0; nj < navs.length; nj++) navs[nj].classList.remove('active');
-      if (btn) btn.classList.add('active');
-      var first = $('rows').querySelector('.f');
-      if (first) focusEl(first);
+      var libFirst = $('libRows') ? $('libRows').querySelector('.f') : null;
+      if (libFirst) focusEl(libFirst);
       return;
     }
-    // návrat z "Pokračovat" pohledu na normální domovské řady
-    if (!$('rows').querySelector('.row-title') || $('rows').querySelector('[data-row="fav"]') || $('rows').querySelector('[data-row="cont"]')) renderRows();
+    setView('home');
     var rows = $('rows').querySelectorAll('.row');
     var target = null;
     for (var i = 0; i < rows.length; i++) {
