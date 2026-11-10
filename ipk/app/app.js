@@ -2731,26 +2731,28 @@
 
   document.addEventListener('keydown', onKeyDown, true);
 
-  /* Křížek na kartě oblíbeného titulu – odebrání jedním ťuknutím. Delegováno na #rows,
-     aby to fungovalo po každém překreslení řad; capture fáze, aby se neotevřel i titul. */
+  /* Křížek na kartě oblíbeného titulu – odebrání jedním ťuknutím. Delegováno na oba
+     seznamy (#rows na domů, #libRows v knihovně), capture fáze, aby se neotevřel i titul. */
+  function onFavDelClick(e) {
+    var del = e.target && e.target.closest ? e.target.closest('[data-favdel]') : null;
+    if (!del) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var key = del.getAttribute('data-favdel');
+    var had = false;
+    for (var i = 0; i < favorites.length; i++) if (favorites[i].key === key) had = true;
+    if (had) {
+      favorites = favorites.filter(function (f) { return f.key !== key; });
+      saveFavorites();
+    }
+    refreshFavViews();
+    toast(had ? 'Odebráno z oblíbených' : 'Už tam není');
+  }
   (function () {
-    var rowsEl = $('rows');
-    if (!rowsEl) return;
-    rowsEl.addEventListener('click', function (e) {
-      var del = e.target && e.target.closest ? e.target.closest('[data-favdel]') : null;
-      if (!del) return;
-      e.preventDefault();
-      e.stopPropagation();
-      var key = del.getAttribute('data-favdel');
-      var had = false;
-      for (var i = 0; i < favorites.length; i++) if (favorites[i].key === key) had = true;
-      if (had) {
-        favorites = favorites.filter(function (f) { return f.key !== key; });
-        saveFavorites();
-      }
-      refreshFavViews();
-      toast(had ? 'Odebráno z oblíbených' : 'Už tam není');
-    }, true);
+    var lists = [$('rows'), $('libRows')];
+    for (var i = 0; i < lists.length; i++) {
+      if (lists[i]) lists[i].addEventListener('click', onFavDelClick, true);
+    }
   })();
 
   /* Záložka v detailu – přidá nebo odebere titul z oblíbených. */
