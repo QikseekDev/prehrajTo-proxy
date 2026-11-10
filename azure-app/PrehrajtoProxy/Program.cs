@@ -1545,7 +1545,7 @@ app.MapGet("/api/health", async (IHttpClientFactory f) =>
         }
     }
 
-    var mapped = new[] { "/api/search", "/api/thumb", "/api/catalog", "/api/live", "/api/live/countries", "/api/live/hls", "/api/subtitles", "/api/proxy", "/api/stream", "/api/health", "/api/ping" };
+    var mapped = new[] { "/api/search", "/api/thumb", "/api/catalog", "/api/live", "/api/live/countries", "/api/live/hls", "/api/subtitles", "/api/proxy", "/api/stream", "/api/health", "/api/ping", "/api/version" };
     var mappedResults = mapped.Select(m => new { endpoint = m, ok = true, note = "mapped" }).ToArray<object>();
 
     var probes = new List<Task<object>>();
@@ -1578,6 +1578,29 @@ app.MapGet("/api/health", async (IHttpClientFactory f) =>
 // Lehký heartbeat pro indikátor přítomnosti (nastavení / UI).
 app.MapGet("/api/ping", () => Results.Json(new { ok = true, onlineUsers = OnlineCount() }))
    .RequireRateLimiting("api");
+
+// Verze běžícího buildu - důkaz, že se opravdu nasadil nový kód. Commit doplní CI
+// přes -p:SourceRevisionId=<sha> (objeví se za "+" v AssemblyInformationalVersion).
+var buildVersion = typeof(Program).Assembly
+    .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+    .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+    .FirstOrDefault()?.InformationalVersion
+    ?? typeof(Program).Assembly.GetName().Version?.ToString()
+    ?? "unknown";
+var startedAt = DateTimeOffset.UtcNow;
+app.MapGet("/api/version", (HttpContext ctx) =>
+{
+    var plus = buildVersion.IndexOf('+');
+    ctx.Response.Headers.CacheControl = "no-store, max-age=0";
+    return Results.Json(new
+    {
+        ok = true,
+        build = buildVersion,
+        commit = plus >= 0 ? buildVersion[(plus + 1)..] : null,
+        started = startedAt,
+        uptimeSeconds = (int)(DateTimeOffset.UtcNow - startedAt).TotalSeconds
+    });
+});
 
 app.Run();
 

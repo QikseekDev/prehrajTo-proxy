@@ -41,6 +41,7 @@ jobs:
           dotnet publish azure-app/PrehrajtoProxy/PrehrajtoProxy.csproj
           --configuration Release
           --output publish
+          -p:SourceRevisionId=${{ github.sha }}
 
       # --- Wflix -------------------------------------------------------
       - name: Check Wflix Web Deploy password
