@@ -568,3 +568,11 @@ body.intro-lock { overflow: hidden; }
 .intro[hidden] { display: none; }
 .intro.is-leaving { opacity: 0; visibility: hidden; pointer-events: none; }
 
+
+
+/* --- webOS/TV výkonové úpravy (bez odstranění funkcí) --- */
+.webos .hero-art{filter:blur(10px) saturate(1.05) brightness(.55);opacity:.22}
+.webos .hero-poster{box-shadow:0 8px 20px rgba(0,0,0,.35)}
+.webos .series-bg,.webos .player-bg{filter:blur(16px) brightness(.5) saturate(.7) !important;opacity:.18 !important}
+.webos .card,.webos .row-card,.webos .tile{transition:none}
+.webos .toast{backdrop-filter:none}

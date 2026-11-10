@@ -3221,11 +3221,19 @@
     for (var i=0;i<els.length;i++) addDragScroll(els[i], {axis: els[i].classList.contains('row-scroll') ? 'x' : 'y'});
   }
   function initDragScroll() {
+    var ua = '';
+    try { ua = navigator.userAgent || ''; } catch (e) {}
+    var isWebOS = /web0s|webos/i.test(ua) || !!(window.webOS || window.PalmSystem || window.webOSSystem);
     var main = $('main') || document.querySelector('.main');
     if (main) addDragScroll(main, {axis:'y'});
     attachDynamicDragScroll();
     try {
-      var mo = new MutationObserver(function(){ attachDynamicDragScroll(); });
+      if (isWebOS) return; // méně práce na TV
+      var t = null;
+      var mo = new MutationObserver(function(){
+        if (t) return;
+        t = setTimeout(function(){ t = null; attachDynamicDragScroll(); }, 150);
+      });
       mo.observe(document.body, {childList:true, subtree:true});
     } catch(_){}
   }
@@ -3255,6 +3263,10 @@
   }
 
   function boot() {
+    var uaBoot = '';
+    try { uaBoot = navigator.userAgent || ''; } catch (e) {}
+    var isWebOSBoot = /web0s|webos/i.test(uaBoot) || !!(window.webOS || window.PalmSystem || window.webOSSystem);
+    try { if (isWebOSBoot) { document.documentElement.classList.add('webos'); document.body.classList.add('webos'); } } catch (e) {}
     runIntro();
     document.body.classList.toggle('touch', isTouch);
     document.documentElement.classList.toggle('touch', isTouch);
