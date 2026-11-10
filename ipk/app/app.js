@@ -10,7 +10,9 @@
   var VERSION = '1.1.0';
   var LS_SERVER = 'wflix.server';
   // Pevný server – adresa se v aplikaci nezadává ani nemění.
-  var FIXED_SERVER = 'http://wflix.runasp.net';
+  var PRIMARY_SERVER = 'https://wflix.runasp.net';
+  var FALLBACK_SERVER = 'https://wtzi.runasp.net';
+  var FIXED_SERVER = PRIMARY_SERVER;
   var LS_SETTINGS = 'wflix.settings';
 
   var Native = window.WflixNative || null;
@@ -96,7 +98,19 @@
     if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
     return v.replace(/\/+$/, '');
   }
-  function url(path) { return settings.server ? settings.server + path : path; }
+  function getServers() {
+    var list = [PRIMARY_SERVER, FALLBACK_SERVER];
+    var active = settings.server;
+    if (active === FALLBACK_SERVER) return [FALLBACK_SERVER, PRIMARY_SERVER];
+    return list;
+  }
+  function setActiveServer(server) {
+    settings.server = server || PRIMARY_SERVER;
+  }
+  function url(path, server) {
+    var base = server || settings.server || PRIMARY_SERVER;
+    return base ? base + path : path;
+  }
 
   /* ------------------------------------------------------------------ *
    *  Knihovna diváka – oblíbené (jen localStorage)
@@ -721,9 +735,9 @@
   /* ------------------------------------------------------------------ *
    *  API – s nativním mostem (Android) obejde CORS, jinak fetch
    * ------------------------------------------------------------------ */
-  function nativeGet(path) {
+  function nativeGet(path, server) {
     if (!Native || typeof Native.httpGet !== 'function') return null;
-    var raw = Native.httpGet(url(path));
+    var raw = Native.httpGet(url(path, server));
     if (raw === null || raw === undefined) throw new Error('Nativní požadavek selhal');
     raw = String(raw);
     if (raw.indexOf('__ERROR__:') === 0) throw new Error(raw.slice(10));
@@ -742,47 +756,33 @@
     else p.reject(new Error(String(payload)));
   };
 
-  function nativeGetAsync(path, timeoutMs) {
+  function nativeGetAsync(path, timeoutMs, server) {
     return new Promise(function (resolve, reject) {
       var id = 'n' + (++nativeSeq);
       var timer = setTimeout(function () {
         delete nativePending[id];
-        var e = new Error('Server neodpovídá (timeout)');
-        e.noFallback = true;
-        reject(e);
+        reject(new Error('Server neodpovídá (timeout)'));
       }, timeoutMs + 5000);
       nativePending[id] = { resolve: resolve, reject: reject, timer: timer };
-      try { Native.httpGetAsync(url(path), id); }
+      try { Native.httpGetAsync(url(path, server), id); }
       catch (e) { clearTimeout(timer); delete nativePending[id]; reject(e); }
     });
   }
 
-  function apiJson(path, timeoutMs) {
-    var to = timeoutMs || 25000;
-    // Asynchronní most: stránka se při čekání na server neblokuje (u synchronního httpGet by se zasekla).
-    if (Native && typeof Native.httpGetAsync === 'function') {
-      return nativeGetAsync(path, to).then(function (body) {
-        try { return JSON.parse(body); }
-        catch (e) { throw new Error('Server nevrátil JSON'); }
-      }, function (err) {
-        if (err && err.noFallback) throw err;
-        return apiJsonFetch(path, to);      // most je jen zrychlení; když selže, zkusíme normální fetch
-      });
-    }
-    try {
-      var body = nativeGet(path);
-      if (body !== null) {
-        try { return Promise.resolve(JSON.parse(body)); }
-        catch (e) { return Promise.reject(new Error('Server nevrátil JSON')); }
-      }
-    } catch (e) {
-      // most je jen zrychlení; když selže, zkusíme normální fetch
-    }
-
-    return apiJsonFetch(path, to);
+  function shouldTryFallback(err) {
+    if (!err) return false;
+    if (err && err.noFallback) return false;
+    if (err && err.name === 'AbortError') return true;
+    var msg = String(err.message || err);
+    return msg.indexOf('HTTP ') === 0 ||
+      msg.indexOf('Server neodpovídá') !== -1 ||
+      msg.indexOf('Nativní požadavek selhal') !== -1 ||
+      msg.indexOf('Failed to fetch') !== -1 ||
+      msg.indexOf('NetworkError') !== -1 ||
+      err.name === 'TypeError';
   }
 
-  function apiJsonFetch(path, to) {
+  function apiJsonFetchOne(path, to, server) {
     var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
     var timer = null;
     var opts = { headers: { 'Accept': 'application/json' }, cache: 'no-store' };
@@ -790,24 +790,77 @@
       opts.signal = ctrl.signal;
       timer = setTimeout(function () { ctrl.abort(); }, to);
     }
-    var p = fetch(url(path), opts).then(function (r) {
+    return fetch(url(path, server), opts).then(function (r) {
       if (timer) clearTimeout(timer);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).catch(function (e) {
       if (timer) clearTimeout(timer);
       if (e && e.name === 'AbortError') throw new Error('Server neodpovídá (timeout)');
-      if (e && e.name === 'TypeError') throw new Error('Server neodpovídá – zkontroluj adresu a CORS na backendu');
+      if (e && e.name === 'TypeError') throw new Error('Server neodpovídá – zkontroluj adresu a připojení');
       throw e;
     });
-    return p;
+  }
+
+  function apiJsonWithServer(path, timeoutMs, server) {
+    var to = timeoutMs || 25000;
+    if (Native && typeof Native.httpGetAsync === 'function') {
+      return nativeGetAsync(path, to, server).then(function (body) {
+        try { return JSON.parse(body); }
+        catch (e) { throw new Error('Server nevrátil JSON'); }
+      }, function (err) {
+        if (err && err.noFallback) throw err;
+        return apiJsonFetchOne(path, to, server);
+      });
+    }
+    try {
+      var body = nativeGet(path, server);
+      if (body !== null) {
+        try { return Promise.resolve(JSON.parse(body)); }
+        catch (e) { return Promise.reject(new Error('Server nevrátil JSON')); }
+      }
+    } catch (e) {
+      // most je jen zrychlení; když selže, zkusíme normální fetch na stejném serveru
+    }
+    return apiJsonFetchOne(path, to, server);
+  }
+
+  function apiJson(path, timeoutMs) {
+    var servers = getServers();
+    function tryAt(i, lastErr) {
+      if (i >= servers.length) return Promise.reject(lastErr || new Error('Server neodpovídá'));
+      return apiJsonWithServer(path, timeoutMs, servers[i]).then(function (data) {
+        if (servers[i] !== settings.server) setActiveServer(servers[i]);
+        return data;
+      }, function (err) {
+        if (i + 1 < servers.length && shouldTryFallback(err)) return tryAt(i + 1, err);
+        throw err;
+      });
+    }
+    return tryAt(0, null);
+  }
+
+  function apiJsonFetch(path, to) {
+    return apiJsonFetchOne(path, to || 25000, settings.server);
   }
 
   function apiText(path) {
-    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
-    var opts = {};
-    if (ctrl) opts.signal = ctrl.signal;
-    return fetch(url(path), opts).then(function (r) { return r.text(); });
+    var servers = getServers();
+    function tryAt(i, lastErr) {
+      if (i >= servers.length) return Promise.reject(lastErr || new Error('Server neodpovídá'));
+      var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+      var opts = { cache: 'no-store' };
+      if (ctrl) opts.signal = ctrl.signal;
+      return fetch(url(path, servers[i]), opts).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (servers[i] !== settings.server) setActiveServer(servers[i]);
+        return r.text();
+      }).catch(function (err) {
+        if (i + 1 < servers.length && shouldTryFallback(err)) return tryAt(i + 1, err);
+        throw err;
+      });
+    }
+    return tryAt(0, null);
   }
 
   function proxyQS() { return ''; }             // proxy servery řeší backend
