@@ -960,3 +960,9 @@
         @media (max-width: 640px) { .health-row { grid-template-columns: 1fr auto; } .health-row .meta, .health-row .err { grid-column: 1 / -1; white-space: normal; } }
         .status-action { margin-top: 8px; }
         .status-action .state-btn, .status-action .dl-btn { margin-right: 8px; }
+
+
+/* Pokračovat ve sledování – karta/chip */
+.art .cprog { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.25); z-index: 4; }
+.art .cprog i { display: block; height: 100%; background: #e50914; }
+.cat-row .empty-note { padding: 18px 4px; color: #a6a6a6; font-size: 14px; }

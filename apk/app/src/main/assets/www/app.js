@@ -1092,21 +1092,7 @@
   function renderRows() {
     var cat = state.catalog;
     var rows = [];
-    var cont = (typeof getContinueItems === 'function') ? getContinueItems() : [];
-    // Rozkoukané už ne jako samostatný řádek – patří mezi oblíbené/karty jako "Moje oblíbené".
-    var mine = [];
-    var seen = {};
-    function pushMine(it, isCont) {
-      if (!it) return;
-      var k = it.key || (it.url ? ('u:' + it.url) : ('t:' + normText(it.title || '')));
-      if (seen[k]) return;
-      seen[k] = true;
-      if (isCont) it._continue = true;
-      mine.push(it);
-    }
-    for (var ci = 0; ci < cont.length; ci++) pushMine(cont[ci], true);
-    for (var fi = 0; fi < favorites.length; fi++) pushMine(favorites[fi], false);
-    if (mine.length) rows.push({ name: 'Moje oblíbené', items: mine, lib: 'fav' });
+    if (favorites.length) rows.push({ name: 'Moje oblíbené', items: favorites, lib: 'fav' });
     rows.push({ name: 'Doporučujeme', items: cat.slice(0, 16) });
     for (var i = 0; i < GENRE_ORDER.length; i++) {
       var g = GENRE_ORDER[i];
@@ -2208,9 +2194,17 @@
   /* --- filmy --- */
   function playMovie(m) {
     closeDetail();
+    // Při přechodu na jiný díl/film smaž rozkoukanost předchozího (ať po přechodu na další díl nezůstává).
+    try {
+      var prevKey = player && (player.resumeKey || player.page || '');
+      var nextKey = (m && m.url) || '';
+      if (prevKey && nextKey && String(prevKey) !== String(nextKey)) clearVideoProgress(prevKey);
+    } catch(_) {}
     player.page = m.url;
     player.cdn = '';
-    player.poster = m.thumbnail || '';
+    var savedThumb = '';
+    try { var _pm = loadProgressMap()[progressKey(m.url || '')]; if (_pm && _pm.thumb) savedThumb = _pm.thumb; } catch(_){}
+    player.poster = m.thumbnail || savedThumb || '';
     player.title = m.title || 'Video';
     player.resumeKey = m.url || '';
     player.subIndex = -1; player.subs = [];
@@ -2663,9 +2657,50 @@
   /* ------------------------------------------------------------------ *
    *  Start
    * ------------------------------------------------------------------ */
-  /* Levý panel: kategorie skočí na řadu na úvodní stránce. */
+  /* Levý panel: kategorie skočí na řadu na úvodní stránce (nebo otevře pokračování). */
+  function renderContinueView() {
+    var cont = (typeof getContinueItems === 'function') ? getContinueItems() : [];
+    var html = '';
+    if (cont && cont.length) {
+      html += '<section class="row"><div class="row-head"><h2 class="row-title">Pokračovat ve sledování</h2><span class="row-sub">' + cont.length + '</span></div>'
+        + '<div class="row-scroll" data-row="cont">';
+      for (var k = 0; k < cont.length; k++) {
+        cont[k]._continue = true;
+        html += libCardHtml(cont[k], 'continue', 'cont:' + k);
+      }
+      html += '</div></section>';
+    } else {
+      html += '<section class="row"><div class="row-head"><h2 class="row-title">Pokračovat ve sledování</h2></div>'
+        + '<div class="state show">Zatím nemáš nic rozkoukaného. Pusť si film nebo díl a objeví se tady.</div></section>';
+    }
+    $('rows').innerHTML = html;
+    var cards = $('rows').querySelectorAll('.card[data-idx^="cont:"]');
+    for (var c = 0; c < cards.length; c++) {
+      (function (el) {
+        el.addEventListener('click', function () {
+          var idx = parseInt(el.getAttribute('data-idx').split(':')[1], 10);
+          var it = cont[idx];
+          if (!it) return;
+          playMovie({ url: it.url, title: it.title, thumbnail: it.img || it.thumb || it.poster || '' });
+        });
+      })(cards[c]);
+    }
+  }
+
   function openCategory(name, btn) {
     setView('home');
+    if (name === 'continue' || name === 'Pokračovat') {
+      renderContinueView();
+      $('main').scrollTop = 0;
+      var navs = document.querySelectorAll('.navbtn');
+      for (var nj = 0; nj < navs.length; nj++) navs[nj].classList.remove('active');
+      if (btn) btn.classList.add('active');
+      var first = $('rows').querySelector('.f');
+      if (first) focusEl(first);
+      return;
+    }
+    // návrat z "Pokračovat" pohledu na normální domovské řady
+    if (!$('rows').querySelector('.row-title') || $('rows').querySelector('[data-row="cont"]')) renderRows();
     var rows = $('rows').querySelectorAll('.row');
     var target = null;
     for (var i = 0; i < rows.length; i++) {
@@ -2720,7 +2755,7 @@
     // 2 min před koncem = považovat za dohraný, automaticky smazat; jinak uložit vše rozkoukané
     if((d-t) <= 120){ clearVideoProgress(player.resumeKey); return; }
     if(t < 5) return;
-    var m=loadProgressMap(); m[k]={t:Math.floor(t), d:Math.floor(d), ts:Date.now(), title:(player.title||''), thumb:(player.poster||''), url:(player.resumeKey||player.page||''), kind:(player.kind||'movie')}; saveProgressMap(m); player._lastProgSave=Date.now();
+    var m=loadProgressMap(); var prev=m[k]||{}; m[k]={t:Math.floor(t), d:Math.floor(d), ts:Date.now(), title:(player.title||prev.title||''), thumb:(player.poster||prev.thumb||''), url:(player.resumeKey||player.page||''), kind:(player.kind||'movie')}; saveProgressMap(m); player._lastProgSave=Date.now();
   }catch(_){} }
   function clearVideoProgress(u){ try{ var m=loadProgressMap(); delete m[progressKey(u||player.resumeKey)]; saveProgressMap(m); }catch(_){} }
   function getContinueItems(){ try{
@@ -2852,8 +2887,13 @@
       (function (el) {
         el.addEventListener('click', function () {
           var v = el.getAttribute('data-nav');
+          if (v === 'continue') {
+            openCategory('continue', el);
+            return;
+          }
           setView(v);
           if (v === 'home') {
+            renderRows();
             var b = $('hero').querySelector('.btn.primary');
             if (b) focusEl(b);
           } else {
