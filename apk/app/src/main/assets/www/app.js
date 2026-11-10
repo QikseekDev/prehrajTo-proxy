@@ -621,7 +621,7 @@
 
   function libCardHtml(rec, kind, idx) {
     var img = rec.poster || '';
-    var art = img ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '';
+    var art = img ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer">' : '';
     var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</div>';
     var pct = 0;
     var badge = '', note = 'Oblíbené';
@@ -1061,7 +1061,7 @@
   function cardHtml(it, idx, extra) {
     var img = itemImg(it);
     var art = img
-      ? '<img src="' + esc(img) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
+      ? '<img src="' + esc(img) + '" alt="" onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
       : '';
     var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</div>';
     var year = itemYear(it);
@@ -1273,7 +1273,7 @@
   function movieCardHtml(m, idx) {
     var img = m.thumbnail || '';
     var artImg = img
-      ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer"'
+      ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer"'
         + ' onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
       : '';
     return '<button class="f card wide" type="button" data-idx="' + idx + '">'
@@ -1286,7 +1286,7 @@
   function seriesCardHtml(series, idx) {
     var img = series.poster || '';
     var artImg = img
-      ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer"'
+      ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer"'
         + ' onerror="this.style.display=\'none\';this.parentNode.querySelector(\'.ph\').style.display=\'grid\'">'
       : '';
     return '<button class="f card wide" type="button" data-idx="' + idx + '">'
@@ -1744,7 +1744,7 @@
       var initials = String(c.name || '?').split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0); }).join('').toUpperCase();
       html += '<button class="f ch" type="button" data-ch="' + idx + '">'
         + '<span class="logo">' + (c.logo
-          ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML=\'<span class=&quot;init&quot;>' + esc(initials) + '</span>\'">'
+          ? '<img src="' + esc(c.logo) + '" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML=\'<span class=&quot;init&quot;>' + esc(initials) + '</span>\'">'
           : '<span class="init">' + esc(initials) + '</span>') + '</span>'
         + '<span class="name">' + esc(c.name) + '</span>'
         + '<span class="badges">'
@@ -2796,11 +2796,11 @@
       if (e.target === $('series')) { closeSeries(); focusAfterOverlay(); }
     });
     var healthClose = $('healthClose'), healthDlg = $('health');
-    if (healthClose) healthClose.addEventListener('click', function (e) { if(e){e.preventDefault&&e.preventDefault();e.stopPropagation&&e.stopPropagation();} try{closeHealthOverlay();}catch(_){} });
+    if (healthClose) healthClose.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); });
     if (healthDlg) {
-      healthDlg.addEventListener('click', function (e) { if (e && e.target === healthDlg) { if(e.preventDefault)e.preventDefault(); if(e.stopPropagation)e.stopPropagation(); try{closeHealthOverlay();}catch(_){} } });
+      healthDlg.addEventListener('click', function (e) { if (e.target === healthDlg) { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); } });
       var hbox = healthDlg.querySelector('.health-box');
-      if (hbox) hbox.addEventListener('click', function (e) { if(e&&e.stopPropagation)e.stopPropagation(); });
+      if (hbox) hbox.addEventListener('click', function (e) { e.stopPropagation(); });
     }
 
     document.addEventListener('mousemove', function () { if (!$('player').hidden) bumpIdle(); });

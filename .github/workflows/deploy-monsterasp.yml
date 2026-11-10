@@ -26,7 +26,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Nasazení poběží jen pokud projdou všechny kontroly (stejné jako Push checks).
+  web:
+    name: Frontend + PHP proxy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax check JavaScript
+        run: node --check azure-app/PrehrajtoProxy/wwwroot/script.js
+
+      - name: Series tests
+        run: node --test tests/series.test.mjs
+
+      - name: Lint PHP proxy
+        run: |
+          php -l index.php
+          php -l router.php
+
+  backend:
+    name: Backend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        working-directory: azure-app/PrehrajtoProxy
+        run: dotnet restore
+
+      - name: Build
+        working-directory: azure-app/PrehrajtoProxy
+        run: dotnet build --no-restore
+
   deploy:
+    needs: [web, backend]
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
