@@ -1761,6 +1761,25 @@
         }
         function progressGet(u) { const it = loadProgressMap()[pKey(u)]; return it && isFinite(it.t) ? it.t : 0; }
         function progressClear(u) { try { const m = loadProgressMap(); delete m[pKey(u)]; saveProgressMap(m); } catch (e) {} }
+
+        function getWebContinueItems() {
+            try {
+                const m = loadProgressMap();
+                const out = [];
+                Object.keys(m).forEach(k => {
+                    const it = m[k];
+                    if (!it || !isFinite(it.t) || it.t < 8) return;
+                    const url = it.url || k, title = it.title || '';
+                    if (!url || !title) return;
+                    const d = it.d;
+                    if (isFinite(d) && d > 0 && (d - it.t) <= 120) return;
+                    const pctLeft = (isFinite(d) && d > 0) ? Math.max(1, Math.floor((1 - it.t / d) * 100)) : 0;
+                    out.push({ url, title, poster: it.thumb || '', _continue: true, _ts: it.ts || 0, _t: it.t, _d: isFinite(d) ? d : 0, note: pctLeft ? ('Zbývá ' + pctLeft + '%') : 'Rozkoukané' });
+                });
+                out.sort((a, b) => (b._ts || 0) - (a._ts || 0));
+                return out.slice(0, 20);
+            } catch (e) { return []; }
+        }
         function saveWebProgress(force) {
             try {
                 if (!player.page) return;
@@ -3283,15 +3302,19 @@
             const art = it.poster
                 ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(it.poster)}" onerror="this.remove()">`
                 : '<span class="emoji">🎬</span>';
-            const del = `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">★</button>`;
-            return `<div class="lib-item" data-name="${escapeHtml(norm(it.title))}">
+            const isCont = entry.kind === 'continue' || !!it._continue;
+            const meta = isCont ? escapeHtml(it.note || 'Rozkoukané') : 'Oblíbené';
+            const pct = (isCont && it._d > 0) ? Math.max(0, Math.min(100, (it._t / it._d) * 100)) : 0;
+            const prog = pct ? `<span class="progress"><i style="width:${pct}%"></i></span>` : '';
+            const del = isCont ? '' : `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">★</button>`;
+            return `<div class="lib-item${isCont ? ' cont' : ''}" data-name="${escapeHtml(norm(it.title))}">
                 <button class="lib-open" type="button" onclick="libPlay(${i})" aria-label="Přehrát ${title}">
                     <span class="lib-art" style="background:${posterGradient(it.title || '')}">
-                        ${art}
+                        ${art}${prog}
                     </span>
                     <span class="lib-info">
                         <b>${title}</b>
-                        <span class="lib-meta">Oblíbené</span>
+                        <span class="lib-meta">${meta}</span>
                     </span>
                 </button>
                 ${del}
@@ -3304,7 +3327,7 @@
                         placeholder="Filtrovat knihovnu…" aria-label="Filtrovat knihovnu">
                     <h2>Oblíbené</h2>
                     <div class="lib-list" id="libFavList"></div>
-                    <div class="set-hint">Hvězdička na kartě filmu titul přidá sem, hvězdička tady ho zase odebere. Knihovna je jen v tomhle prohlížeči - nikam se neposílá.</div>
+                    <div class="set-hint">Tvoje oblíbené a rozkoukané tituly na jednom místě. Hvězdička titul přidá/odebere z oblíbených. Knihovna je jen v tomhle prohlížeči - nikam se neposílá.</div>
             `;
         }
 
@@ -3318,11 +3341,24 @@
         function renderLibraryBody() {
             const favEl = document.getElementById('libFavList');
             if (!favEl) return;
-            libOrder = favorites.map(f => ({ kind: 'fav', item: f }));
+            // Rozkoukané (pokračování) už ne jako samostatný řádek – patří sem ke kartám jako oblíbené.
+            const cont = (typeof getWebContinueItems === 'function') ? getWebContinueItems() : [];
+            const seen = new Set();
+            libOrder = [];
+            cont.forEach(it => {
+                const k = 'u:' + String(it.url || '');
+                if (seen.has(k)) return; seen.add(k);
+                libOrder.push({ kind: 'continue', item: it });
+            });
+            favorites.forEach(f => {
+                const k = f.url ? ('u:' + String(f.url)) : (f.key || ('t:' + norm(f.title || '')));
+                if (seen.has(k)) return; seen.add(k);
+                libOrder.push({ kind: 'fav', item: f });
+            });
             const rows = libOrder.map(libRowHtml);
             favEl.innerHTML = rows.length
                 ? rows.join('')
-                : '<div class="lib-empty">Zatím žádné oblíbené. Hvězdička na kartě filmu ho přidá sem.</div>';
+                : '<div class="lib-empty">Zatím žádné oblíbené ani rozkoukané. Hvězdička na kartě filmu ho přidá sem.</div>';
             applyLibFilter();
         }
 

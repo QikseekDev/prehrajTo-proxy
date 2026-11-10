@@ -620,13 +620,15 @@
   }
 
   function libCardHtml(rec, kind, idx) {
-    var img = rec.poster || '';
+    var img = rec.poster || rec.img || rec.thumb || '';
     var art = img ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer">' : '';
     var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</div>';
+    var isCont = (kind === 'continue') || !!rec._continue;
     var pct = 0;
-    var badge = '', note = 'Oblíbené';
+    if (isCont && rec._t && rec._d) { pct = Math.max(0, Math.min(100, (rec._t / rec._d) * 100)); }
+    var note = isCont ? (rec.y || 'Rozkoukané') : 'Oblíbené';
     return '<button class="f card" type="button" data-idx="' + idx + '">'
-      + '<span class="art">' + art + ph + badge
+      + '<span class="art">' + art + ph
       + (pct ? '<span class="progress"><i style="width:' + pct + '%"></i></span>' : '') + '</span>'
       + '<span class="cap"><span class="t">' + esc(rec.title || 'Video') + '</span>'
       + (note ? '<span class="y">' + esc(note) + '</span>' : '') + '</span>'
@@ -1091,8 +1093,20 @@
     var cat = state.catalog;
     var rows = [];
     var cont = (typeof getContinueItems === 'function') ? getContinueItems() : [];
-    if (cont && cont.length) rows.push({ name: 'Pokračovat ve sledování', items: cont, lib: 'continue' });
-    if (favorites.length) rows.push({ name: 'Moje oblíbené', items: favorites, lib: 'fav' });
+    // Rozkoukané už ne jako samostatný řádek – patří mezi oblíbené/karty jako "Moje oblíbené".
+    var mine = [];
+    var seen = {};
+    function pushMine(it, isCont) {
+      if (!it) return;
+      var k = it.key || (it.url ? ('u:' + it.url) : ('t:' + normText(it.title || '')));
+      if (seen[k]) return;
+      seen[k] = true;
+      if (isCont) it._continue = true;
+      mine.push(it);
+    }
+    for (var ci = 0; ci < cont.length; ci++) pushMine(cont[ci], true);
+    for (var fi = 0; fi < favorites.length; fi++) pushMine(favorites[fi], false);
+    if (mine.length) rows.push({ name: 'Moje oblíbené', items: mine, lib: 'fav' });
     rows.push({ name: 'Doporučujeme', items: cat.slice(0, 16) });
     for (var i = 0; i < GENRE_ORDER.length; i++) {
       var g = GENRE_ORDER[i];
@@ -1125,7 +1139,7 @@
           if (!row) return;
           var it = row.items[parseInt(parts[1], 10)];
           if (!it) return;
-          if (row.lib === 'continue') { playMovie({ url: it.url, title: it.title, thumbnail: it.img || it.thumb || '' }); }
+          if (row.lib && it && it._continue) { playMovie({ url: it.url, title: it.title, thumbnail: it.img || it.thumb || it.poster || '' }); }
           else if (row.lib) openLibEntry(row.lib, it);
           else openCatalogDetail(it);
         });
@@ -2714,9 +2728,10 @@
     for(var i=0;i<ks.length;i++){ var k=ks[i], it=m[k]; if(!it||!isFinite(it.t)||it.t<8) continue;
       var url=it.url||k, title=it.title||''; if(!url||!title) continue;
       var d=it.d; if(isFinite(d)&&d>0 && (d-it.t)<=120) continue;
-      out.push({ title:title, img:(it.thumb||''), url:url, y:(isFinite(d)&&d>0)?('Pokračovat '+Math.max(1,Math.floor((1-it.t/d)*100))+'% zbývá'):'' , _t:it.ts||0, _kind:it.kind||'movie' });
+      var pctLeft = (isFinite(d)&&d>0) ? Math.max(1,Math.floor((1-it.t/d)*100)) : 0;
+      out.push({ title:title, img:(it.thumb||''), url:url, y: pctLeft ? ('Zbývá '+pctLeft+'%') : 'Rozkoukané', _ts:it.ts||0, _t:it.t, _d:(isFinite(d)?d:0), _kind:it.kind||'movie' });
     }
-    out.sort(function(a,b){ return (b._t||0)-(a._t||0); });
+    out.sort(function(a,b){ return (b._ts||0)-(a._ts||0); });
     return out.slice(0,20);
   }catch(_){ return []; } }
   function applyResumeIfNeeded(){ try{
