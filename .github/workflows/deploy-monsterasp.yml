@@ -15,6 +15,7 @@ on:
     paths:
       - 'azure-app/PrehrajtoProxy/**'
       - '.github/workflows/deploy-monsterasp.yml'
+      - '.github/scripts/deploy-webdeploy.ps1'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +28,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -59,13 +60,35 @@ jobs:
 
       - name: Deploy to Wflix (site104887)
         if: steps.wflix.outputs.configured == 'true'
-        uses: rasmusbuchholdt/simply-web-deploy@2.2.0
-        with:
-          website-name: ${{ secrets.WFLIX_WEBSITE_NAME || 'site104887' }}
-          server-computer-name: ${{ secrets.WFLIX_SERVER_COMPUTER_NAME || 'https://site104887.siteasp.net:8172' }}
-          server-username: ${{ secrets.WFLIX_SERVER_USERNAME || 'site104887' }}
-          server-password: ${{ secrets.WFLIX_SERVER_PASSWORD }}
-          source-path: '\publish\'
+        shell: pwsh
+        env:
+          SITE: ${{ secrets.WFLIX_WEBSITE_NAME || 'site104887' }}
+          SERVER: ${{ secrets.WFLIX_SERVER_COMPUTER_NAME || 'https://site104887.siteasp.net:8172' }}
+          USER: ${{ secrets.WFLIX_SERVER_USERNAME || 'site104887' }}
+          PASS: ${{ secrets.WFLIX_SERVER_PASSWORD }}
+        run: |
+          ./.github/scripts/deploy-webdeploy.ps1 `
+            -SourcePath "$(Get-Location)\publish" `
+            -Site $env:SITE -Server $env:SERVER -User $env:USER -Password $env:PASS
+
+      - name: Verify Wflix runs this commit
+        if: steps.wflix.outputs.configured == 'true'
+        shell: bash
+        env:
+          URL: ${{ secrets.WFLIX_PUBLIC_URL || 'https://wflix.runasp.net' }}
+          SHA: ${{ github.sha }}
+        run: |
+          body=""
+          for i in $(seq 1 20); do
+            body=$(curl -fsS -m 20 "$URL/api/version" 2>/dev/null || true)
+            if printf '%s' "$body" | grep -q "$SHA"; then
+              echo "OK: $URL bezi commit $SHA"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::$URL nevraci commit $SHA (posledni odpoved: $body)"
+          exit 1
 
       # --- WTZI --------------------------------------------------------
       - name: Check WTZI Web Deploy password
@@ -83,10 +106,32 @@ jobs:
 
       - name: Deploy to WTZI (site104437)
         if: steps.wtzi.outputs.configured == 'true'
-        uses: rasmusbuchholdt/simply-web-deploy@2.2.0
-        with:
-          website-name: ${{ secrets.WTZI_WEBSITE_NAME || 'site104437' }}
-          server-computer-name: ${{ secrets.WTZI_SERVER_COMPUTER_NAME || 'https://site104437.siteasp.net:8172' }}
-          server-username: ${{ secrets.WTZI_SERVER_USERNAME || 'site104437' }}
-          server-password: ${{ secrets.WTZI_SERVER_PASSWORD }}
-          source-path: '\publish\'
+        shell: pwsh
+        env:
+          SITE: ${{ secrets.WTZI_WEBSITE_NAME || 'site104437' }}
+          SERVER: ${{ secrets.WTZI_SERVER_COMPUTER_NAME || 'https://site104437.siteasp.net:8172' }}
+          USER: ${{ secrets.WTZI_SERVER_USERNAME || 'site104437' }}
+          PASS: ${{ secrets.WTZI_SERVER_PASSWORD }}
+        run: |
+          ./.github/scripts/deploy-webdeploy.ps1 `
+            -SourcePath "$(Get-Location)\publish" `
+            -Site $env:SITE -Server $env:SERVER -User $env:USER -Password $env:PASS
+
+      - name: Verify WTZI runs this commit
+        if: steps.wtzi.outputs.configured == 'true'
+        shell: bash
+        env:
+          URL: ${{ secrets.WTZI_PUBLIC_URL || 'https://wtzi.runasp.net' }}
+          SHA: ${{ github.sha }}
+        run: |
+          body=""
+          for i in $(seq 1 20); do
+            body=$(curl -fsS -m 20 "$URL/api/version" 2>/dev/null || true)
+            if printf '%s' "$body" | grep -q "$SHA"; then
+              echo "OK: $URL bezi commit $SHA"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::$URL nevraci commit $SHA (posledni odpoved: $body)"
+          exit 1

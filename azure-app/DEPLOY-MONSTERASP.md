@@ -60,7 +60,9 @@ Workflow se spustí při pushi do `main`, který mění `azure-app/PrehrajtoProx
 (nebo ručně: **Actions** → *Deploy to MonsterASP.NET* → **Run workflow**). Dělá:
 
 1. `dotnet publish -c Release -o publish` na `windows-latest` (jednou),
-2. nahraje obsah `publish/` do `/wwwroot` na **Wflix** a pak na **WTZI** (Web Deploy, inkrementálně).
+2. nahraje obsah `publish/` do `/wwwroot` na **Wflix** a pak na **WTZI** (Web Deploy, inkrementálně),
+3. po každém nasazení zavolá `https://<web>/api/version` a **selže, pokud web nevrací právě pushnutý
+   commit** – v Actions tak rovnou vidíš, že se nasazení opravdu propsalo.
 
 Web bez nastaveného hesla se přeskočí s warningem – workflow nespadne.
 
@@ -112,6 +114,22 @@ počkej na zelené Actions a načti web. Když se změna neprojeví, zkontroluj,
   app settings** – WTZI může mít jiné proxy adresy než Wflix.
 - Web Deploy nahrává jen změny, takže opakované nasazení je rychlé; deploy sám aplikaci restartuje.
 - HTTPS a vlastní doména se řeší v panelu (Let's Encrypt), mimo tento workflow.
+
+## Řešení potíží
+
+**Web běží nový commit, ale `script.js`/`styles.css` je pořád starý.**
+MSDeploy standardně porovnává jen čas poslední změny; když má soubor na serveru novější čas
+(např. po ručním nahrání nebo ZIPu), změněný obsah přeskočí. Workflow proto volá `msdeploy.exe`
+s `-useChecksum` (porovnání podle obsahu) a `-enableRule:AppOffline` (odstavení appky během
+synchronizace, aby nebyly zamčené DLL). Když se i tak obsah nezmění, zkontroluj, že běží nový
+workflow (ne starý krok s `simply-web-deploy`) a že `publish/wwwroot/script.js` má jiný hash než
+`curl -s https://<web>/script.js | sha256sum`.
+
+**Deploy hlásí chybu přihlášení.** WebDeploy musí být v panelu `Enabled` a heslo v secrets musí
+odpovídat kartě *Visual Studio access* (po změně hesla v panelu je potřeba změnit i secret).
+
+**`/api/version` vrací 404.** Web ještě neběží build s tímto endpointem – nasaď (push / Run workflow)
+a zkontroluj, že krok `Deploy to …` proběhl zeleně.
 
 ## Alternativa: Git deploy v panelu (bez CI)
 
