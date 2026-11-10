@@ -610,7 +610,8 @@
     if (!had) {
       kept.unshift({
         key: k, url: item.url || '', title: item.title || '',
-        poster: item.poster || '', at: Date.now()
+        poster: item.poster || '', at: Date.now(),
+        type: item.type || (item.url ? 'video' : 'series')
       });
     }
     favorites = kept;
@@ -626,7 +627,7 @@
     var isCont = (kind === 'continue') || !!rec._continue;
     var pct = 0;
     if (isCont && rec._t && rec._d) { pct = Math.max(0, Math.min(100, (rec._t / rec._d) * 100)); }
-    var note = isCont ? (rec.y || 'Rozkoukané') : 'Oblíbené';
+    var note = isCont ? (rec.y || 'Rozkoukané') : (rec.type === 'series' ? 'Seriál' : 'Oblíbené');
     return '<button class="f card" type="button" data-idx="' + idx + '">'
       + '<span class="art">' + art + ph
       + (pct ? '<span class="progress"><i style="width:' + pct + '%"></i></span>' : '') + '</span>'
@@ -635,11 +636,26 @@
       + '</button>';
   }
 
-  /* Klik na kartu z osobní řady – oblíbené bez odkazu jdou přes hledání. */
+  /* Najde v seskupených výsledcích seriál odpovídající uloženému názvu. */
+  function findSeriesEntry(entries, title) {
+    var want = normText(title || '');
+    if (!want) return null;
+    var loose = null;
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      if (!e || e.type !== 'series') continue;
+      var have = normText((e.series && e.series.title) || '');
+      if (have === want) return e.series;
+      if (!loose && have && (have.indexOf(want) !== -1 || want.indexOf(have) !== -1)) loose = e.series;
+    }
+    return loose;
+  }
+
+  /* Klik na kartu z knihovny: oblíbený film jde do detailu, seriál otevře svou stránku. */
   function openLibEntry(kind, rec) {
     if (!rec) return;
-    if (!rec.url) { searchThenPlay(rec.title || ''); return; }
-    openMovieDetail({ url: rec.url, title: rec.title, thumbnail: rec.poster || '' });
+    if (rec.url) { openMovieDetail({ url: rec.url, title: rec.title, thumbnail: rec.poster || '' }); return; }
+    searchThenPlay(rec.title || '', { seriesFirst: true });
   }
 
   function applyCueStyle() {
@@ -675,7 +691,7 @@
 
   function seriesItem() {
     if (!state.series) return null;
-    return { url: '', title: state.series.title || 'Seriál', poster: state.series.poster || '' };
+    return { url: '', title: state.series.title || 'Seriál', poster: state.series.poster || '', type: 'series' };
   }
 
   function updateSeriesFav() {
@@ -1677,7 +1693,8 @@
   }
 
   /* Z katalogu: najdi film a ukaž výsledky hledání (nic se nespouští samo) */
-  function searchThenPlay(q) {
+  function searchThenPlay(q, opts) {
+    var seriesFirst = !!(opts && opts.seriesFirst);
     loading('Hledám „' + q + '“ …');
     apiJson('/api/search?q=' + encodeURIComponent(q) + (settings.searchMerge ? '&source=all' : '')).then(function (d) {
       loading(null);
@@ -1685,7 +1702,6 @@
         toast('Pro „' + q + '“ prehraj.to nic nenašel.');
         return;
       }
-      // Jen ukážeme výsledky hledání – nic se samo nespouští ani neotevírá.
       var ranked = rankMovies(q, d.movies);
       state.results = ranked;
       state.entries = groupSearchResults(ranked);
@@ -1696,6 +1712,11 @@
       $('searchState').className = 'state show';
       $('searchState').textContent = 'Nalezeno ' + state.entries.length + ' výsledků pro „' + q + '“';
       renderResults();
+      // Uložený seriál: otevřít rovnou jeho stránku (jinak zůstanou výsledky hledání).
+      if (seriesFirst) {
+        var series = findSeriesEntry(state.entries, q);
+        if (series) { openSeries(series); return; }
+      }
       var firstCard = $('searchGrid').querySelector('.f.card');
       if (firstCard) focusEl(firstCard);
     }).catch(function (e) {

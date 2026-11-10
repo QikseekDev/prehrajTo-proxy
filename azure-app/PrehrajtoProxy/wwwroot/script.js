@@ -769,6 +769,8 @@
                 q: el.dataset.favQ || '',
                 title: el.dataset.favTitle || '',
                 poster: el.dataset.favPoster || '',
+                skey: el.dataset.favSkey || '',
+                type: el.dataset.favType || '',
             };
         }
 
@@ -781,7 +783,8 @@
                 favorites = favorites.filter(f => f.key !== key);
             } else {
                 favorites = [{ key, url: item.url || '', q: item.q || '', title: item.title || '',
-                              poster: item.poster || '', at: Date.now() },
+                              poster: item.poster || '', at: Date.now(),
+                              skey: item.skey || '', type: item.type || (item.url ? 'video' : 'series') },
                              ...favorites.filter(f => f.key !== key)].slice(0, 200);
             }
             saveFavorites();
@@ -812,6 +815,7 @@
             return `<span class="fav-btn${on ? ' on' : ''}" role="button" tabindex="0" data-fav-key="${escapeHtml(key)}"
                 data-fav-url="${escapeHtml(it.url || '')}" data-fav-q="${escapeHtml(it.q || '')}"
                 data-fav-title="${escapeHtml(it.title || '')}" data-fav-poster="${escapeHtml(it.poster || '')}"
+                data-fav-skey="${escapeHtml(it.skey || '')}" data-fav-type="${escapeHtml(it.type || '')}"
                 aria-pressed="${on}" aria-label="${label}" title="${label}">${on ? '★' : '☆'}</span>`;
         }
 
@@ -1484,6 +1488,7 @@
                         <div class="title">${escapeHtml(series.title)}</div>
                         <div class="year">${escapeHtml(seriesMeta(series))}</div>
                     </div>
+                    ${favBtnHtml({ q: series.title, title: series.title, poster: series.poster || '', skey: series.key, type: 'series' })}
                 `;
             const img = card.querySelector('img');
             img.onerror = () => { img.onerror = null; img.src = THUMB_PLACEHOLDER; };
@@ -3308,7 +3313,9 @@
                 : '<span class="emoji">🎬</span>';
             const pct = (isCont && it._d > 0) ? Math.max(0, Math.min(100, (it._t / it._d) * 100)) : 0;
             const prog = pct ? `<span class="progress"><i style="width:${pct}%"></i></span>` : '';
-            const meta = isCont ? escapeHtml(it.note || 'Rozkoukané') : 'Oblíbené';
+            const meta = isCont
+                ? escapeHtml(it.note || 'Rozkoukané')
+                : (it.type === 'series' ? 'Seriál' : 'Oblíbené');
             const del = isCont
                 ? ''
                 : `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">★</button>`;
@@ -3379,9 +3386,23 @@
             renderLibraryBody();
         }
 
+        // Uložený seriál nemá přímý odkaz na soubor - najde se podle názvu a otevře
+        // se jeho stránka se seznamem dílů.
+        let pendingSeriesKey = null;
+        async function openLibrarySeries(key, title) {
+            pendingSeriesKey = key || null;
+            searchInput.value = title || '';
+            await searchMovies();
+            const want = pendingSeriesKey;
+            pendingSeriesKey = null;
+            if (want && openSeriesByKey(want, true)) return;
+            notice('Seriál se nepodařilo otevřít. Zkus ho najít hledáním.', 'error');
+        }
+
         function libPlay(i) {
             const e = libOrder[i];
             if (!e) return;
+            if (e.item.skey) { openLibrarySeries(e.item.skey, e.item.title); return; }
             if (e.item.url) { playFromLibrary(e.item.url); return; }
             if (e.item.q) { goHome(); openFromCatalog(e.item.q); return; }
             notice('Tenhle titul nemá odkaz - zkus ho najít hledáním.', 'error');
