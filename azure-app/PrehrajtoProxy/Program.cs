@@ -239,9 +239,50 @@ app.Use(async (ctx, next) =>
 // mu vracela 403, takže se aplikace tvářila jako rozbitá. Zůstávají jen limity výš -
 // ty platí na IP a jsou nastavené tak, aby běžnému divákovi nepřekážely.
 app.UseRateLimiter();
+
+// Automatické verzování statických souborů (cache busting). Do index.html se při každém
+// požadavku vkládá hash obsahu script.js / styles.css / intro.css, takže po nasazení se změní
+// URL a prohlížeč si nikdy nedrží starý skript. Ruční přepisování ?v= v HTML už není potřeba.
+var webRoot = app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+var assetVersions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+foreach (var asset in new[] { "script.js", "styles.css", "intro.css" })
+{
+    try
+    {
+        using var fs = File.OpenRead(Path.Combine(webRoot, asset));
+        assetVersions[asset] = Convert.ToHexString(SHA256.HashData(fs))[..12].ToLowerInvariant();
+    }
+    catch
+    {
+        assetVersions[asset] = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+    }
+}
+
+// HTML (index) se neukládá do cache vůbec - jinak by prohlížeč mohl držet starou stránku
+// s odkazy na staré soubory. Verzované css/js naopak držet můžeme (měsíc), URL se mění s obsahem.
+app.Use(async (ctx, next) =>
+{
+    var path = ctx.Request.Path.Value ?? "/";
+    if (!path.Equals("/", StringComparison.Ordinal) && !path.Equals("/index.html", StringComparison.OrdinalIgnoreCase))
+    {
+        await next();
+        return;
+    }
+    string html;
+    try { html = await File.ReadAllTextAsync(Path.Combine(webRoot, "index.html"), ctx.RequestAborted); }
+    catch { await next(); return; }
+
+    html = Regex.Replace(html, "(?<attr>href|src)=\"(?<name>script\\.js|styles\\.css|intro\\.css)\\?v=[^\"]*\"",
+        m => m.Groups["attr"].Value + "=\"" + m.Groups["name"].Value + "?v="
+             + (assetVersions.TryGetValue(m.Groups["name"].Value, out var v) ? v : "1") + "\"");
+
+    ctx.Response.Headers.CacheControl = "no-store, max-age=0";
+    ctx.Response.Headers.Pragma = "no-cache";
+    ctx.Response.ContentType = "text/html; charset=utf-8";
+    await ctx.Response.WriteAsync(html);
+});
+
 app.UseDefaultFiles();
-// Cache-Control: verzované css/js se nemění, takže je prohlížeč může držet rok; HTML se naopak
-// musí vždy ověřit (304 přes ETag), aby po nasazení neběžela stará značka s novým skriptem.
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>
@@ -250,7 +291,7 @@ app.UseStaticFiles(new StaticFileOptions
         var versioned = file.EndsWith(".css") || file.EndsWith(".js")
             || file.EndsWith(".png") || file.EndsWith(".svg") || file.EndsWith(".woff2");
         ctx.Context.Response.Headers.CacheControl = versioned
-            ? "public, max-age=31536000, immutable"
+            ? "public, max-age=2592000"
             : "no-cache";
     }
 });
