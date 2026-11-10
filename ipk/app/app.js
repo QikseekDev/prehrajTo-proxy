@@ -3234,7 +3234,12 @@
     var intro = document.getElementById('intro');
     if (!intro) return;
     var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-    var duration = reduce ? 800 : 3000;
+    var ua = '';
+    try { ua = navigator.userAgent || ''; } catch (e) {}
+    var isWebOS = /web0s|webos/i.test(ua) || !!(window.webOS || window.PalmSystem || window.webOSSystem);
+    var lite = !!(reduce || isWebOS);
+    var duration = lite ? 900 : 3000;
+    try { if (lite) intro.classList.add('intro-lite'); } catch (e) {}
     try { document.body.classList.add('intro-lock'); } catch (e) {}
     var done = false;
     function finish() {
@@ -3244,9 +3249,9 @@
       try { intro.classList.add('is-leaving'); } catch (e) {}
       setTimeout(function () {
         try { intro.hidden = true; intro.style.display = 'none'; } catch (e) {}
-      }, reduce ? 80 : 380);
+      }, lite ? 120 : 380);
     }
-    setTimeout(finish, duration + 250);
+    setTimeout(finish, duration + (lite ? 120 : 250));
   }
 
   function boot() {
