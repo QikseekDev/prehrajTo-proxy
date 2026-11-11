@@ -5,7 +5,7 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Wflix.Admin;
 
-public sealed record LoginRequest(string? Token);
+public sealed record LoginRequest(string? Password);
 public sealed record BanRequest(string? Kind, string? Target, int? Minutes, string? Reason);
 public sealed record UnbanRequest(string? Kind, string? Target);
 public sealed record PurgeRequest(string? Scope, bool? Proxies);
@@ -20,7 +20,7 @@ public sealed record AdminRuntimeInfo(
 
 /// <summary>
 /// Admin endpoints. Všechno pod /api/admin (kromě login/session) vyžaduje cookie
-/// podepsanou ADMIN_TOKENEM a u POSTů CSRF hlavičku; panel je na /admin.
+/// podepsanou heslem z ADMIN_PASSWORD a u POSTů CSRF hlavičku; panel je na /admin.
 /// </summary>
 public static class AdminEndpoints
 {
@@ -78,16 +78,16 @@ public static class AdminEndpoints
         {
             ctx.Response.Headers.CacheControl = "no-store, max-age=0";
             if (!store.Enabled)
-                return Results.Json(new { success = false, error = "Admin není nakonfigurovaný. Nastav ADMIN_TOKEN." }, statusCode: 503);
+                return Results.Json(new { success = false, error = "Admin není nakonfigurovaný. Nastav ADMIN_PASSWORD." }, statusCode: 503);
 
             var ip = ClientIp(ctx);
             if (store.LoginBlocked(ip))
                 return Results.Json(new { success = false, error = "Příliš mnoho pokusů. Zkus to za 10 minut." }, statusCode: 429);
-            if (!store.TokenMatches(body?.Token))
+            if (!store.PasswordMatches(body?.Password))
             {
                 store.LoginFailed(ip);
                 store.RecordAudit("login-failed", ip, "");
-                return Results.Json(new { success = false, error = "Špatný token." }, statusCode: 401);
+                return Results.Json(new { success = false, error = "Špatné heslo." }, statusCode: 401);
             }
 
             store.LoginSucceeded(ip);
@@ -145,7 +145,7 @@ public static class AdminEndpoints
             var ctx = inv.HttpContext;
             ctx.Response.Headers.CacheControl = "no-store, max-age=0";
             if (!store.Enabled)
-                return Results.Json(new { success = false, error = "Admin není nakonfigurovaný. Nastav ADMIN_TOKEN." }, statusCode: 503);
+                return Results.Json(new { success = false, error = "Admin není nakonfigurovaný. Nastav ADMIN_PASSWORD." }, statusCode: 503);
             if (!store.ValidateSession(ctx.Request.Cookies[AdminStore.SessionCookie]))
                 return Results.Json(new { success = false, error = "Nejsi přihlášený." }, statusCode: 401);
 

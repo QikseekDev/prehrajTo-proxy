@@ -65,8 +65,8 @@
     <div class="login">
         <div class="logo" style="font-size:26px">Wflix</div>
         <h1 style="margin-top:10px">Admin panel</h1>
-        <div class="sub">Vstup jen s <span class="mono">ADMIN_TOKEN</span>, který je nastavený na serveru.</div>
-        <input id="token" type="password" placeholder="Admin token" autocomplete="current-password" autofocus>
+        <div class="sub">Vstup jen s heslem, které je nastavené na serveru (proměnná <span class="mono">ADMIN_PASSWORD</span>).</div>
+        <input id="password" type="password" placeholder="Heslo" autocomplete="current-password" autofocus>
         <button id="loginBtn" class="primary">Přihlásit</button>
         <div id="loginMsg" class="msg"></div>
     </div>
@@ -258,24 +258,24 @@
         show('login', true);
         $('loginMsg').textContent = reason || '';
         $('loginMsg').className = 'msg err';
-        $('token').value = '';
-        setTimeout(function () { $('token').focus(); }, 30);
+        $('password').value = '';
+        setTimeout(function () { $('password').focus(); }, 30);
     }
 
     function showDisabled() {
         show('panel', false);
         show('login', true);
         $('loginBtn').disabled = true;
-        $('token').disabled = true;
-        $('loginMsg').textContent = 'Admin není nakonfigurovaný. Nastav na serveru proměnnou ADMIN_TOKEN a restartuj appku.';
+        $('password').disabled = true;
+        $('loginMsg').textContent = 'Admin není nakonfigurovaný. Nastav na serveru proměnnou ADMIN_PASSWORD a restartuj appku.';
         $('loginMsg').className = 'msg err';
     }
 
     function login() {
-        var token = $('token').value.trim();
-        if (!token) { $('loginMsg').textContent = 'Zadej token.'; return; }
+        var password = $('password').value.trim();
+        if (!password) { $('loginMsg').textContent = 'Zadej heslo.'; return; }
         $('loginBtn').disabled = true;
-        api('/api/admin/login', { method: 'POST', body: { token: token } }).then(function (d) {
+        api('/api/admin/login', { method: 'POST', body: { password: password } }).then(function (d) {
             csrf = d.csrf;
             show('login', false);
             show('panel', true);
@@ -488,7 +488,7 @@
 
     function bind() {
         $('loginBtn').addEventListener('click', login);
-        $('token').addEventListener('keydown', function (e) { if (e.key === 'Enter') login(); });
+        $('password').addEventListener('keydown', function (e) { if (e.key === 'Enter') login(); });
 
         $('logoutBtn').addEventListener('click', function () {
             api('/api/admin/logout', { method: 'POST' }).catch(function () { }).then(function () {

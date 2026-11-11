@@ -159,13 +159,13 @@ výš, statické soubory se nelimitují vůbec, takže funguje i uptime monitori
 Ovládá **běžící** instanci: změna platí do sekundy, bez restartu a bez nového nasazení.
 Kód ani `appsettings.json` se nemění, stav je JSON soubor.
 
-**Zapnutí.** Nastav `ADMIN_TOKEN` (App Service → Configuration → Application settings, dlouhý
-náhodný řetězec) a restartuj appku. Bez něj `/admin` i celá `/api/admin` vrací `503` – v repu
-žádné heslo není a nikdy být nemá.
+**Zapnutí.** Nastav `ADMIN_PASSWORD` (App Service → Configuration → Application settings) a
+restartuj appku. Je to obyčejné heslo – jakékoli, které si zvolíš; do repa se neukládá a nikdy
+patřit nemá. Bez něj `/admin` i celá `/api/admin` vrací `503`.
 
 | proměnná | význam | výchozí |
 |---|---|---|
-| `ADMIN_TOKEN` | token pro přihlášení do panelu; prázdný = admin vypnutý | – |
+| `ADMIN_PASSWORD` | heslo do panelu; prázdné = admin vypnutý (starší název `ADMIN_TOKEN` funguje dál) | – |
 | `ADMIN_STATE_PATH` | kam ukládat `state.json` a `audit.jsonl` | `$HOME/wflix-admin/`, jinak `App_Data/` |
 | `WFLIX_PURGE_TOKEN` | stejná hodnota na PHP proxy, povolí `action=purge` | – |
 
@@ -201,10 +201,10 @@ sledujteto, bombuj.si, iTunes, iptv-org a prvních šest proxy (`/api/health` po
 
 ### Bezpečnost
 
-Token se nikdy neposílá v URL ani se neukládá do stránky: login vymění `ADMIN_TOKEN` za podepsanou
-cookie (HMAC-SHA256, 12 h, `HttpOnly`, `SameSite=Strict`) a každý zápis navíc vyžaduje hlavičku
-`X-Wflix-CSRF` s tokenem z druhé (čitelné) cookie – double submit. Po 5 špatných tokenech z jedné
-IP je přihlášení na 10 minut zavřené, `/api/admin` má vlastní rate limit a stránka posílá
+Heslo se nikdy neposílá v URL ani se neukládá do stránky: login ho vymění za podepsanou cookie
+(HMAC-SHA256, 12 h, `HttpOnly`, `SameSite=Strict`) a každý zápis navíc vyžaduje hlavičku
+`X-Wflix-CSRF` s tokenem z druhé (čitelné) cookie – double submit. Po 5 špatných zadáních hesla
+z jedné IP je přihlášení na 10 minut zavřené, `/api/admin` má vlastní rate limit a stránka posílá
 `X-Robots-Tag: noindex`. Stav se ukládá mimo repo (`$HOME/…`), zapisuje se atomicky přes `.tmp`
 + `File.Move` a načítá se při změně souboru, takže se dá upravit i ručně.
 
@@ -218,6 +218,8 @@ IP je přihlášení na 10 minut zavřené, `/api/admin` má vlastní rate limit
   je instance jedna; při scale-out nastav `ADMIN_STATE_PATH` na sdílený mount.
 - **Žádný redeploy, žádná správa proxy ani IPTV.** Panel záměrně neumí spouštět nasazení a needituje
   seznam proxy/IPTV kanálů – na to je git a `proxy-servers.txt`, ne tlačítko v prohlížeči.
+- **Heslo jde do prostředí, ne do kódu.** Panel ho čte jen z `ADMIN_PASSWORD`; kdyby bylo
+  v `appsettings.json` nebo v `admin.html`, vidí ho každý, kdo vidí repo.
 - **Mobilní klienti `/api/config` nečtou** (APK/IPK ho neznají), takže hlášku o údržbě uvidí jen
   web. Vynucení je ale na serveru, takže vypnuté stahování/živé vysílání dostanou i oni (`403`/`503`).
 

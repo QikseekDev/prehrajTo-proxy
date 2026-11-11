@@ -121,7 +121,7 @@ public static class WflixCache
 }
 
 // ---------------------------------------------------------------------------
-// Store: soubor se stavem + auth (token z env, HMAC cookie), bany, statistiky.
+// Store: soubor se stavem + auth (heslo z env, HMAC cookie), bany, statistiky.
 // ---------------------------------------------------------------------------
 
 public sealed class AdminStore
@@ -153,17 +153,24 @@ public sealed class AdminStore
 
     public string StatePath { get; }
     public string AuditPath { get; }
-    public string? Token { get; }
+    /// <summary>Heslo do panelu (ADMIN_PASSWORD). Nikdy není v repu - jen v prostředí.</summary>
+    public string? Password { get; }
+    /// <summary>Heslo/token pro akci purge na PHP proxy (WFLIX_PURGE_TOKEN) - jiné než do panelu.</summary>
     public string? PurgeToken { get; }
-    public bool Enabled => !string.IsNullOrWhiteSpace(Token);
+    public bool Enabled => !string.IsNullOrWhiteSpace(Password);
 
     public AdminStore(IConfiguration cfg, IHostEnvironment env, ILogger<AdminStore> log)
     {
         this.log = log;
 
-        // ADMIN_TOKEN (env / App Service settings) je zdroj pravdy; konfigurační klíč je jen
-        // alternativa pro appsettings.Development.json.
-        Token = FirstNonEmpty(Environment.GetEnvironmentVariable("ADMIN_TOKEN"), cfg["Admin:Token"]);
+        // ADMIN_PASSWORD (env / App Service settings) je zdroj pravdy; konfigurační klíč je jen
+        // alternativa pro appsettings.Development.json. ADMIN_TOKEN je starší název - funguje
+        // dál, aby se po přejmenování nikdo nezamkl mimo panel.
+        Password = FirstNonEmpty(
+            Environment.GetEnvironmentVariable("ADMIN_PASSWORD"),
+            cfg["Admin:Password"],
+            Environment.GetEnvironmentVariable("ADMIN_TOKEN"),
+            cfg["Admin:Token"]);
         PurgeToken = FirstNonEmpty(Environment.GetEnvironmentVariable("WFLIX_PURGE_TOKEN"), cfg["Admin:PurgeToken"]);
 
         var path = FirstNonEmpty(Environment.GetEnvironmentVariable("ADMIN_STATE_PATH"), cfg["Admin:StatePath"]);
@@ -295,11 +302,11 @@ public sealed class AdminStore
     }
 
     // ---------------------------------------------------------------- auth
-    public bool TokenMatches(string? candidate)
+    public bool PasswordMatches(string? candidate)
     {
         if (!Enabled || string.IsNullOrEmpty(candidate)) return false;
         var a = SHA256.HashData(Encoding.UTF8.GetBytes(candidate));
-        var b = SHA256.HashData(Encoding.UTF8.GetBytes(Token!));
+        var b = SHA256.HashData(Encoding.UTF8.GetBytes(Password!));
         return CryptographicOperations.FixedTimeEquals(a, b);
     }
 
@@ -311,7 +318,7 @@ public sealed class AdminStore
 
     private string Sign(string payload)
     {
-        using var hmac = new HMACSHA256(SHA256.HashData(Encoding.UTF8.GetBytes(Token ?? "")));
+        using var hmac = new HMACSHA256(SHA256.HashData(Encoding.UTF8.GetBytes(Password ?? "")));
         var raw = hmac.ComputeHash(Encoding.UTF8.GetBytes("wflix-admin|" + payload));
         return Convert.ToBase64String(raw).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }

@@ -1725,8 +1725,8 @@ var buildVersion = typeof(Program).Assembly
     ?? "unknown";
 var startedAt = DateTimeOffset.UtcNow;
 // ------------------------------------------------------------------ admin panel (/admin)
-// Stav je v Admin/AdminStore.cs, endpointy v Admin/AdminEndpoints.cs. Token se bere
-// z ADMIN_TOKEN (App Service → Configuration → Application settings), nikdy z repa.
+// Stav je v Admin/AdminStore.cs, endpointy v Admin/AdminEndpoints.cs. Heslo se bere
+// z ADMIN_PASSWORD (App Service → Configuration → Application settings), nikdy z repa.
 app.MapAdmin(new AdminRuntimeInfo(
     Build: buildVersion,
     Commit: buildVersion.IndexOf('+') >= 0 ? buildVersion[(buildVersion.IndexOf('+') + 1)..] : null,
