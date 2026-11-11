@@ -18,6 +18,9 @@ deploy.zip
 
 # Credentials (never commit!)
 *credentials*.txt
+
+# Admin stav (state.json, audit.jsonl) - vzniká za běhu, jen lokálně bez ADMIN_STATE_PATH
+azure-app/PrehrajtoProxy/App_Data/
 *password*.txt
 *.key
 

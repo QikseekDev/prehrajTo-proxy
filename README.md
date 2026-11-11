@@ -129,6 +129,7 @@ Appka je veřejná a bez přihlášení, takže `/api/*` má dvě vrstvy ochrany
 | `subs` | `/api/subtitles` | 20/s | 60 |
 | `thumb` | `/api/thumb` | 10/s | 40 |
 | `live` | `/api/live/hls` | 40/s | 120 |
+| `admin` | `/api/admin/*` | 10/s | 30 |
 
 Dávka je tam proto, že úvodní stránka posílá náhledy všech viditelných posterů najednou a přehrávač
 při seekování pošle několik Range dotazů v jedné vlně – s holým „3/s“ by se appka rozbila sama sobě.
@@ -151,6 +152,74 @@ vlastní `Referer`, ale to zároveň blokovalo WebView v mobilní appce a jiné 
 hlavičky neposílají – dostávali `403` a appka vypadala rozbitá. Scraping teď brzdí jen limity
 výš, statické soubory se nelimitují vůbec, takže funguje i uptime monitoring a `curl` na
 `/api/search?q=matrix` vrátí normální JSON.
+
+## Admin panel
+
+`/admin` na .NET backendu – jedna stránka (`wwwroot/admin.html`), žádný build ani závislosti.
+Ovládá **běžící** instanci: změna platí do sekundy, bez restartu a bez nového nasazení.
+Kód ani `appsettings.json` se nemění, stav je JSON soubor.
+
+**Zapnutí.** Nastav `ADMIN_TOKEN` (App Service → Configuration → Application settings, dlouhý
+náhodný řetězec) a restartuj appku. Bez něj `/admin` i celá `/api/admin` vrací `503` – v repu
+žádné heslo není a nikdy být nemá.
+
+| proměnná | význam | výchozí |
+|---|---|---|
+| `ADMIN_TOKEN` | token pro přihlášení do panelu; prázdný = admin vypnutý | – |
+| `ADMIN_STATE_PATH` | kam ukládat `state.json` a `audit.jsonl` | `$HOME/wflix-admin/`, jinak `App_Data/` |
+| `WFLIX_PURGE_TOKEN` | stejná hodnota na PHP proxy, povolí `action=purge` | – |
+
+### Co panel umí
+
+**Vypínače** (platí hned, vynucuje server – ne jen UI):
+
+| vypínač | co vypne |
+|---|---|
+| Údržba + hláška | `/api/*` kromě `/api/config`, `/api/health`, `/api/admin` → `503` s hláškou |
+| Stahování | `/api/stream?download=1` → `403`; přehrávání přes server funguje dál |
+| Živé vysílání | `/api/live`, `/api/live/countries`, `/api/live/hls` → `503` |
+| HLS relay | jen `/api/live/hls` (seznam kanálů a přímé přehrávání zůstávají) |
+| Více výsledků | `source=all` degraduje na jeden zapnutý zdroj |
+| Náhledy z iTunes | katalog a plakáty z prehraj.to fungují dál |
+
+**Zdroje** – zapnout/vypnout `prehraj.to`, `sledujteto.cz`, `bombuj.si`, automatický fallback a
+strop stránek (`maxPage`). Vypnutý zdroj vrátí `400` s českou hláškou, takže je vidět, že jde o
+vědomé vypnutí, a ne o rozbitou appku. Když prehraj.to sype 429, vypneš ho a jede sledujteto.
+
+**Cache** – počty položek, zásahy (hit rate) a mazání po oblastech: hledání, náhledy, katalog,
+živé, CDN odkazy, nebo všechno. Server umí mazat podle prefixu jen díky vlastní evidenci klíčů
+(`WflixCache`), samotný `IMemoryCache` to neumí. Volitelně se pošle `action=purge` i na PHP proxy
+servery (mají vlastní cache v `sys_get_temp_dir()`), ale jen těm, které mají `WFLIX_PURGE_TOKEN`.
+
+**Bany** – dočasné zablokování IP nebo klienta (`cid` z `localStorage`) na zadaný počet minut,
+s rušením a seznamem nejaktivnějších klientů za posledních pár minut. Rate limit scraping jen
+zpomalí, ban ho zastaví; `/api/admin` a `/admin` zůstávají dostupné, aby se dal ban zrušit.
+
+**Ops** – běžící build a commit, uptime, online uživatelé, počítadla 5xx/429 od startu procesu,
+ audit změn (`audit.jsonl`) a tlačítko „Otestovat zdroje a proxy“, které projde prehraj.to,
+sledujteto, bombuj.si, iTunes, iptv-org a prvních šest proxy (`/api/health` používá stejný kód).
+
+### Bezpečnost
+
+Token se nikdy neposílá v URL ani se neukládá do stránky: login vymění `ADMIN_TOKEN` za podepsanou
+cookie (HMAC-SHA256, 12 h, `HttpOnly`, `SameSite=Strict`) a každý zápis navíc vyžaduje hlavičku
+`X-Wflix-CSRF` s tokenem z druhé (čitelné) cookie – double submit. Po 5 špatných tokenech z jedné
+IP je přihlášení na 10 minut zavřené, `/api/admin` má vlastní rate limit a stránka posílá
+`X-Robots-Tag: noindex`. Stav se ukládá mimo repo (`$HOME/…`), zapisuje se atomicky přes `.tmp`
++ `File.Move` a načítá se při změně souboru, takže se dá upravit i ručně.
+
+### Limity
+
+- **PHP self-host panel nemá.** `index.php` ani `router.php` admin neznají – přibyl v nich jen
+  `action=purge` (`?action=purge&scope=all|search|thumb&token=…`, `WFLIX_PURGE_TOKEN`), aby panel
+  mohl mazat i cache na hostinzích. Zbytek nastavení jde jen na .NET backendu.
+- **Stav je lokální pro instanci.** `state.json` leží v `$HOME` kontejneru, takže při víc instancích
+  App Service má každá svůj (a ban/maintenance platí jen na té, kterou zrovna trefíš). Na free tieru
+  je instance jedna; při scale-out nastav `ADMIN_STATE_PATH` na sdílený mount.
+- **Žádný redeploy, žádná správa proxy ani IPTV.** Panel záměrně neumí spouštět nasazení a needituje
+  seznam proxy/IPTV kanálů – na to je git a `proxy-servers.txt`, ne tlačítko v prohlížeči.
+- **Mobilní klienti `/api/config` nečtou** (APK/IPK ho neznají), takže hlášku o údržbě uvidí jen
+  web. Vynucení je ale na serveru, takže vypnuté stahování/živé vysílání dostanou i oni (`403`/`503`).
 
 ## Komponenty
 
@@ -187,6 +256,10 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
     stahování, ruční přehrání přes server a jako záložní cesta, když přímé přehrávání z CDN neprojde. S `download=1` se
     posílá jako příloha (tlačítko ⬇ Stáhnout video). Neumí HLS (`.m3u8`). Pozor na přenesená data: na Azure
     (zvlášť free tier) se tím video počítá do odchozího provozu, na self-hostu (Termux) je to zadarmo.
+  - `GET /api/config` - Veřejná konfigurace pro klienty: `maintenance` + `message` a stav vypínačů
+    (`flags.downloads`, `live`, `liveRelay`, `mergeSources`, `itunesThumb`). Web podle toho ukáže
+    hlášku o údržbě a schová tlačítko Stáhnout; rozhodující je vždy vynucení na serveru. Když admin
+    není nastavený, vrací výchozí (vše zapnuté) hodnoty.
   - `GET /api/subtitles?url={vtt}` - Relay WebVTT titulků pro `<track>`; jen http/https `.vtt`, max. 1 MB,
     s Refererem prehraj.to. Titulky se načítají z naší domény, takže neřešíme CORS ani expiraci CDN odkazu.
   - `GET /api/live?country={kód}[&lang={kód}][&custom={index}]` - Seznam IPTV kanálů (viz [Živé vysílání](#živé-vysílání-iptv)).
@@ -227,6 +300,11 @@ PHP proxy pro český hosting – bez něj se .NET verze k prehraj.to nedostane 
 Hledání se v něm cachuje do `sys_get_temp_dir()` na 30 min (prázdné 5 min) a při 429 z prehraj.to
 vrátí i starší kopii, takže stejný dotaz nejde na prehraj.to znovu pro každou instanci appky ani po
 restartu. Po úpravě `index.php` je potřeba ho znovu nahrát na všechny proxy hostingy.
+
+Navíc má `index.php` akci `?action=purge&scope=all|search|thumb&token=…`, kterou volá admin panel,
+aby smazal cache i na hostinzích. Funguje jen když je na hostingu nastavený `WFLIX_PURGE_TOKEN` a
+token v požadavku sedí (`hash_equals`); bez proměnné vrací `403`. Nikdy tam nedávej `ADMIN_TOKEN` –
+proxy jedou po plain http, takže by token do panelu šel po drátě v čitelné podobě.
 
 ## Self-host bez Azure (Termux / Linux)
 

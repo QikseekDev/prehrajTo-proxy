@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Caching.Memory;
+using Wflix.Admin;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -99,6 +100,9 @@ static async ValueTask<Stream> ConnectPreferIpv4(SocketsHttpConnectionContext ct
 }
 
 builder.Services.AddMemoryCache();
+// Admin stav (flagy, bany, zdroje) + auth. Vše v Admin/AdminStore.cs; mění se za běhu,
+// zdroj pravdy pro token je ADMIN_TOKEN v prostředí, ne soubor v repu.
+builder.Services.AddSingleton<AdminStore>();
 
 // ------------------------------------------------------------------ veřejný provoz
 // App Service stojí před appkou jako reverzní proxy: bez tohohle by měly všechny
@@ -220,11 +224,78 @@ builder.Services.AddRateLimiter(o =>
         QueueLimit = 0,
         AutoReplenishment = true,
     }));
+
+    // Admin panel: pár dotazů za sekundu stačí (UI polluje stav), ale nesmí to být
+    // neomezené - login je navíc throttlovaný zvlášť (5 pokusů / 10 min na IP).
+    o.AddPolicy("admin", ctx => RateLimitPartition.GetTokenBucketLimiter(ClientKey(ctx), _ => new TokenBucketRateLimiterOptions
+    {
+        TokenLimit = 30,
+        TokensPerPeriod = 10,
+        ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+        QueueLimit = 0,
+        AutoReplenishment = true,
+    }));
 });
 
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+// ------------------------------------------------------------------ admin: bany, údržba, statistiky
+// Čte se z admin stavu (Admin/AdminStore.cs) při každém požadavku, takže vypnutí zdroje,
+// maintenance nebo ban platí do sekundy bez restartu a bez nasazení.
+// /api/admin a /api/config zůstávají dostupné i v údržbě, aby se dalo vrátit zpět.
+var adminStore = app.Services.GetRequiredService<AdminStore>();
+app.Use(async (ctx, next) =>
+{
+    if (!ctx.Request.Path.StartsWithSegments("/api"))
+    {
+        await next();
+        return;
+    }
+
+    var isAdmin = ctx.Request.Path.StartsWithSegments("/api/admin");
+
+    if (!isAdmin && adminStore.ActiveBan(ctx) is { } ban)
+    {
+        var seconds = Math.Max(1, (int)(ban.Until - DateTimeOffset.UtcNow).TotalSeconds);
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        ctx.Response.Headers.RetryAfter = seconds.ToString();
+        ctx.Response.ContentType = "application/json; charset=utf-8";
+        await ctx.Response.WriteAsync(JsonSerializer.Serialize(new
+        {
+            success = false,
+            blocked = true,
+            until = ban.Until,
+            error = "Přístup z tohoto zařízení je zablokovaný."
+                    + (string.IsNullOrWhiteSpace(ban.Reason) ? "" : " (" + ban.Reason + ")"),
+        }));
+        adminStore.CountRequest(ClientKey(ctx), StatusCodes.Status403Forbidden);
+        return;
+    }
+
+    var flags = adminStore.Current.Flags;
+    var alwaysOpen = isAdmin
+        || ctx.Request.Path.StartsWithSegments("/api/config")
+        || ctx.Request.Path.StartsWithSegments("/api/health");
+    if (flags.Maintenance && !alwaysOpen)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        ctx.Response.Headers.RetryAfter = "60";
+        ctx.Response.ContentType = "application/json; charset=utf-8";
+        await ctx.Response.WriteAsync(JsonSerializer.Serialize(new
+        {
+            success = false,
+            maintenance = true,
+            error = flags.MaintenanceMessage,
+        }));
+        adminStore.CountRequest(ClientKey(ctx), StatusCodes.Status503ServiceUnavailable);
+        return;
+    }
+
+    await next();
+    adminStore.CountRequest(ClientKey(ctx), ctx.Response.StatusCode);
+});
 
 // Přibližná přítomnost pro indikátor „kolik lidí je online“ (viz PresenceId/OnlineCount).
 app.Use(async (ctx, next) =>
@@ -572,11 +643,15 @@ app.Use(async (ctx, next) =>
 var inflight = new ConcurrentDictionary<string, Lazy<Task<(bool ok, string body, List<string> errors)>>>();
 
 async Task<(bool ok, string body, List<string> errors)> CachedFetch(
-    IMemoryCache cache, string key, Func<string, TimeSpan> ttlFor,
+    IMemoryCache cache, string key, string scope, Func<string, TimeSpan> ttlFor,
     Func<Task<(bool ok, string body, List<string> errors)>> fetch)
 {
     if (cache.TryGetValue(key, out string? hit) && !string.IsNullOrEmpty(hit))
+    {
+        WflixCache.Hit();
         return (true, hit, new List<string>());
+    }
+    WflixCache.Miss();
 
     var lazy = inflight.GetOrAdd(key, k => new Lazy<Task<(bool ok, string body, List<string> errors)>>(async () =>
     {
@@ -587,10 +662,15 @@ async Task<(bool ok, string body, List<string> errors)> CachedFetch(
             {
                 cache.Set(key, r.body, ttlFor(r.body));
                 cache.Set("stale:" + key, r.body, TimeSpan.FromHours(6));
+                WflixCache.Track(key, scope);
+                WflixCache.Track("stale:" + key, scope);
                 return r;
             }
             if (cache.TryGetValue("stale:" + key, out string? old) && !string.IsNullOrEmpty(old))
+            {
+                WflixCache.Hit();
                 return (true, old, r.errors);
+            }
             return r;
         }
         finally { inflight.TryRemove(key, out _); }
@@ -791,12 +871,28 @@ app.MapGet("/api/search", async (string q, int? page, string? source, string[]? 
         return Results.BadRequest(new { success = false, error = "Missing search query (q parameter)" });
 
     // Stránkování výsledků (pro dotahování epizod seriálů). 1 = první stránka, 2+ = další.
-    var pg = Math.Clamp(page.GetValueOrDefault(1), 1, 50);
+    // Strop je z adminu (1-50) - nižší hodnota sníží tlak na prehraj.to, když je 429.
+    var st = adminStore.Current;
+    var pg = Math.Clamp(page.GetValueOrDefault(1), 1, Math.Clamp(st.Sources.MaxPage, 1, 50));
     var src = NormalizeSource(source);
+
+    // Vypnutý zdroj se neobsluhuje. "Vše najednou" (source=all) se při vypnutém mergi nebo
+    // chybějícím zdroji degraduje na jeden zapnutý - jinak by source=all vypnuté zdroje stejně obeslal.
+    if (src == "all" && (!st.Flags.MergeSources || st.Sources.Enabled().Length < 3))
+        src = st.Sources.Enabled().FirstOrDefault() ?? "prehrajto";
+    if (!st.Sources.IsEnabled(src))
+        return Results.Json(new
+        {
+            success = false,
+            source = src,
+            error = "Zdroj \"" + src + "\" je dočasně vypnutý.",
+            enabled = st.Sources.Enabled(),
+        }, statusCode: 400);
 
     // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nikdy nechodí (datacentrová IP
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
-    var query = $"action=search&q={Uri.EscapeDataString(q)}&source={Uri.EscapeDataString(src)}" + (pg > 1 ? $"&page={pg}" : "");
+    var query = $"action=search&q={Uri.EscapeDataString(q)}&source={Uri.EscapeDataString(src)}" + (pg > 1 ? $"&page={pg}" : "")
+                + (st.Sources.Fallback ? "" : "&fallback=0");
     var proxies = EffectiveProxies(proxy, serverProxies);
     var sources = OrderedProxies(proxies)
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
@@ -806,9 +902,10 @@ app.MapGet("/api/search", async (string q, int? page, string? source, string[]? 
     // se kvůli tomu cache pro běžné diváky vůbec nepoužila a každé hledání šlo na prehraj.to.
     // Stejný dotaz teď obslouží všechny uživatele a při 429 se vrátí i starší uložená odpověď.
     var norm = Regex.Replace(q.ToLowerInvariant(), @"\s+", " ");
-    var cacheKey = "search:" + src + ":" + CacheScope(proxies) + ":" + norm + (pg > 1 ? ":" + pg : "");
+    var cacheKey = "search:" + src + ":" + CacheScope(proxies) + ":" + norm + (pg > 1 ? ":" + pg : "")
+                   + (st.Sources.Fallback ? "" : ":nofb");
     var (ok, body, errors) = norm.Length <= 100
-        ? await CachedFetch(cache, cacheKey, SearchTtl, () => PacedFirstWorking(sources))
+        ? await CachedFetch(cache, cacheKey, "search", SearchTtl, () => PacedFirstWorking(sources))
         : await PacedFirstWorking(sources);
     if (!ok) return AllFailed(errors);
     return Results.Content(body, "application/json");
@@ -895,6 +992,9 @@ app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string
     if (q.Length == 0)
         return Results.BadRequest(new { success = false, error = "Missing q parameter", usage = "/api/thumb?q=Matrix&y=1999" });
 
+    if (src == "itunes" && !adminStore.Current.Flags.ItunesThumb)
+        return Results.Json(new { success = false, error = "Náhledy z iTunes jsou dočasně vypnuté." }, statusCode: 403);
+
     var eff = EffectiveProxies(proxy, serverProxies);
     var qs = $"action=thumb&q={Uri.EscapeDataString(q)}&t={Uri.EscapeDataString(t)}&re={Uri.EscapeDataString(re)}&src={src}"
              + (y is int py ? $"&y={py}" : "");
@@ -935,7 +1035,7 @@ app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string
         return (200, json, (string?)null);
     });
 
-    var (won, body, errors) = await CachedFetch(cache, key, ThumbTtl, () => FirstWorking(sources.ToArray()));
+    var (won, body, errors) = await CachedFetch(cache, key, "thumb", ThumbTtl, () => FirstWorking(sources.ToArray()));
     if (!won) return AllFailed(errors);
 
     var thumb = "";
@@ -1021,6 +1121,7 @@ app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCac
             return Results.Json(new { success = false, error = "Prázdný iTunes feed" });
 
         cache.Set(key, items, TimeSpan.FromDays(1));
+        WflixCache.Track(key, "catalog");
         return Results.Json(new { success = true, lang, count = items.Count, items });
     }
     catch (Exception ex)
@@ -1037,6 +1138,9 @@ app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCac
 //   ?custom=<i>   -> "Prehraj:LivePlaylists" z konfigurace
 app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttpClientFactory f, IMemoryCache cache) =>
 {
+    if (!adminStore.Current.Flags.Live)
+        return Results.Json(new { success = false, error = "Živé vysílání je dočasně vypnuté." }, statusCode: 503);
+
     string url;
     if (custom is int idx && idx >= 0 && idx < liveCustom.Length && IsValidProxyUrl(liveCustom[idx]))
         url = liveCustom[idx];
@@ -1070,6 +1174,7 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
         return Results.Json(new { success = false, error = "Playlist neobsahuje žádné kanály" });
 
     cache.Set(key, channels, TimeSpan.FromMinutes(30));
+    WflixCache.Track(key, "live");
     return Results.Json(new { success = true, source = url, count = channels.Count, channels });
 }).RequireRateLimiting("api");
 
@@ -1078,6 +1183,9 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
 // zemí, pro které iptv-org opravdu má playlist (viz níž). Doporučené země vyřazuje klient.
 app.MapGet("/api/live/countries", async (IHttpClientFactory f, IMemoryCache cache) =>
 {
+    if (!adminStore.Current.Flags.Live)
+        return Results.Json(new { success = false, error = "Živé vysílání je dočasně vypnuté." }, statusCode: 503);
+
     const string lcKey = "live-countries";
     if (cache.TryGetValue<List<LiveCountry>>(lcKey, out var lcCached) && lcCached is { Count: > 0 })
         return Results.Json(new { success = true, countries = lcCached });
@@ -1144,6 +1252,7 @@ app.MapGet("/api/live/countries", async (IHttpClientFactory f, IMemoryCache cach
         lcTtl = TimeSpan.FromMinutes(10);
 
     cache.Set(lcKey, lcList, lcTtl);
+    WflixCache.Track(lcKey, "live");
     return Results.Json(new { success = true, countries = lcList });
 }).RequireRateLimiting("api");
 
@@ -1154,6 +1263,10 @@ app.MapGet("/api/live/countries", async (IHttpClientFactory f, IMemoryCache cach
 // segmenty i klíče šly zase přes nás.
 app.MapGet("/api/live/hls", async (string url, string? ua, string? referrer, IHttpClientFactory f, HttpContext ctx) =>
 {
+    var liveFlags = adminStore.Current.Flags;
+    if (!liveFlags.Live || !liveFlags.LiveRelay)
+        return Results.Json(new { success = false, error = "Relay živého vysílání je dočasně vypnutý." }, statusCode: 503);
+
     if (!Uri.TryCreate(url, UriKind.Absolute, out var target)
         || (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps)
         || IsPrivateHost(target.Host))
@@ -1302,6 +1415,16 @@ app.MapGet("/api/proxy", async (string url, string? source, string[]? proxy, IHt
         else if (IsAllowedHost(u.Host, "sledujteto.cz")) src = "sledujteto";
         else if (IsAllowedHost(u.Host, "prehraj.to")) src = "prehrajto";
     }
+    // Vypnutý zdroj se neobsluhuje ani tady - jinak by se dal obejít /api/search a přehrávat dál.
+    if (src == "all") src = adminStore.Current.Sources.Enabled().FirstOrDefault() ?? "prehrajto";
+    if (!adminStore.Current.Sources.IsEnabled(src))
+        return Results.Json(new
+        {
+            success = false,
+            source = src,
+            error = "Zdroj \"" + src + "\" je dočasně vypnutý.",
+            enabled = adminStore.Current.Sources.Enabled(),
+        }, statusCode: 400);
     if (!IsAllowedSourcePageUrl(url))
         return Results.BadRequest(new { success = false, error = "URL must be from a supported source (prehraj.to, bombuj.si, sledujteto.cz)" });
 
@@ -1374,6 +1497,7 @@ async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, stri
 
     found = WebUtility.HtmlDecode(found).Replace("\\u0026", "&");
     cache.Set(key, found, TimeSpan.FromSeconds(90));
+    WflixCache.Track(key, "cdn");
     return found;
 }
 
@@ -1381,6 +1505,11 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
 {
     if (!IsPrehrajUrl(url))
         return Results.Json(new { success = false, error = "URL must be from prehraj.to" }, statusCode: 400);
+
+    // Admin kill switch: stahování počítá přenesená data (na Azure free tier to je reálná položka),
+    // přehrávání přes server funguje dál.
+    if (download is "1" or "true" && !adminStore.Current.Flags.Downloads)
+        return Results.Json(new { success = false, error = "Stahování je dočasně vypnuté." }, statusCode: 403);
 
     var ct = ctx.RequestAborted;
     var client = f.CreateClient("prehraj-stream");
@@ -1522,45 +1651,52 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
 }).RequireRateLimiting("api");
 
 // ------------------------------------------------------------------ /api/health + /api/ping
-app.MapGet("/api/health", async (IHttpClientFactory f) =>
+// Proby upstreamů používá i admin panel (/api/admin/ops), takže jsou to samostatné lokální
+// funkce místo kódu schovaného v handleru.
+static async Task<object> ProbeUpstream(IHttpClientFactory f, string name, string url, int timeoutSec = 8, Dictionary<string,string>? headers = null)
 {
-    static async Task<object> Probe(IHttpClientFactory f, string name, string url, int timeoutSec = 8, Dictionary<string,string>? headers = null)
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    try
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
-            var c = f.CreateClient("prehraj");
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            if (headers != null) foreach (var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-            using var resp = await c.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-            sw.Stop();
-            var ok = (int)resp.StatusCode >= 200 && (int)resp.StatusCode < 400;
-            return new { endpoint = name, ok, status = (int)resp.StatusCode, ms = sw.ElapsedMilliseconds, error = ok ? (string?)null : ("HTTP " + (int)resp.StatusCode) };
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            return new { endpoint = name, ok = false, status = 0, ms = sw.ElapsedMilliseconds, error = ex.GetType().Name + ": " + ex.Message };
-        }
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
+        var c = f.CreateClient("prehraj");
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        if (headers != null) foreach (var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+        using var resp = await c.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        sw.Stop();
+        var ok = (int)resp.StatusCode >= 200 && (int)resp.StatusCode < 400;
+        return new { endpoint = name, ok, status = (int)resp.StatusCode, ms = sw.ElapsedMilliseconds, error = ok ? (string?)null : ("HTTP " + (int)resp.StatusCode) };
     }
+    catch (Exception ex)
+    {
+        sw.Stop();
+        return new { endpoint = name, ok = false, status = 0, ms = sw.ElapsedMilliseconds, error = ex.GetType().Name + ": " + ex.Message };
+    }
+}
 
-    var mapped = new[] { "/api/search", "/api/thumb", "/api/catalog", "/api/live", "/api/live/countries", "/api/live/hls", "/api/subtitles", "/api/proxy", "/api/stream", "/api/health", "/api/ping", "/api/version" };
-    var mappedResults = mapped.Select(m => new { endpoint = m, ok = true, note = "mapped" }).ToArray<object>();
-
+async Task<List<object>> RunUpstreamProbes(IHttpClientFactory f)
+{
     var probes = new List<Task<object>>();
-    probes.Add(Probe(f, "upstream:itunes", "https://itunes.apple.com/search?media=movie&entity=movie&country=cz&limit=1&term=matrix"));
-    probes.Add(Probe(f, "upstream:iptv-org", "https://iptv-org.github.io/api/countries.json"));
-    probes.Add(Probe(f, "upstream:prehraj.to", "https://prehraj.to/"));
-    probes.Add(Probe(f, "upstream:sledujteto.cz", "https://www.sledujteto.cz/api/web/videos?query=test&limit=1&page=1&sort=relevance",
+    probes.Add(ProbeUpstream(f, "upstream:itunes", "https://itunes.apple.com/search?media=movie&entity=movie&country=cz&limit=1&term=matrix"));
+    probes.Add(ProbeUpstream(f, "upstream:iptv-org", "https://iptv-org.github.io/api/countries.json"));
+    probes.Add(ProbeUpstream(f, "upstream:prehraj.to", "https://prehraj.to/"));
+    probes.Add(ProbeUpstream(f, "upstream:sledujteto.cz", "https://www.sledujteto.cz/api/web/videos?query=test&limit=1&page=1&sort=relevance",
         headers: new Dictionary<string,string> { ["Accept"]="application/json", ["X-Requested-With"]="XMLHttpRequest", ["Referer"]="https://www.sledujteto.cz/vyhledat/?search=test&page=1", ["Origin"]="https://www.sledujteto.cz" }));
-    probes.Add(Probe(f, "upstream:bombuj.si", "https://www.bombuj.si/uvod.php"));
+    probes.Add(ProbeUpstream(f, "upstream:bombuj.si", "https://www.bombuj.si/uvod.php"));
     foreach (var proxy in serverProxies.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).Take(6))
     {
         var purl = proxy.Contains('?') ? (proxy + "&action=health") : (proxy + "?action=health");
-        probes.Add(Probe(f, "proxy:" + proxy, purl, 10));
+        probes.Add(ProbeUpstream(f, "proxy:" + proxy, purl, 10));
     }
-    var probeResults = await Task.WhenAll(probes);
+    return (await Task.WhenAll(probes)).ToList();
+}
+
+app.MapGet("/api/health", async (IHttpClientFactory f) =>
+{
+    var mapped = new[] { "/api/search", "/api/thumb", "/api/catalog", "/api/live", "/api/live/countries", "/api/live/hls", "/api/subtitles", "/api/proxy", "/api/stream", "/api/health", "/api/ping", "/api/version" };
+    var mappedResults = mapped.Select(m => new { endpoint = m, ok = true, note = "mapped" }).ToArray<object>();
+
+    var probeResults = await RunUpstreamProbes(f);
     var ok = probeResults.All(r => ((dynamic)r).ok);
     return Results.Json(new
     {
@@ -1588,6 +1724,17 @@ var buildVersion = typeof(Program).Assembly
     ?? typeof(Program).Assembly.GetName().Version?.ToString()
     ?? "unknown";
 var startedAt = DateTimeOffset.UtcNow;
+// ------------------------------------------------------------------ admin panel (/admin)
+// Stav je v Admin/AdminStore.cs, endpointy v Admin/AdminEndpoints.cs. Token se bere
+// z ADMIN_TOKEN (App Service → Configuration → Application settings), nikdy z repa.
+app.MapAdmin(new AdminRuntimeInfo(
+    Build: buildVersion,
+    Commit: buildVersion.IndexOf('+') >= 0 ? buildVersion[(buildVersion.IndexOf('+') + 1)..] : null,
+    StartedAt: startedAt,
+    OnlineUsers: OnlineCount,
+    UpstreamProbes: RunUpstreamProbes,
+    ServerProxies: serverProxies.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()));
+
 app.MapGet("/api/version", (HttpContext ctx) =>
 {
     var plus = buildVersion.IndexOf('+');

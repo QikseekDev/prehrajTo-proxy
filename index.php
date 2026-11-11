@@ -37,12 +37,56 @@ if ($action === 'search') {
     handleSearch($source);
 } elseif ($action === 'thumb') {
     handleThumb();
+} elseif ($action === 'purge') {
+    handlePurge();
 } elseif ($action === 'health') {
     handleHealth();
 } elseif ($action === 'stream') {
     handleStream();
 } else {
     handleVideo($source);
+}
+
+/**
+ * Smazání cache na tomhle hostingu. Volá to admin panel (.NET backend) na každou proxy,
+ * protože cache je v sys_get_temp_dir() a každý hosting má svou vlastní.
+ *
+ * Token se bere z prostředí (WFLIX_PURGE_TOKEN), nikdy z repa. Když nastavený není, purge
+ * zůstane vypnutý - je to jen cache, ale i tak to nemá být otevřené komukoli.
+ */
+function handlePurge() {
+    $expected = getenv('WFLIX_PURGE_TOKEN');
+    $given = isset($_GET['token']) ? (string)$_GET['token'] : '';
+    if (!$expected) {
+        wflixFail(['success' => false, 'error' => 'Purge je na téhle proxy vypnutý (chybí WFLIX_PURGE_TOKEN).'], 403);
+    }
+    if ($given === '' || !hash_equals($expected, $given)) {
+        wflixFail(['success' => false, 'error' => 'Neplatný token.'], 403);
+    }
+
+    $scope = isset($_GET['scope']) ? strtolower(trim((string)$_GET['scope'])) : 'all';
+    if (!in_array($scope, ['all', 'search', 'thumb'], true)) $scope = 'all';
+
+    $purged = 0;
+    if ($scope === 'all' || $scope === 'search') $purged += wflixPurgeDir(sys_get_temp_dir() . '/wflix-search');
+    if ($scope === 'all' || $scope === 'thumb') $purged += wflixPurgeDir(sys_get_temp_dir() . '/wflix-thumbs');
+
+    header('Cache-Control: no-store, max-age=0');
+    echo json_encode(['success' => true, 'scope' => $scope, 'purged' => $purged], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+function wflixPurgeDir($dir) {
+    if (!is_dir($dir)) return 0;
+    $items = @scandir($dir);
+    if (!is_array($items)) return 0;
+    $count = 0;
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') continue;
+        $path = $dir . DIRECTORY_SEPARATOR . $item;
+        if (is_file($path) && @unlink($path)) $count++;
+    }
+    return $count;
 }
 
 function wflixSource($s) {

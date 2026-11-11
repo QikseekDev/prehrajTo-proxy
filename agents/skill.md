@@ -7,6 +7,7 @@ Projekt je multi-klient proxy/přehrávač pro Wflix/Prehraj.to (a související
 - **Android APK (WebView klient):** UI v `apk/app/src/main/assets/www/{index.html,app.js,styles.css}`. Android wrapper `apk/app/src/main/java/...`, verze v `apk/app/build.gradle` (`versionCode`, `versionName`).
 - **LG webOS IPK (TV app):** `ipk/app/{index.html,app.js,styles.css,appinfo.json}`. Verze v `ipk/app/appinfo.json` (`version`).
 - **Backend/proxy:** `index.php`, `router.php` (PHP) a `azure-app/PrehrajtoProxy/Program.cs` (ASP.NET). API pod `/api/*` (search, proxy/stream, live/hls, health atd.). **Neměnit `.php`/backend bez potřeby**, zejména když požadavek zní „jen UI/klient“.
+- **Admin panel (jen .NET):** `azure-app/PrehrajtoProxy/Admin/{AdminStore.cs,AdminEndpoints.cs}` + `wwwroot/admin.html` na `/admin`. Stav (vypínače, zdroje, bany) je JSON mimo repo (`ADMIN_STATE_PATH`, jinak `$HOME/wflix-admin/state.json`), token z `ADMIN_TOKEN` – **do kódu se žádné heslo neukládá** a bez proměnné je `/api/admin` vypnuté (`503`). Klienti čtou `/api/config`. PHP `index.php` má jen `action=purge` (`WFLIX_PURGE_TOKEN`), panel tam není.
 - **CI:** `.github/workflows/android.yml` (APK), `.github/workflows/build-ipk.yml` (IPK), další `*.yml` pro .NET/checky.
 
 ## Důležité konvence
@@ -31,5 +32,6 @@ Workflowy `.github/workflows/build-ipk.yml` a `.github/workflows/android.yml` p�
 
 ## Ověření
 - Rychlá kontrola JS: `node --check ipk/app/app.js && node --check apk/app/src/main/assets/www/app.js && node --check azure-app/PrehrajtoProxy/wwwroot/script.js`
+- Backend: `cd azure-app/PrehrajtoProxy && dotnet build`; admin panel jde ověřit i bez prohlížeče (`curl` na `/api/config`, login, `/api/admin/state`).
 - Plné ověření UI/přehrávání vyžaduje reálné zařízení/buil z CI (webOS TV, Android). Git push přes `cloud_git`/projektový postup; nerozbíjet remote/user změny, řešit merge konflikty citlivě.
 - **Vždy pushuj:** po dokončení změn je (pokud uživatel výslovně neřekne jinak) commitni a pushni na remote; při odmítnutí push (non-fast-forward) nejdřív stáhni/začni rebase a push zopakuj, bez ztráty změn.

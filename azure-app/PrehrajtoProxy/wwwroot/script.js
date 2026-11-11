@@ -3582,3 +3582,33 @@
             });
             setTimeout(finish, duration + 2300);
         })();
+
+        // ===== Admin: /api/config (co je zrovna vypnuté) =====
+        // Server to vynucuje sám (403/503); tenhle blok jen ukáže srozumitelnou hlášku
+        // a schová tlačítko, které by stejně skončilo chybou. Když endpoint není
+        // (PHP self-host bez adminu), tiše se nic neděje.
+        (function adminConfig() {
+            const banner = document.createElement('div');
+            banner.id = 'adminBanner';
+            banner.hidden = true;
+            banner.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;padding:10px 16px;'
+                + 'font:14px/1.4 Helvetica,Arial,sans-serif;text-align:center;background:#b20710;color:#fff;'
+                + 'box-shadow:0 2px 12px rgba(0,0,0,.6)';
+            document.body.appendChild(banner);
+
+            function apply(cfg) {
+                if (!cfg || !cfg.success) return;
+                if (cfg.maintenance) {
+                    banner.textContent = '🛠 ' + (cfg.message || 'Wflix je dočasně mimo provoz.');
+                    banner.hidden = false;
+                } else {
+                    banner.hidden = true;
+                }
+                if (cfg.flags && cfg.flags.downloads === false) dlBtn.hidden = true;
+            }
+
+            fetch('/api/config', { cache: 'no-store' })
+                .then(r => r.ok ? r.json() : null)
+                .then(apply)
+                .catch(() => { /* self-host bez /api/config */ });
+        })();

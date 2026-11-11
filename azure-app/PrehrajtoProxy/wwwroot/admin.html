@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Wflix admin</title>
+<style>
+    :root { --red: #e50914; --bg: #141414; --panel: #1b1b1b; --line: #2c2c2c; --text: #e5e5e5; --muted: #8c8c8c; --green: #46d369; --amber: #f5c518; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Helvetica Neue', Helvetica, Arial, -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+    .hidden { display: none !important; }
+    header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 20px; background: #101010; border-bottom: 1px solid var(--line); }
+    .logo { font-weight: 900; font-size: 22px; color: var(--red); letter-spacing: -0.3px; }
+    .logo small { font-weight: 400; font-size: 12px; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+    header .spacer { flex: 1; }
+    .pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--muted); }
+    .pill b { color: var(--text); font-weight: 600; }
+    main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 18px; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
+    h2 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; line-height: 1.45; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 18px; }
+    label.check { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; padding: 6px 0; line-height: 1.35; }
+    label.check input { margin-top: 2px; accent-color: var(--red); }
+    label.check .hint { display: block; color: var(--muted); font-size: 12px; }
+    input[type=text], input[type=password], input[type=number], select, textarea { background: #0f0f0f; color: var(--text); border: 1px solid #3a3a3a; border-radius: 5px; padding: 8px 10px; font: inherit; width: 100%; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--red); }
+    button { font: inherit; cursor: pointer; border: 1px solid #3a3a3a; background: #232323; color: var(--text); border-radius: 5px; padding: 8px 14px; }
+    button:hover { background: #2d2d2d; }
+    button.primary { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
+    button.primary:hover { background: #c00812; }
+    button.small { padding: 3px 9px; font-size: 12px; }
+    button:disabled { opacity: .5; cursor: default; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+    .msg { margin-top: 10px; font-size: 13px; min-height: 18px; }
+    .msg.err { color: #ff6b6b; }
+    .msg.ok { color: var(--green); }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 4px; }
+    .stat { background: #131313; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+    .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+    .stat .v { font-size: 19px; font-weight: 700; margin-top: 3px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+    td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .ok { color: var(--green); } .bad { color: #ff6b6b; } .warn { color: var(--amber); }
+    .login { max-width: 380px; margin: 12vh auto 0; }
+    .login h1 { font-size: 20px; margin-bottom: 6px; }
+    .login input { margin: 14px 0 10px; }
+    .login button { width: 100%; }
+    .banner { border-left: 3px solid var(--red); background: #1f1414; padding: 10px 14px; border-radius: 5px; color: #ffb3b3; }
+    .banner.warn { border-color: var(--amber); background: #1f1c10; color: #ffe08a; }
+    .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .inline > * { width: auto; }
+    .purge-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+    .mt { margin-top: 12px; }
+    .muted { color: var(--muted); }
+    .cache-mini { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="login" class="hidden">
+    <div class="login">
+        <div class="logo" style="font-size:26px">Wflix</div>
+        <h1 style="margin-top:10px">Admin panel</h1>
+        <div class="sub">Vstup jen s <span class="mono">ADMIN_TOKEN</span>, který je nastavený na serveru.</div>
+        <input id="token" type="password" placeholder="Admin token" autocomplete="current-password" autofocus>
+        <button id="loginBtn" class="primary">Přihlásit</button>
+        <div id="loginMsg" class="msg"></div>
+    </div>
+</div>
+
+<div id="panel" class="hidden">
+    <header>
+        <div class="logo">Wflix <small>admin</small></div>
+        <span class="pill" id="pillBuild">build …</span>
+        <span class="pill" id="pillUptime">uptime …</span>
+        <span class="pill" id="pillOnline">online …</span>
+        <span class="spacer"></span>
+        <label class="check" style="padding:0;font-size:12px" title="Obnoví stav každých 15 s">
+            <input type="checkbox" id="auto" checked> <span>auto</span>
+        </label>
+        <button id="refreshBtn" class="small">Obnovit</button>
+        <button id="logoutBtn" class="small">Odhlásit</button>
+    </header>
+
+    <main>
+        <div id="msg" class="msg"></div>
+
+        <section id="opsSection">
+            <h2>Stav</h2>
+            <div class="sub">Běžící build, provoz a počítadla od startu procesu. Čísla jsou jen v paměti – restart je vynuluje.</div>
+            <div class="stats" id="stats"></div>
+            <div class="row">
+                <button id="testBtn">Otestovat zdroje a proxy</button>
+                <span class="muted" id="testInfo"></span>
+            </div>
+            <div id="checks" class="mt"></div>
+        </section>
+
+        <section>
+            <h2>Vypínače</h2>
+            <div class="sub">Platí do sekundy, bez restartu a bez nasazení. Vypnuté zdroje vrací srozumitelnou chybu, ne ticho.</div>
+            <div class="grid">
+                <label class="check"><input type="checkbox" id="fDownloads"><span>Stahování<span class="hint">/api/stream?download=1 → 403. Přehrávání funguje dál.</span></span></label>
+                <label class="check"><input type="checkbox" id="fLive"><span>Živé vysílání<span class="hint">/api/live a /api/live/hls → 503.</span></span></label>
+                <label class="check"><input type="checkbox" id="fLiveRelay"><span>HLS relay<span class="hint">Jen relay; seznam kanálů a přímé přehrávání zůstávají.</span></span></label>
+                <label class="check"><input type="checkbox" id="fMerge"><span>Více výsledků (source=all)<span class="hint">Vypnuto → hledá jen jeden zapnutý zdroj.</span></span></label>
+                <label class="check"><input type="checkbox" id="fItunes"><span>Náhledy z iTunes<span class="hint">Katalog a plakáty z prehraj.to fungují dál.</span></span></label>
+            </div>
+            <div class="mt">
+                <label class="check" style="cursor:default"><input type="checkbox" id="fMaintenance"><span><b>Údržba</b><span class="hint">Všechno /api kromě /api/config, /api/health a /api/admin → 503. Panel zůstává dostupný.</span></span></label>
+                <input id="fMessage" type="text" maxlength="300" placeholder="Hláška při údržbě" style="margin-top:8px">
+            </div>
+            <div class="row">
+                <button id="saveFlags" class="primary">Uložit vypínače</button>
+                <span class="muted">Naposledy změnil <span id="flagsBy" class="mono">–</span></span>
+            </div>
+        </section>
+
+        <section>
+            <h2>Zdroje</h2>
+            <div class="sub">Když prehraj.to vrací 429, vypni ho a nech běžet sledujteto. „Více výsledků“ vyžaduje všechny tři zapnuté.</div>
+            <div class="grid">
+                <label class="check"><input type="checkbox" id="sPrehrajto"><span>prehraj.to<span class="hint">Výchozí zdroj, nejvíc 429.</span></span></label>
+                <label class="check"><input type="checkbox" id="sSledujteto"><span>sledujteto.cz<span class="hint">Fallback při prázdném výsledku.</span></span></label>
+                <label class="check"><input type="checkbox" id="sBombuj"><span>bombuj.si<span class="hint">Jen v režimu „Více výsledků“.</span></span></label>
+                <label class="check"><input type="checkbox" id="sFallback"><span>Automatický fallback<span class="hint">prehrajto → sledujteto při chybě/prázdném výsledku.</span></span></label>
+            </div>
+            <div class="row">
+                <label class="inline" style="gap:8px">
+                    <span class="muted">Max. stránka</span>
+                    <input id="sMaxPage" type="number" min="1" max="50" step="1" style="width:80px">
+                </label>
+                <button id="saveSources" class="primary">Uložit zdroje</button>
+                <span class="muted">Naposledy změnil <span id="sourcesBy" class="mono">–</span></span>
+            </div>
+        </section>
+
+        <section>
+            <h2>Cache</h2>
+            <div class="sub">Server drží výsledky hledání (30 min), náhledy (7 dní) a katalog (1 den). Špatný plakát nebo zastaralý výsledek jinak počká, až vyprší TTL.</div>
+            <div class="cache-mini" id="cacheInfo"></div>
+            <div class="row purge-grid">
+                <button data-scope="search">Hledání</button>
+                <button data-scope="thumb">Náhledy</button>
+                <button data-scope="catalog">Katalog</button>
+                <button data-scope="live">Živé</button>
+                <button data-scope="cdn">CDN odkazy</button>
+                <button data-scope="all" class="primary">Vše</button>
+            </div>
+            <label class="check mt"><input type="checkbox" id="purgeProxies" checked><span>Smazat i cache na PHP proxy serverech<span class="hint">Jen když mají nastavený WFLIX_PURGE_TOKEN; jinak to panel přeskočí a napíše proč.</span></span></label>
+            <div id="purgeOut" class="mt"></div>
+        </section>
+
+        <section>
+            <h2>Bany</h2>
+            <div class="sub">Dočasné zablokování IP nebo klienta (cid z localStorage) mimo rate limit. Použij, když někdo scrapuje – limit 6/s ho jen zpomalí.</div>
+            <div class="grid">
+                <label class="inline" style="gap:8px"><span class="muted" style="width:44px">Typ</span>
+                    <select id="bKind"><option value="ip">IP</option><option value="cid">cid</option></select>
+                </label>
+                <label class="inline" style="gap:8px"><span class="muted" style="width:44px">Cíl</span>
+                    <input id="bTarget" type="text" placeholder="1.2.3.4 nebo cid-abc123">
+                </label>
+                <label class="inline" style="gap:8px"><span class="muted" style="width:60px">Minuty</span>
+                    <input id="bMinutes" type="number" min="1" max="10080" value="60" style="width:90px">
+                </label>
+                <label class="inline" style="gap:8px"><span class="muted" style="width:44px">Důvod</span>
+                    <input id="bReason" type="text" maxlength="200" placeholder="nepovinné">
+                </label>
+            </div>
+            <div class="row"><button id="addBan" class="primary">Zablokovat</button></div>
+            <div id="bans" class="mt"></div>
+            <h2 class="mt">Nejaktivnější klienti</h2>
+            <div class="sub">Počty od startu procesu; po restartu se vynulují.</div>
+            <div id="talkers"></div>
+        </section>
+
+        <section>
+            <h2>Audit</h2>
+            <div class="sub">Každá změna z panelu (a nepovedené přihlášení) se zapisuje do <span class="mono">audit.jsonl</span> vedle stavu.</div>
+            <div id="audit"></div>
+        </section>
+    </main>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var csrf = null;
+    var state = null;
+    var timer = null;
+
+    function $(id) { return document.getElementById(id); }
+    function el(tag, cls, text) {
+        var n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text != null) n.textContent = text;
+        return n;
+    }
+    function show(id, yes) { $(id).classList.toggle('hidden', !yes); }
+    function fmtTime(v) {
+        if (!v) return '–';
+        var d = new Date(v);
+        return isNaN(d.getTime()) ? String(v) : d.toLocaleString('cs-CZ');
+    }
+    function fmtUptime(s) {
+        s = Math.max(0, s | 0);
+        var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+        if (d) return d + ' d ' + h + ' h';
+        if (h) return h + ' h ' + m + ' m';
+        return m + ' m ' + (s % 60) + ' s';
+    }
+    function msg(text, ok) {
+        var m = $('msg');
+        m.textContent = text || '';
+        m.className = 'msg ' + (text ? (ok ? 'ok' : 'err') : '');
+        if (text) setTimeout(function () { if (m.textContent === text) { m.textContent = ''; m.className = 'msg'; } }, 6000);
+    }
+
+    function api(path, opts) {
+        opts = opts || {};
+        var init = {
+            method: opts.method || 'GET',
+            credentials: 'same-origin',
+            headers: {}
+        };
+        if (opts.body !== undefined) {
+            init.headers['Content-Type'] = 'application/json';
+            init.body = JSON.stringify(opts.body);
+        }
+        if (init.method !== 'GET' && csrf) init.headers['X-Wflix-CSRF'] = csrf;
+
+        return fetch(path, init).then(function (res) {
+            return res.text().then(function (text) {
+                var data = null;
+                try { data = text ? JSON.parse(text) : null; } catch (e) { /* ne-JSON */ }
+                if (res.status === 401 && path.indexOf('/login') === -1) {
+                    showLogin('Přihlášení vypršelo.');
+                    throw new Error('Nejsi přihlášený.');
+                }
+                if (!res.ok) {
+                    throw new Error((data && data.error) || ('HTTP ' + res.status));
+                }
+                return data;
+            });
+        });
+    }
+
+    // ------------------------------------------------------------ login
+    function showLogin(reason) {
+        if (timer) { clearInterval(timer); timer = null; }
+        show('panel', false);
+        show('login', true);
+        $('loginMsg').textContent = reason || '';
+        $('loginMsg').className = 'msg err';
+        $('token').value = '';
+        setTimeout(function () { $('token').focus(); }, 30);
+    }
+
+    function showDisabled() {
+        show('panel', false);
+        show('login', true);
+        $('loginBtn').disabled = true;
+        $('token').disabled = true;
+        $('loginMsg').textContent = 'Admin není nakonfigurovaný. Nastav na serveru proměnnou ADMIN_TOKEN a restartuj appku.';
+        $('loginMsg').className = 'msg err';
+    }
+
+    function login() {
+        var token = $('token').value.trim();
+        if (!token) { $('loginMsg').textContent = 'Zadej token.'; return; }
+        $('loginBtn').disabled = true;
+        api('/api/admin/login', { method: 'POST', body: { token: token } }).then(function (d) {
+            csrf = d.csrf;
+            show('login', false);
+            show('panel', true);
+            refreshAll();
+            timer = setInterval(function () {
+                if (!document.hidden && $('auto').checked) refreshState();
+            }, 15000);
+        }).catch(function (e) {
+            $('loginMsg').textContent = e.message;
+            $('loginMsg').className = 'msg err';
+        }).then(function () {
+            $('loginBtn').disabled = false;
+        });
+    }
+
+    // ------------------------------------------------------------ stav
+    function refreshState() {
+        return api('/api/admin/state').then(function (d) {
+            state = d;
+            renderRuntime(d.runtime, d.stats);
+            fillForms(d.state);
+            renderCache(d.cache);
+            renderBans(d.state.bans || [], d.stats);
+            $('flagsBy').textContent = d.state.updatedBy ? (d.state.updatedBy + ' · ' + fmtTime(d.state.updatedAt)) : '–';
+            $('sourcesBy').textContent = $('flagsBy').textContent;
+        }).catch(function (e) {
+            if (e.message !== 'Nejsi přihlášený.') msg(e.message, false);
+        });
+    }
+
+    function refreshAll() {
+        refreshState();
+        refreshAudit();
+    }
+
+    function renderRuntime(rt, stats) {
+        if (!rt) return;
+        $('pillBuild').innerHTML = '';
+        $('pillBuild').append('build ');
+        $('pillBuild').append(el('b', null, rt.commit ? String(rt.commit).slice(0, 7) : String(rt.build || '?').slice(0, 12)));
+        $('pillBuild').title = rt.build || '';
+        $('pillUptime').innerHTML = 'uptime <b>' + fmtUptime(rt.uptimeSeconds) + '</b>';
+        $('pillOnline').innerHTML = 'online <b>' + (rt.onlineUsers | 0) + '</b>';
+
+        var box = $('stats');
+        box.innerHTML = '';
+        var cards = [
+            ['Požadavky /api', stats.requests],
+            ['429', stats.rateLimited],
+            ['5xx', stats.serverErrors],
+            ['Aktivní bany', stats.activeBans],
+            ['Proxy', rt.proxies],
+        ];
+        cards.forEach(function (c) {
+            var d = el('div', 'stat');
+            d.append(el('div', 'k', c[0]));
+            d.append(el('div', 'v', String(c[1])));
+            box.append(d);
+        });
+    }
+
+    function fillForms(s) {
+        if (!s) return;
+        var f = s.flags || {};
+        $('fMaintenance').checked = !!f.maintenance;
+        $('fMessage').value = f.maintenanceMessage || '';
+        $('fDownloads').checked = f.downloads !== false;
+        $('fLive').checked = f.live !== false;
+        $('fLiveRelay').checked = f.liveRelay !== false;
+        $('fMerge').checked = f.mergeSources !== false;
+        $('fItunes').checked = f.itunesThumb !== false;
+
+        var src = s.sources || {};
+        $('sPrehrajto').checked = src.prehrajto !== false;
+        $('sSledujteto').checked = src.sledujteto !== false;
+        $('sBombuj').checked = src.bombuj !== false;
+        $('sFallback').checked = src.fallback !== false;
+        $('sMaxPage').value = src.maxPage || 50;
+    }
+
+    function renderCache(c) {
+        var box = $('cacheInfo');
+        box.innerHTML = '';
+        if (!c) return;
+        var total = (c.hits || 0) + (c.misses || 0);
+        var rate = total ? Math.round(100 * c.hits / total) : 0;
+        [
+            ['položek v paměti', c.memoryEntries],
+            ['sledovaných klíčů', c.trackedKeys],
+            ['hledání', c.scopes.search],
+            ['náhledy', c.scopes.thumb],
+            ['katalog', c.scopes.catalog],
+            ['živé', c.scopes.live],
+            ['CDN', c.scopes.cdn],
+            ['zásahů', c.hits + ' / ' + total + ' (' + rate + ' %)']
+        ].forEach(function (p) {
+            var s = el('span');
+            s.append(document.createTextNode(p[0] + ': '));
+            var b = el('b', null, String(p[1]));
+            b.style.color = 'var(--text)';
+            s.append(b);
+            box.append(s);
+        });
+    }
+
+    function renderBans(bans, stats) {
+        var box = $('bans');
+        box.innerHTML = '';
+        var active = bans.filter(function (b) { return new Date(b.until) > new Date(); });
+        var expired = bans.length - active.length;
+        if (!active.length) {
+            box.append(el('div', 'muted', 'Žádný aktivní ban.' + (expired ? ' (' + expired + ' prošlých se uklidí při další změně)' : '')));
+        } else {
+            var t = el('table');
+            var head = el('tr');
+            ['typ', 'cíl', 'do', 'důvod', ''].forEach(function (h) { head.append(el('th', null, h)); });
+            t.append(head);
+            active.forEach(function (b) {
+                var tr = el('tr');
+                tr.append(el('td', null, b.kind));
+                tr.append(el('td', 'mono', b.target));
+                tr.append(el('td', null, fmtTime(b.until)));
+                tr.append(el('td', null, b.reason || '–'));
+                var td = el('td');
+                var btn = el('button', 'small', 'Zrušit');
+                btn.onclick = function () {
+                    btn.disabled = true;
+                    api('/api/admin/bans/remove', { method: 'POST', body: { kind: b.kind, target: b.target } })
+                        .then(function () { msg('Ban zrušen.', true); refreshAll(); })
+                        .catch(function (e) { msg(e.message, false); btn.disabled = false; });
+                };
+                td.append(btn);
+                tr.append(td);
+                t.append(tr);
+            });
+            box.append(t);
+        }
+
+        var talk = $('talkers');
+        talk.innerHTML = '';
+        var list = (stats && stats.topTalkers) || [];
+        if (!list.length) { talk.append(el('div', 'muted', 'Zatím žádná data.')); return; }
+        var t2 = el('table');
+        var h2 = el('tr');
+        ['klient', 'požadavků', ''].forEach(function (h) { h2.append(el('th', null, h)); });
+        t2.append(h2);
+        list.forEach(function (x) {
+            var tr = el('tr');
+            tr.append(el('td', 'mono', x.client));
+            tr.append(el('td', null, String(x.requests)));
+            var td = el('td');
+            var b = el('button', 'small', 'Ban 60 min');
+            b.onclick = function () {
+                $('bKind').value = /^\d+\.\d+\.\d+\.\d+$/.test(x.client) ? 'ip' : 'cid';
+                $('bTarget').value = x.client;
+                $('bMinutes').value = 60;
+                $('bTarget').scrollIntoView({ block: 'center' });
+                $('addBan').focus();
+            };
+            td.append(b);
+            tr.append(td);
+            t2.append(tr);
+        });
+        talk.append(t2);
+    }
+
+    function renderAudit(entries) {
+        var box = $('audit');
+        box.innerHTML = '';
+        if (!entries || !entries.length) { box.append(el('div', 'muted', 'Zatím žádné záznamy.')); return; }
+        var t = el('table');
+        var head = el('tr');
+        ['kdy', 'akce', 'kdo', 'detail'].forEach(function (h) { head.append(el('th', null, h)); });
+        t.append(head);
+        entries.forEach(function (e) {
+            var tr = el('tr');
+            tr.append(el('td', null, fmtTime(e.at)));
+            tr.append(el('td', null, e.action));
+            tr.append(el('td', 'mono', e.actor));
+            tr.append(el('td', 'mono', e.details || ''));
+            t.append(tr);
+        });
+        box.append(t);
+    }
+
+    function refreshAudit() {
+        return api('/api/admin/audit').then(function (d) { renderAudit(d.entries); }).catch(function () { });
+    }
+
+    // ------------------------------------------------------------ akce
+    function post(path, body, okText) {
+        return api(path, { method: 'POST', body: body }).then(function (d) {
+            msg(okText, true);
+            refreshAll();
+            return d;
+        }).catch(function (e) { msg(e.message, false); throw e; });
+    }
+
+    function flagsBody() {
+        return {
+            maintenance: $('fMaintenance').checked,
+            maintenanceMessage: $('fMessage').value.trim(),
+            downloads: $('fDownloads').checked,
+            live: $('fLive').checked,
+            liveRelay: $('fLiveRelay').checked,
+            mergeSources: $('fMerge').checked,
+            itunesThumb: $('fItunes').checked
+        };
+    }
+
+    function bind() {
+        $('loginBtn').addEventListener('click', login);
+        $('token').addEventListener('keydown', function (e) { if (e.key === 'Enter') login(); });
+
+        $('logoutBtn').addEventListener('click', function () {
+            api('/api/admin/logout', { method: 'POST' }).catch(function () { }).then(function () {
+                csrf = null;
+                showLogin('');
+            });
+        });
+
+        $('refreshBtn').addEventListener('click', function () { refreshAll(); msg('Obnoveno.', true); });
+
+        $('saveFlags').addEventListener('click', function () {
+            if ($('fMaintenance').checked && !confirm('Zapnout údržbu? Všichni uživatelé uvidí 503, dokud to nevypneš.')) return;
+            post('/api/admin/flags', flagsBody(), 'Vypínače uloženy.');
+        });
+
+        $('saveSources').addEventListener('click', function () {
+            var n = parseInt($('sMaxPage').value, 10);
+            if (!(n >= 1 && n <= 50)) { msg('Max. stránka musí být 1-50.', false); return; }
+            if (!$('sPrehrajto').checked && !$('sSledujteto').checked && !$('sBombuj').checked && !confirm('Všechny zdroje jsou vypnuté - hledání přestane fungovat. Pokračovat?')) return;
+            post('/api/admin/sources', {
+                prehrajto: $('sPrehrajto').checked,
+                sledujteto: $('sSledujteto').checked,
+                bombuj: $('sBombuj').checked,
+                fallback: $('sFallback').checked,
+                maxPage: n
+            }, 'Zdroje uloženy.');
+        });
+
+        $('addBan').addEventListener('click', function () {
+            var kind = $('bKind').value;
+            var target = $('bTarget').value.trim();
+            var minutes = parseInt($('bMinutes').value, 10);
+            if (!target) { msg('Zadej IP nebo cid.', false); return; }
+            if (!(minutes >= 1 && minutes <= 10080)) { msg('Minuty musí být 1-10080.', false); return; }
+            post('/api/admin/bans', { kind: kind, target: target, minutes: minutes, reason: $('bReason').value.trim() }, 'Zablokováno.')
+                .then(function () { $('bTarget').value = ''; $('bReason').value = ''; }).catch(function () { });
+        });
+
+        document.querySelectorAll('[data-scope]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var scope = btn.getAttribute('data-scope');
+                if (scope === 'all' && !confirm('Smazat všechny cache? Příští dotazy půjdou znovu na zdroje (a můžou narazit na 429).')) return;
+                btn.disabled = true;
+                $('purgeOut').innerHTML = '';
+                api('/api/admin/purge', { method: 'POST', body: { scope: scope, proxies: $('purgeProxies').checked } })
+                    .then(function (d) {
+                        msg('Smazáno ' + d.removed + ' klíčů (' + d.scope + ').', true);
+                        var out = $('purgeOut');
+                        if (d.proxies && d.proxies.length) {
+                            d.proxies.forEach(function (p) {
+                                var line = el('div', 'mono');
+                                line.style.color = p.ok ? 'var(--green)' : 'var(--muted)';
+                                var label = p.proxy === '*' ? 'všechny proxy' : p.proxy;
+                                line.textContent = (p.ok ? '✓ ' : '· ') + label + (p.purged >= 0 ? ' → ' + p.purged + ' klíčů' : '') + (p.error ? ' — ' + p.error : '');
+                                out.append(line);
+                            });
+                        }
+                        refreshAll();
+                    })
+                    .catch(function (e) { msg(e.message, false); })
+                    .then(function () { btn.disabled = false; });
+            });
+        });
+
+        $('testBtn').addEventListener('click', function () {
+            var btn = $('testBtn');
+            btn.disabled = true;
+            $('testInfo').textContent = 'testuji…';
+            api('/api/admin/ops').then(function (d) {
+                renderRuntime(d.runtime, { requests: d.stats.requests, rateLimited: d.stats.rateLimited, serverErrors: d.stats.serverErrors, activeBans: 0, topTalkers: [] });
+                var okCount = (d.checks || []).filter(function (c) { return c.ok; }).length;
+                $('testInfo').textContent = okCount + ' / ' + (d.checks || []).length + ' v pořádku';
+                var box = $('checks');
+                box.innerHTML = '';
+                var t = el('table');
+                var head = el('tr');
+                ['zdroj', 'stav', 'kód', 'ms', 'chyba'].forEach(function (h) { head.append(el('th', null, h)); });
+                t.append(head);
+                (d.checks || []).forEach(function (c) {
+                    var tr = el('tr');
+                    tr.append(el('td', 'mono', c.endpoint));
+                    tr.append(el('td', c.ok ? 'ok' : 'bad', c.ok ? 'ok' : 'chyba'));
+                    tr.append(el('td', null, String(c.status || '')));
+                    tr.append(el('td', null, String(c.ms || '')));
+                    tr.append(el('td', 'mono', c.error || c.note || ''));
+                    t.append(tr);
+                });
+                box.append(t);
+            }).catch(function (e) {
+                $('testInfo').textContent = '';
+                msg(e.message, false);
+            }).then(function () { btn.disabled = false; });
+        });
+    }
+
+    // ------------------------------------------------------------ start
+    api('/api/admin/session').then(function (s) {
+        if (!s.enabled) { showDisabled(); return; }
+        if (s.authenticated) {
+            csrf = s.csrf;
+            show('panel', true);
+            show('login', false);
+            refreshAll();
+            timer = setInterval(function () {
+                if (!document.hidden && $('auto').checked) refreshState();
+            }, 15000);
+        } else {
+            showLogin('');
+        }
+    }).catch(function () { showLogin(''); });
+
+    bind();
+})();
+</script>
+</body>
+</html>
