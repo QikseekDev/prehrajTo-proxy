@@ -57,6 +57,13 @@
     .mt { margin-top: 12px; }
     .muted { color: var(--muted); }
     .cache-mini { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+    .spark { display: flex; align-items: flex-end; gap: 2px; height: 46px; margin-top: 8px; }
+    .spark i { flex: 1; background: #262626; border-radius: 1px 1px 0 0; min-height: 2px; }
+    .spark i.on { background: var(--red); }
+    .chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; font-size: 12px; color: var(--muted); }
+    .chip b { color: var(--text); }
+    tr.off td { opacity: .45; }
+    .ua { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
 </style>
 </head>
 <body>
@@ -78,6 +85,7 @@
         <span class="pill" id="pillBuild">build …</span>
         <span class="pill" id="pillUptime">uptime …</span>
         <span class="pill" id="pillOnline">online …</span>
+        <span class="pill" id="pillState">web …</span>
         <span class="spacer"></span>
         <label class="check" style="padding:0;font-size:12px" title="Obnoví stav každých 15 s">
             <input type="checkbox" id="auto" checked> <span>auto</span>
@@ -93,6 +101,8 @@
             <h2>Stav</h2>
             <div class="sub">Běžící build, provoz a počítadla od startu procesu. Čísla jsou jen v paměti – restart je vynuluje.</div>
             <div class="stats" id="stats"></div>
+            <div class="spark" id="spark" title="Požadavky po minutách za poslední hodinu"></div>
+            <div class="muted" style="font-size:11px;margin-top:4px">požadavky po minutách, posledních 60 minut</div>
             <div class="row">
                 <button id="testBtn">Otestovat zdroje a proxy</button>
                 <span class="muted" id="testInfo"></span>
@@ -113,6 +123,10 @@
             <div class="mt">
                 <label class="check" style="cursor:default"><input type="checkbox" id="fMaintenance"><span><b>Údržba</b><span class="hint">Všechno /api kromě /api/config, /api/health a /api/admin → 503. Panel zůstává dostupný.</span></span></label>
                 <input id="fMessage" type="text" maxlength="300" placeholder="Hláška při údržbě" style="margin-top:8px">
+            </div>
+            <div class="mt">
+                <label class="check" style="cursor:default"><input type="checkbox" id="fFull"><span><b>Úplná údržba – zamknout web</b><span class="hint">Místo webu se ukáže zamykací stránka s hláškou. Odemkne ji jen admin heslo (stejné přihlášení jako do panelu) a platí pro celý web.</span></span></label>
+                <label class="check" style="cursor:default"><input type="checkbox" id="fShutdown"><span><b>Vypnout frontend</b><span class="hint">Web i veřejné /api přestanou existovat (503). Panel a endpoints, které potřebuje k odemčení, zůstávají – nemůže vzniknout softlock.</span></span></label>
             </div>
             <div class="row">
                 <button id="saveFlags" class="primary">Uložit vypínače</button>
@@ -156,6 +170,37 @@
         </section>
 
         <section>
+            <h2>Proxy servery</h2>
+            <div class="sub">Seznam používá server i prohlížeč a změna platí hned. „Uložit + commit“ ji zapíše i do <span class="mono">proxy-servers.txt</span> v repu (potřebuje <span class="mono">WFLIX_GITHUB_TOKEN</span>); bez tokenu jde soubor stáhnout a nahrát ručně.</div>
+            <div id="proxyList"></div>
+            <div class="row">
+                <input id="proxyNew" type="text" placeholder="http://novy-proxy.example/index.php" style="flex:1;min-width:240px">
+                <button id="proxyAdd">Přidat</button>
+            </div>
+            <div class="row">
+                <button id="proxySave" class="primary">Uložit</button>
+                <button id="proxySaveCommit">Uložit + commit do repa</button>
+                <button id="proxyTest">Otestovat</button>
+                <button id="proxyExport">Stáhnout .txt</button>
+            </div>
+            <div id="proxyOut" class="mt"></div>
+        </section>
+
+        <section>
+            <h2>Kdo je na webu</h2>
+            <div class="sub">IP, čas a přibližná poloha. Polohu odhaduje server podle IP (ip-api.com, bez ptaní prohlížeče) – je to odhad, ne GPS. Data jsou jen v paměti procesu, restart je vymaže.</div>
+            <div class="inline" style="gap:10px">
+                <label class="inline" style="gap:8px"><span class="muted">Okno</span>
+                    <select id="vMinutes"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="30">30 min</option><option value="60">60 min</option></select>
+                </label>
+                <button id="vRefresh" class="small">Obnovit</button>
+                <span class="muted" id="vInfo"></span>
+            </div>
+            <div id="vCountries" class="cache-mini mt"></div>
+            <div id="vList" class="mt"></div>
+        </section>
+
+        <section>
             <h2>Bany</h2>
             <div class="sub">Dočasné zablokování IP nebo klienta (cid z localStorage) mimo rate limit. Použij, když někdo scrapuje – limit 6/s ho jen zpomalí.</div>
             <div class="grid">
@@ -182,6 +227,7 @@
         <section>
             <h2>Audit</h2>
             <div class="sub">Každá změna z panelu (a nepovedené přihlášení) se zapisuje do <span class="mono">audit.jsonl</span> vedle stavu.</div>
+            <div class="row" style="margin-top:0;margin-bottom:12px"><button id="auditExport" class="small">Stáhnout celý audit</button></div>
             <div id="audit"></div>
         </section>
     </main>
@@ -194,6 +240,7 @@
     var csrf = null;
     var state = null;
     var timer = null;
+    var adminEnabled = true;
 
     function $(id) { return document.getElementById(id); }
     function el(tag, cls, text) {
@@ -299,6 +346,9 @@
             fillForms(d.state);
             renderCache(d.cache);
             renderBans(d.state.bans || [], d.stats);
+            renderStatePill(d.state);
+            renderSpark((d.stats && d.stats.requestsPerMinute) || []);
+            refreshVisitors();
             $('flagsBy').textContent = d.state.updatedBy ? (d.state.updatedBy + ' · ' + fmtTime(d.state.updatedAt)) : '–';
             $('sourcesBy').textContent = $('flagsBy').textContent;
         }).catch(function (e) {
@@ -309,6 +359,240 @@
     function refreshAll() {
         refreshState();
         refreshAudit();
+        loadProxies();
+    }
+
+    // Stav webu v hlavičce: běží / zamčeno / vypnuto.
+    function renderStatePill(s) {
+        var f = (s && s.flags) || {};
+        var p = $('pillState');
+        p.style.color = '';
+        p.style.borderColor = '';
+        if (f.frontendShutdown) {
+            p.innerHTML = 'web <b style="color:#ff6b6b">vypnutý</b>';
+            p.style.borderColor = '#5a1f1f';
+        } else if (f.fullMaintenance) {
+            p.innerHTML = 'web <b style="color:var(--amber)">zamčený</b>';
+            p.style.borderColor = '#4a3f10';
+        } else if (f.maintenance) {
+            p.innerHTML = 'web <b style="color:var(--amber)">v údržbě</b>';
+        } else {
+            p.innerHTML = 'web <b style="color:var(--green)">běží</b>';
+        }
+    }
+
+    function renderSpark(values) {
+        var box = $('spark');
+        box.innerHTML = '';
+        if (!values || !values.length) return;
+        var max = Math.max.apply(null, values.concat([1]));
+        values.forEach(function (v) {
+            var bar = el('i');
+            bar.style.height = Math.max(2, Math.round(44 * v / max)) + 'px';
+            if (v) bar.className = 'on';
+            bar.title = v + ' požadavků';
+            box.append(bar);
+        });
+    }
+
+    // ------------------------------------------------------------ kdo je na webu
+    function ago(seconds) {
+        seconds = seconds | 0;
+        if (seconds < 60) return 'před ' + seconds + ' s';
+        if (seconds < 3600) return 'před ' + Math.floor(seconds / 60) + ' min';
+        return 'před ' + Math.floor(seconds / 3600) + ' h';
+    }
+
+    function refreshVisitors() {
+        var minutes = $('vMinutes') ? $('vMinutes').value : 10;
+        return api('/api/admin/visitors?minutes=' + encodeURIComponent(minutes)).then(function (d) {
+            renderVisitors(d);
+        }).catch(function () { });
+    }
+
+    function renderVisitors(d) {
+        var box = $('vCountries');
+        box.innerHTML = '';
+        var info = $('vInfo');
+        info.textContent = (d.count | 0) + ' klientů' + (d.pending ? ' · doplňuji polohu pro ' + d.pending + '…' : '')
+            + (d.geoLastError ? ' · ' + d.geoLastError : '');
+
+        (d.countries || []).forEach(function (c) {
+            var chip = el('span', 'chip');
+            chip.append(document.createTextNode((c.flag || '') + ' ' + (c.country || c.code) + ' '));
+            chip.append(el('b', null, String(c.count)));
+            box.append(chip);
+        });
+
+        var list = d.visitors || [];
+        var t = el('table');
+        var head = el('tr');
+        ['IP', 'poloha', 'ISP', 'požadavků', 'naposledy', 'cesta', ''].forEach(function (h) { head.append(el('th', null, h)); });
+        t.append(head);
+
+        if (!list.length) {
+            var tr0 = el('tr');
+            var td0 = el('td', 'muted', 'Za poslední okno tu nikdo nebyl.');
+            td0.colSpan = 7;
+            tr0.append(td0);
+            t.append(tr0);
+        }
+
+        list.forEach(function (v) {
+            var tr = el('tr');
+            if (v.banned) tr.className = 'off';
+            tr.append(el('td', 'mono', v.ip));
+            var loc = el('td');
+            if (v.geoKnown) {
+                loc.textContent = [v.country, v.city].filter(Boolean).join(' · ') || '–';
+            } else {
+                loc.className = 'muted';
+                loc.textContent = /^(::1|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(v.ip) ? 'lokální' : '–';
+            }
+            tr.append(loc);
+            tr.append(el('td', 'mono', v.isp || '–'));
+            tr.append(el('td', null, String(v.requests)));
+            tr.append(el('td', null, ago(v.secondsAgo)));
+            var path = el('td', 'mono');
+            var ua = el('span', 'ua', v.path || '/');
+            if (v.ua) ua.title = v.ua;
+            path.append(ua);
+            tr.append(path);
+            var td = el('td');
+            if (!v.banned) {
+                var b = el('button', 'small', 'Ban 60 min');
+                b.onclick = function () {
+                    api('/api/admin/bans', { method: 'POST', body: { kind: 'ip', target: v.ip, minutes: 60, reason: 'z panelu' } })
+                        .then(function () { msg('IP zablokována.', true); refreshAll(); })
+                        .catch(function (e) { msg(e.message, false); });
+                };
+                td.append(b);
+            } else {
+                td.append(el('span', 'bad', 'blokováno'));
+            }
+            tr.append(td);
+            t.append(tr);
+        });
+
+        $('vList').innerHTML = '';
+        $('vList').append(t);
+    }
+
+    // ------------------------------------------------------------ proxy servery
+    var proxyItems = [];
+
+    function loadProxies() {
+        return api('/api/admin/proxies').then(function (d) {
+            proxyItems = (d.items || []).map(function (p) {
+                return { url: p.url, enabled: p.enabled !== false, note: p.note || '' };
+            });
+            renderProxies(d);
+        }).catch(function () { });
+    }
+
+    function renderProxies(meta) {
+        var box = $('proxyList');
+        box.innerHTML = '';
+        if (!proxyItems.length) {
+            box.append(el('div', 'muted', 'Žádné proxy – server i prohlížeč půjdou přímo na zdroj.'));
+        } else {
+            var t = el('table');
+            var head = el('tr');
+            ['zap.', 'URL', 'poznámka', ''].forEach(function (h) { head.append(el('th', null, h)); });
+            t.append(head);
+            proxyItems.forEach(function (p, i) {
+                var tr = el('tr');
+                if (!p.enabled) tr.className = 'off';
+                var tdOn = el('td');
+                var cb = el('input');
+                cb.type = 'checkbox';
+                cb.checked = p.enabled;
+                cb.style.accentColor = 'var(--red)';
+                cb.onchange = function () { proxyItems[i].enabled = cb.checked; tr.className = cb.checked ? '' : 'off'; };
+                tdOn.append(cb);
+                tr.append(tdOn);
+                tr.append(el('td', 'mono', p.url));
+                var tdNote = el('td');
+                var note = el('input');
+                note.type = 'text';
+                note.maxLength = 80;
+                note.value = p.note || '';
+                note.placeholder = 'nepovinné';
+                note.style.maxWidth = '240px';
+                note.oninput = function () { proxyItems[i].note = note.value; };
+                tdNote.append(note);
+                tr.append(tdNote);
+                var td = el('td');
+                var del = el('button', 'small', 'Odebrat');
+                del.onclick = function () {
+                    proxyItems.splice(i, 1);
+                    renderProxies();
+                };
+                td.append(del);
+                tr.append(td);
+                t.append(tr);
+            });
+            box.append(t);
+        }
+
+        var out = $('proxyOut');
+        if (meta && meta.commit) {
+            out.innerHTML = '';
+            var line = el('div', 'muted');
+            line.textContent = meta.commit.configured
+                ? 'commit do repa: zapnutý (' + meta.commit.repo + ' @ ' + meta.commit.branch + ')'
+                : 'commit do repa: vypnutý – nastav WFLIX_GITHUB_TOKEN, nebo stahuj .txt ručně';
+            out.append(line);
+        }
+    }
+
+    function saveProxies(commit) {
+        api('/api/admin/proxies', { method: 'POST', body: { items: proxyItems, commit: !!commit } }).then(function (d) {
+            var c = d.commit;
+            if (!commit) { msg('Proxy uloženy.', true); }
+            else if (c && c.ok) { msg('Uloženo a commitnuto do repa.', true); }
+            else if (c && c.skipped) { msg('Uloženo. ' + (c.hint || ''), true); }
+            else { msg('Uloženo, ale commit selhal: ' + ((c && (c.error || c.hint)) || '?'), false); }
+
+            var out = $('proxyOut');
+            out.innerHTML = '';
+            if (c) {
+                var line = el('div', c.ok ? 'ok' : (c.skipped ? 'muted' : 'bad'));
+                line.textContent = c.ok
+                    ? '✓ commit ' + String(c.sha || '').slice(0, 7) + (c.url ? ' – ' + c.url : '')
+                    : (c.skipped ? c.hint || '' : 'chyba: ' + (c.error || '?'));
+                out.append(line);
+            }
+            refreshAll();
+        }).catch(function (e) { msg(e.message, false); });
+    }
+
+    function runProxyTest() {
+        var btn = $('proxyTest');
+        btn.disabled = true;
+        var out = $('proxyOut');
+        out.textContent = 'testuji…';
+        api('/api/admin/proxies/test', { method: 'POST', body: { urls: proxyItems.map(function (p) { return p.url; }) } })
+            .then(function (d) {
+                out.innerHTML = '';
+                var t = el('table');
+                var head = el('tr');
+                ['proxy', 'stav', 'kód', 'ms', 'chyba'].forEach(function (h) { head.append(el('th', null, h)); });
+                t.append(head);
+                (d.results || []).forEach(function (r) {
+                    var tr = el('tr');
+                    tr.append(el('td', 'mono', r.url));
+                    tr.append(el('td', r.ok ? 'ok' : 'bad', r.ok ? 'ok' : 'chyba'));
+                    tr.append(el('td', null, String(r.status || '')));
+                    tr.append(el('td', null, String(r.ms || '')));
+                    tr.append(el('td', 'mono', r.error || ''));
+                    t.append(tr);
+                });
+                if (!(d.results || []).length) out.append(el('div', 'muted', 'Není co testovat.'));
+                out.append(t);
+            })
+            .catch(function (e) { out.textContent = ''; msg(e.message, false); })
+            .then(function () { btn.disabled = false; });
     }
 
     function renderRuntime(rt, stats) {
@@ -347,6 +631,11 @@
         $('fLiveRelay').checked = f.liveRelay !== false;
         $('fMerge').checked = f.mergeSources !== false;
         $('fItunes').checked = f.itunesThumb !== false;
+        $('fFull').checked = !!f.fullMaintenance;
+        $('fShutdown').checked = !!f.frontendShutdown;
+        // Zamknout/vypnout web jde jen s nastaveným heslem, jinak by to nešlo vrátit.
+        $('fFull').disabled = !adminEnabled;
+        $('fShutdown').disabled = !adminEnabled;
 
         var src = s.sources || {};
         $('sPrehrajto').checked = src.prehrajto !== false;
@@ -477,6 +766,8 @@
     function flagsBody() {
         return {
             maintenance: $('fMaintenance').checked,
+            fullMaintenance: $('fFull').checked,
+            frontendShutdown: $('fShutdown').checked,
             maintenanceMessage: $('fMessage').value.trim(),
             downloads: $('fDownloads').checked,
             live: $('fLive').checked,
@@ -500,9 +791,31 @@
         $('refreshBtn').addEventListener('click', function () { refreshAll(); msg('Obnoveno.', true); });
 
         $('saveFlags').addEventListener('click', function () {
-            if ($('fMaintenance').checked && !confirm('Zapnout údržbu? Všichni uživatelé uvidí 503, dokud to nevypneš.')) return;
+            if ($('fShutdown').checked && !confirm('Vypnout celý frontend? Web i veřejné /api budou vracet 503, dokud to nevypneš. Panel zůstane dostupný.')) return;
+            if ($('fFull').checked && !$('fShutdown').checked && !confirm('Zamknout web? Uživatelé uvidí zamykací stránku a dovnitř se dostane jen ten, kdo zná admin heslo.')) return;
+            if ($('fMaintenance').checked && !$('fFull').checked && !$('fShutdown').checked && !confirm('Zapnout údržbu? Všichni uživatelé uvidí 503, dokud to nevypneš.')) return;
             post('/api/admin/flags', flagsBody(), 'Vypínače uloženy.');
         });
+
+        $('vRefresh').addEventListener('click', function () { refreshVisitors(); msg('Seznam obnoven.', true); });
+        $('vMinutes').addEventListener('change', refreshVisitors);
+
+        $('proxyAdd').addEventListener('click', function () {
+            var url = $('proxyNew').value.trim();
+            if (!url) { msg('Zadej URL proxy.', false); return; }
+            if (!/^https?:\/\/[^\s]+$/i.test(url)) { msg('Proxy musí začínat http:// nebo https://.', false); return; }
+            if (proxyItems.some(function (p) { return p.url.toLowerCase() === url.toLowerCase(); })) { msg('Tahle proxy už v seznamu je.', false); return; }
+            proxyItems.push({ url: url, enabled: true, note: '' });
+            $('proxyNew').value = '';
+            renderProxies();
+        });
+
+        $('proxyNew').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('proxyAdd').click(); });
+        $('proxySave').addEventListener('click', function () { saveProxies(false); });
+        $('proxySaveCommit').addEventListener('click', function () { saveProxies(true); });
+        $('proxyTest').addEventListener('click', runProxyTest);
+        $('proxyExport').addEventListener('click', function () { window.open('/api/admin/proxies/export', '_blank'); });
+        $('auditExport').addEventListener('click', function () { window.open('/api/admin/audit/export', '_blank'); });
 
         $('saveSources').addEventListener('click', function () {
             var n = parseInt($('sMaxPage').value, 10);
@@ -586,6 +899,7 @@
 
     // ------------------------------------------------------------ start
     api('/api/admin/session').then(function (s) {
+        adminEnabled = !!s.enabled;
         if (!s.enabled) { showDisabled(); return; }
         if (s.authenticated) {
             csrf = s.csrf;

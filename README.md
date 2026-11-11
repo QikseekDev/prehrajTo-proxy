@@ -168,6 +168,9 @@ patřit nemá. Bez něj `/admin` i celá `/api/admin` vrací `503`.
 | `ADMIN_PASSWORD` | heslo do panelu; prázdné = admin vypnutý (starší název `ADMIN_TOKEN` funguje dál) | – |
 | `ADMIN_STATE_PATH` | kam ukládat `state.json` a `audit.jsonl` | `$HOME/wflix-admin/`, jinak `App_Data/` |
 | `WFLIX_PURGE_TOKEN` | stejná hodnota na PHP proxy, povolí `action=purge` | – |
+| `WFLIX_GITHUB_TOKEN` | GitHub token s právem zápisu do repa; zapne „Uložit + commit“ u proxy (funguje i `GITHUB_TOKEN`) | – |
+| `WFLIX_GITHUB_REPO` | repo pro commit proxy, `owner/nazev` | `QikseekDev/prehrajTo-proxy` |
+| `WFLIX_GITHUB_BRANCH` | větev pro commit proxy | `main` |
 
 ### Co panel umí
 
@@ -176,6 +179,8 @@ patřit nemá. Bez něj `/admin` i celá `/api/admin` vrací `503`.
 | vypínač | co vypne |
 |---|---|
 | Údržba + hláška | `/api/*` kromě `/api/config`, `/api/health`, `/api/admin` → `503` s hláškou |
+| Úplná údržba (zámek) | celý web včetně `/` se zamkne na přihlašovací stránku; odemkne ho **heslo admina** (stejné jako do panelu) |
+| Vypnutí frontendu | úplně vypne web i API pro návštěvníky (`503`), ale `/admin` a `/api/admin` jedou dál – nedá se v tom zaseknout |
 | Stahování | `/api/stream?download=1` → `403`; přehrávání přes server funguje dál |
 | Živé vysílání | `/api/live`, `/api/live/countries`, `/api/live/hls` → `503` |
 | HLS relay | jen `/api/live/hls` (seznam kanálů a přímé přehrávání zůstávají) |
@@ -198,6 +203,22 @@ zpomalí, ban ho zastaví; `/api/admin` a `/admin` zůstávají dostupné, aby s
 **Ops** – běžící build a commit, uptime, online uživatelé, počítadla 5xx/429 od startu procesu,
  audit změn (`audit.jsonl`) a tlačítko „Otestovat zdroje a proxy“, které projde prehraj.to,
 sledujteto, bombuj.si, iTunes, iptv-org a prvních šest proxy (`/api/health` používá stejný kód).
+Graf požadavků po minutách za poslední hodinu a tlačítko na stažení auditu (JSON Lines).
+
+**Kdo je na webu** – seznam klientů za zvolené okno (5–60 min): IP, počet požadavků, poslední
+cesta, prohlížeč a přibližná poloha. Polohu dopočítává **server** podle IP (`ip-api.com`, dávkově,
+bez klíče a bez ptaní prohlížeče), takže to není GPS, jen odhad města/ISP; výsledky drží 24 h
+v paměti a dotazy jsou kvůli free limitu maximálně jednou za 4 s. Soukromé IP (loopback, 10.x,
+192.168.x…) se neposílají nikam a ukazují se jako „lokální“. Z tabulky jde rovnou dát ban na IP.
+
+**Proxy servery** – seznam, který používá server (`ProxyPool`) i prohlížeč (bere ho z `/api/config`),
+takže přidání/ubrání/poznámka platí do sekundy a bez nasazení. U každé položky je zapnuto/vypnuto;
+vypnuté zůstanou v seznamu, ale nepoužijí se. „Otestovat“ zavolá na každou proxy `action=health`.
+„Uložit + commit“ zapíše zapnuté adresy do `proxy-servers.txt` v repu přes GitHub Contents API –
+na to potřebuje `WFLIX_GITHUB_TOKEN`; bez něj se jen uloží a panel nabídne stažení `.txt`.
+Commit se nikdy neplete do nasazení (workflow sleduje jen `azure-app/**`) a když selže, uložení
+proxy to nezablokuje. Vygenerované kopie v `script.js`, `appsettings.json` a `router.php` pořád
+přepisuje `scripts/change-proxy-servers.sh` – panel mění jen živý seznam a `proxy-servers.txt`.
 
 ### Bezpečnost
 
@@ -216,8 +237,13 @@ z jedné IP je přihlášení na 10 minut zavřené, `/api/admin` má vlastní r
 - **Stav je lokální pro instanci.** `state.json` leží v `$HOME` kontejneru, takže při víc instancích
   App Service má každá svůj (a ban/maintenance platí jen na té, kterou zrovna trefíš). Na free tieru
   je instance jedna; při scale-out nastav `ADMIN_STATE_PATH` na sdílený mount.
-- **Žádný redeploy, žádná správa proxy ani IPTV.** Panel záměrně neumí spouštět nasazení a needituje
-  seznam proxy/IPTV kanálů – na to je git a `proxy-servers.txt`, ne tlačítko v prohlížeči.
+- **Žádný redeploy a žádná správa IPTV.** Panel záměrně neumí spouštět nasazení ani editovat IPTV
+  kanály. Proxy měnit umí, ale jen seznam, který appka používá; zdroj pravdy zůstává
+  `proxy-servers.txt` v repu (commit je volitelný a jen když je nastavený token).
+- **Poloha je odhad.** GeoIP je z volného `ip-api.com` (HTTP, bez klíče) – u VPN, mobilních sítí
+  a CGNAT může ukazovat jiné město nebo jen zemi; když se dotaz nepovede, řádek zůstane bez polohy.
+- **Seznam návštěvníků je v paměti procesu.** Restart nebo nová instance ho vynuluje (stejně jako
+  počítadla); do `state.json` se záměrně neukládá, aby soubor nerostl s každým požadavkem.
 - **Heslo jde do prostředí, ne do kódu.** Panel ho čte jen z `ADMIN_PASSWORD`; kdyby bylo
   v `appsettings.json` nebo v `admin.html`, vidí ho každý, kdo vidí repo.
 - **Mobilní klienti `/api/config` nečtou** (APK/IPK ho neznají), takže hlášku o údržbě uvidí jen

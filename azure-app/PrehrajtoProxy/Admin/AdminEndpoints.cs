@@ -9,6 +9,9 @@ public sealed record LoginRequest(string? Password);
 public sealed record BanRequest(string? Kind, string? Target, int? Minutes, string? Reason);
 public sealed record UnbanRequest(string? Kind, string? Target);
 public sealed record PurgeRequest(string? Scope, bool? Proxies);
+public sealed record ProxyItem(string? Url, bool? Enabled, string? Note);
+public sealed record ProxiesRequest(List<ProxyItem>? Items, bool? Commit);
+public sealed record ProxyTestRequest(List<string>? Urls);
 
 public sealed record AdminRuntimeInfo(
     string Build,
@@ -16,7 +19,7 @@ public sealed record AdminRuntimeInfo(
     DateTimeOffset StartedAt,
     Func<int> OnlineUsers,
     Func<IHttpClientFactory, Task<List<object>>> UpstreamProbes,
-    string[] ServerProxies);
+    Func<string[]> ServerProxies);
 
 /// <summary>
 /// Admin endpoints. Všechno pod /api/admin (kromě login/session) vyžaduje cookie
@@ -54,7 +57,10 @@ public static class AdminEndpoints
             {
                 success = true,
                 maintenance = s.Flags.Maintenance,
+                fullMaintenance = s.Flags.FullMaintenance,
+                shutdown = s.Flags.FrontendShutdown,
                 message = s.Flags.MaintenanceMessage,
+                proxies = app.Services.GetRequiredService<ProxyPool>().Current,
                 flags = new
                 {
                     downloads = s.Flags.Downloads,
@@ -185,6 +191,7 @@ public static class AdminEndpoints
                     serverErrors = se,
                     activeBans = s.Bans.Count(b => b.Active),
                     topTalkers = store.TopTalkers(10),
+                    requestsPerMinute = store.RequestsPerMinute(60),
                 },
                 cache = new
                 {
@@ -222,6 +229,12 @@ public static class AdminEndpoints
         secured.MapPost("/flags", (FlagsConfig body, HttpContext ctx) =>
         {
             if (body == null) return Results.BadRequest(new { success = false, error = "Chybí tělo." });
+            if (!store.Enabled && (body.FullMaintenance || body.FrontendShutdown))
+                return Results.BadRequest(new
+                {
+                    success = false,
+                    error = "Zamknout nebo vypnout web jde jen tehdy, když je nastavené admin heslo - jinak by se to nedalo odemknout.",
+                });
             var next = store.Update(s => s.Flags = body, Actor(ctx));
             store.RecordAudit("flags", Actor(ctx), Describe(next.Flags));
             return Results.Json(new { success = true, state = next });
@@ -269,6 +282,168 @@ public static class AdminEndpoints
 
         secured.MapGet("/audit", () => Results.Json(new { success = true, entries = store.Audit(150) }));
 
+        // Celý audit jako soubor - na dohledání, co se kdy změnilo, se hodí víc než 150 řádků v tabulce.
+        secured.MapGet("/audit/export", () =>
+        {
+            if (!File.Exists(store.AuditPath))
+                return Results.NotFound(new { success = false, error = "Audit je zatím prázdný." });
+            return Results.File(store.AuditPath, "application/x-ndjson", "wflix-audit.jsonl");
+        });
+
+        // ------------------------------------------------------------ kdo je na webu
+        secured.MapGet("/visitors", (HttpContext ctx, GeoIpService geo) =>
+        {
+            var minutes = int.TryParse(ctx.Request.Query["minutes"], out var m) ? m : 10;
+            var list = store.Visitors(minutes, 200);
+            var ips = list.Select(v => v.Ip).ToArray();
+            var pending = geo.Pending(ips);
+
+            // Poloha se doplňuje na pozadí, aby tabulka nikdy nečekala na cizí službu.
+            if (pending > 0 && ctx.Request.Query["geo"].ToString() != "0")
+                _ = Task.Run(() => geo.ResolveAsync(ips, CancellationToken.None));
+
+            var rows = list.Select(v =>
+            {
+                var g = geo.Get(v.Ip);
+                return new
+                {
+                    ip = v.Ip,
+                    firstSeen = v.FirstSeen,
+                    lastSeen = v.LastSeen,
+                    secondsAgo = Math.Max(0, (int)(DateTimeOffset.UtcNow - v.LastSeen).TotalSeconds),
+                    requests = v.Requests,
+                    ua = v.Ua,
+                    path = v.Path,
+                    banned = v.Banned,
+                    country = g?.Country,
+                    countryCode = g?.CountryCode,
+                    city = g?.City,
+                    isp = g?.Isp,
+                    geoKnown = g != null,
+                };
+            }).ToArray();
+
+            var countries = rows
+                .Where(r => !string.IsNullOrEmpty(r.country))
+                .GroupBy(r => r.countryCode ?? r.country)
+                .Select(g => new
+                {
+                    code = g.Key,
+                    country = g.First().country,
+                    count = g.Count(),
+                    flag = Flag(g.First().countryCode),
+                })
+                .OrderByDescending(c => c.count)
+                .ToArray();
+
+            return Results.Json(new
+            {
+                success = true,
+                minutes,
+                count = rows.Length,
+                pending,
+                geoLastError = geo.LastError,
+                countries,
+                visitors = rows,
+            });
+        });
+
+        // ------------------------------------------------------------ proxy servery
+        secured.MapGet("/proxies", (ProxyPool pool, ProxyCommitSettings commit) => Results.Json(new
+        {
+            success = true,
+            managed = pool.Managed,
+            items = pool.Items.Select(p => new { url = p.Url, enabled = p.Enabled, note = p.Note }),
+            effective = pool.Current,
+            configured = pool.Configured,
+            commit = new { configured = commit.Configured, repo = commit.Repo, branch = commit.Branch },
+        }));
+
+        secured.MapPost("/proxies", async (ProxiesRequest body, HttpContext ctx, ProxyPool pool,
+            ProxyCommitSettings commitSettings, IHttpClientFactory f) =>
+        {
+            var entries = new List<ProxyEntry>();
+            foreach (var item in body?.Items ?? new List<ProxyItem>())
+            {
+                var url = (item?.Url ?? "").Trim();
+                if (url.Length == 0) continue;
+                if (!ProxyPool.IsValidUrl(url))
+                    return Results.BadRequest(new { success = false, error = "Neplatná URL proxy: " + url + " (musí to být http:// nebo https:// adresa)." });
+                entries.Add(new ProxyEntry
+                {
+                    Url = url,
+                    Enabled = item!.Enabled ?? true,
+                    Note = (item.Note ?? "").Trim(),
+                });
+            }
+            if (entries.Count > 100)
+                return Results.BadRequest(new { success = false, error = "Nejvýš 100 proxy serverů." });
+
+            var next = store.Update(s => s.Proxies = entries, Actor(ctx));
+            var enabledUrls = entries.Where(e => e.Enabled).Select(e => e.Url).ToArray();
+            var summary = $"{enabledUrls.Length} zapnutých z {entries.Count}";
+            store.RecordAudit("proxies", Actor(ctx), summary);
+
+            // Commit je volitelný a nikdy neshodí uložení - když chybí token, jen se řekne proč.
+            ProxyCommitResult? commit = null;
+            if (body?.Commit == true)
+            {
+                commit = await ProxyCommit.CommitAsync(f, commitSettings, enabledUrls, Actor(ctx), ctx.RequestAborted);
+                store.RecordAudit("proxies-commit", Actor(ctx),
+                    commit.Ok ? "ok " + (commit.Sha ?? "") : (commit.Skipped ? "přeskočeno" : "chyba: " + commit.Error));
+            }
+
+            return Results.Json(new { success = true, state = next, effective = pool.Current, commit });
+        });
+
+        // Commit současného seznamu bez další změny - když se předtím commit nepovedl.
+        secured.MapPost("/proxies/commit", async (HttpContext ctx, ProxyPool pool,
+            ProxyCommitSettings commitSettings, IHttpClientFactory f) =>
+        {
+            var urls = pool.Current;
+            var commit = await ProxyCommit.CommitAsync(f, commitSettings, urls, Actor(ctx), ctx.RequestAborted);
+            store.RecordAudit("proxies-commit", Actor(ctx),
+                commit.Ok ? "ok " + (commit.Sha ?? "") : (commit.Skipped ? "přeskočeno" : "chyba: " + commit.Error));
+            return Results.Json(new { success = commit.Ok, commit, effective = urls });
+        });
+
+        secured.MapGet("/proxies/export", (ProxyPool pool) =>
+            Results.Text(ProxyPool.FileText(pool.Current), "text/plain; charset=utf-8"));
+
+        secured.MapPost("/proxies/test", async (ProxyTestRequest body, IHttpClientFactory f) =>
+        {
+            var urls = (body?.Urls ?? new List<string>())
+                .Select(u => (u ?? "").Trim())
+                .Where(ProxyPool.IsValidUrl)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(20)
+                .ToArray();
+
+            var results = await Task.WhenAll(urls.Select(async url =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    var client = f.CreateClient("prehraj");
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    var target = url + (url.Contains('?') ? "&" : "?") + "action=health";
+                    using var res = await client.GetAsync(target, cts.Token);
+                    sw.Stop();
+                    var ok = (int)res.StatusCode is >= 200 and < 400;
+                    string? error = ok ? null : "HTTP " + (int)res.StatusCode;
+                    return new { url, ok, status = (int)res.StatusCode, ms = sw.ElapsedMilliseconds, error };
+                }
+                catch (Exception ex)
+                {
+                    sw.Stop();
+                    var error = (string?)(ex.GetType().Name + ": " + ex.Message);
+                    return new { url, ok = false, status = 0, ms = sw.ElapsedMilliseconds, error };
+                }
+            }));
+
+            return Results.Json(new { success = true, results });
+        });
+
         // ------------------------------------------------------------ mazání cache
         secured.MapPost("/purge", async (PurgeRequest body, HttpContext ctx, IMemoryCache cache, IHttpClientFactory f) =>
         {
@@ -284,7 +459,7 @@ public static class AdminEndpoints
             var proxies = new List<object>();
             var wantProxies = body?.Proxies ?? true;
             if (wantProxies && (scope is "all" or "search" or "thumb"))
-                proxies = await PurgeProxies(f, runtime.ServerProxies, scope, store.PurgeToken);
+                proxies = await PurgeProxies(f, runtime.ServerProxies(), scope, store.PurgeToken);
 
             store.RecordAudit("purge", Actor(ctx), $"{scope}: {removed} klíčů, proxy {(proxies.Count == 0 ? "ne" : string.Join(", ", proxies.Select(p => JsonSerializer.Serialize(p))))}");
             return Results.Json(new { success = true, scope, removed, proxies });
@@ -299,8 +474,17 @@ public static class AdminEndpoints
         started = runtime.StartedAt,
         uptimeSeconds = (int)(DateTimeOffset.UtcNow - runtime.StartedAt).TotalSeconds,
         onlineUsers = runtime.OnlineUsers(),
-        proxies = runtime.ServerProxies.Length,
+        proxies = runtime.ServerProxies().Length,
     };
+
+    /// <summary>Vlajka země z kódu (CZ -> 🇨🇿), ať se seznam čte rychleji.</summary>
+    private static string? Flag(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code) || code.Length != 2) return null;
+        var upper = code.ToUpperInvariant();
+        if (!upper.All(c => c is >= 'A' and <= 'Z')) return null;
+        return string.Concat(upper.Select(c => char.ConvertFromUtf32(0x1F1E6 + (c - 'A'))));
+    }
 
     private static string ClientIp(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
@@ -309,6 +493,8 @@ public static class AdminEndpoints
     private static string Describe(FlagsConfig f) => string.Join(",", new[]
     {
         f.Maintenance ? "maintenance" : null,
+        f.FullMaintenance ? "full-maintenance" : null,
+        f.FrontendShutdown ? "frontend-shutdown" : null,
         f.Downloads ? null : "no-downloads",
         f.Live ? null : "no-live",
         f.LiveRelay ? null : "no-live-relay",

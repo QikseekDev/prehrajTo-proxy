@@ -104,6 +104,21 @@ builder.Services.AddMemoryCache();
 // zdroj pravdy pro token je ADMIN_TOKEN v prostředí, ne soubor v repu.
 builder.Services.AddSingleton<AdminStore>();
 
+// Proxy servery za běhu: panel je může měnit bez nasazení. Konfigurace (Prehraj:ProxyUrls)
+// je jen výchozí seznam, dokud panel proxy nezačne řídit.
+builder.Services.AddSingleton(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var urls = cfg.GetSection("Prehraj:ProxyUrls").Get<string[]>() ?? Array.Empty<string>();
+    var single = cfg["Prehraj:ProxyUrl"];
+    if (!string.IsNullOrWhiteSpace(single)) urls = urls.Append(single).ToArray();
+    return new ProxyPool(sp.GetRequiredService<AdminStore>(), urls);
+});
+builder.Services.AddSingleton(sp => ProxyCommitSettings.From(sp.GetRequiredService<IConfiguration>()));
+
+// Odhad polohy podle IP pro seznam klientů v panelu (volitelné, na pozadí).
+builder.Services.AddSingleton<GeoIpService>();
+
 // ------------------------------------------------------------------ veřejný provoz
 // App Service stojí před appkou jako reverzní proxy: bez tohohle by měly všechny
 // požadavky IP front-endu Azure a limit by platil pro celý internet dohromady.
@@ -241,11 +256,25 @@ var app = builder.Build();
 
 app.UseForwardedHeaders();
 
+var adminStore = app.Services.GetRequiredService<AdminStore>();
+var proxyPool = app.Services.GetRequiredService<ProxyPool>();
+
+// ------------------------------------------------------------------ vrata: údržba / vypnutí webu
+// Běží první, aby se zamčený nebo vypnutý web neprojevil ani statickými soubory. Admin panel
+// a endpoints, které panel potřebuje, zůstávají vždycky otevřené - jinak by vznikl softlock.
+app.Use((ctx, next) => SiteGate.Invoke(ctx, next, adminStore));
+
+// Kdo je na webu: IP, čas a cesta pro seznam v panelu (geolokace se doplňuje až tam).
+app.Use(async (ctx, next) =>
+{
+    adminStore.TouchVisitor(ClientKey(ctx), ctx.Request.Headers.UserAgent.ToString(), ctx.Request.Path.Value);
+    await next();
+});
+
 // ------------------------------------------------------------------ admin: bany, údržba, statistiky
 // Čte se z admin stavu (Admin/AdminStore.cs) při každém požadavku, takže vypnutí zdroje,
 // maintenance nebo ban platí do sekundy bez restartu a bez nasazení.
 // /api/admin a /api/config zůstávají dostupné i v údržbě, aby se dalo vrátit zpět.
-var adminStore = app.Services.GetRequiredService<AdminStore>();
 app.Use(async (ctx, next) =>
 {
     if (!ctx.Request.Path.StartsWithSegments("/api"))
@@ -374,9 +403,7 @@ app.UseStaticFiles(new StaticFileOptions
 // answers correctly is used, a dead or rate-limited one is skipped and the next one is tried.
 // The last server that worked is tried first next time. This is the server-side default used
 // when the client sends none; "Prehraj:ProxyUrl" (singular) still works for a single URL.
-var serverProxies = app.Configuration.GetSection("Prehraj:ProxyUrls").Get<string[]>() ?? Array.Empty<string>();
-var proxyUrl = app.Configuration["Prehraj:ProxyUrl"];
-if (!string.IsNullOrWhiteSpace(proxyUrl)) serverProxies = serverProxies.Append(proxyUrl).ToArray();
+// (Seznam se bere z ProxyPool - panel ho může za běhu změnit; appsettings je jen výchozí.)
 
 // Vlastní IPTV playlisty (M3U) nad rámec iptv-org: "Prehraj:LivePlaylists" v appsettings.json /
 // Azure jako Prehraj__LivePlaylists__0, __1, ... Index v tomhle poli posílá prohlížeč jako
@@ -893,7 +920,7 @@ app.MapGet("/api/search", async (string q, int? page, string? source, string[]? 
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
     var query = $"action=search&q={Uri.EscapeDataString(q)}&source={Uri.EscapeDataString(src)}" + (pg > 1 ? $"&page={pg}" : "")
                 + (st.Sources.Fallback ? "" : "&fallback=0");
-    var proxies = EffectiveProxies(proxy, serverProxies);
+    var proxies = EffectiveProxies(proxy, proxyPool.Current);
     var sources = OrderedProxies(proxies)
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
@@ -995,7 +1022,7 @@ app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string
     if (src == "itunes" && !adminStore.Current.Flags.ItunesThumb)
         return Results.Json(new { success = false, error = "Náhledy z iTunes jsou dočasně vypnuté." }, statusCode: 403);
 
-    var eff = EffectiveProxies(proxy, serverProxies);
+    var eff = EffectiveProxies(proxy, proxyPool.Current);
     var qs = $"action=thumb&q={Uri.EscapeDataString(q)}&t={Uri.EscapeDataString(t)}&re={Uri.EscapeDataString(re)}&src={src}"
              + (y is int py ? $"&y={py}" : "");
 
@@ -1431,7 +1458,7 @@ app.MapGet("/api/proxy", async (string url, string? source, string[]? proxy, IHt
     // Jen PHP proxy servery, zkoušené postupně. 2xx s normální odpovědí = vyhrává;
     // 429/403/5xx nebo {"success":false} = prohra a bere se další zdroj.
     var query = $"url={Uri.EscapeDataString(url)}&source={Uri.EscapeDataString(src)}";
-    var sources = OrderedProxies(EffectiveProxies(proxy, serverProxies))
+    var sources = OrderedProxies(EffectiveProxies(proxy, proxyPool.Current))
         .Select(p => ProxySource(f, p, query, 30, g => lastGoodProxy = g)).ToArray();
 
 
@@ -1474,7 +1501,7 @@ async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, stri
     string? found = null;
     // Nikdy přímo na prehraj.to - stránka videa chodí jen přes PHP proxy servery, jeden po druhém
     // (naposledy funkční první).
-    foreach (var p in OrderedProxies(serverProxies))
+    foreach (var p in OrderedProxies(proxyPool.Current))
     {
             if (ct.IsCancellationRequested) return null;
             var sep = p.Contains('?') ? "&" : "?";
@@ -1683,7 +1710,7 @@ async Task<List<object>> RunUpstreamProbes(IHttpClientFactory f)
     probes.Add(ProbeUpstream(f, "upstream:sledujteto.cz", "https://www.sledujteto.cz/api/web/videos?query=test&limit=1&page=1&sort=relevance",
         headers: new Dictionary<string,string> { ["Accept"]="application/json", ["X-Requested-With"]="XMLHttpRequest", ["Referer"]="https://www.sledujteto.cz/vyhledat/?search=test&page=1", ["Origin"]="https://www.sledujteto.cz" }));
     probes.Add(ProbeUpstream(f, "upstream:bombuj.si", "https://www.bombuj.si/uvod.php"));
-    foreach (var proxy in serverProxies.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).Take(6))
+    foreach (var proxy in proxyPool.Current.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).Take(6))
     {
         var purl = proxy.Contains('?') ? (proxy + "&action=health") : (proxy + "?action=health");
         probes.Add(ProbeUpstream(f, "proxy:" + proxy, purl, 10));
@@ -1704,7 +1731,7 @@ app.MapGet("/api/health", async (IHttpClientFactory f) =>
         status = ok ? "ok" : "degraded",
         timeUtc = DateTime.UtcNow,
         onlineUsers = OnlineCount(),
-        proxies = serverProxies.Count(IsValidProxyUrl),
+        proxies = proxyPool.Current.Count(IsValidProxyUrl),
         lastGoodProxy = lastGoodProxy ?? "",
         endpoints = mappedResults,
         checks = probeResults,
@@ -1733,7 +1760,7 @@ app.MapAdmin(new AdminRuntimeInfo(
     StartedAt: startedAt,
     OnlineUsers: OnlineCount,
     UpstreamProbes: RunUpstreamProbes,
-    ServerProxies: serverProxies.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()));
+    ServerProxies: () => proxyPool.Current.Where(IsValidProxyUrl).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()));
 
 app.MapGet("/api/version", (HttpContext ctx) =>
 {

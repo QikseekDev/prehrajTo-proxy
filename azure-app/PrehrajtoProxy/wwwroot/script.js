@@ -112,7 +112,9 @@
         // Volitelný limit souběžných dotazů na náhledy (Nastavení, výchozí: vypnuto)
         // Seznam PHP proxy serverů (Nastavení). Nemazat/needitovat ručně mezi markery -
         // udržuje to scripts/change-proxy-servers.sh (spusť ho, ať to nerozjede ve 3 souborech zvlášť).
-        const DEFAULT_PROXY_SERVERS = [
+        // `let`, protože panel umí seznam změnit za běhu - /api/config pošle aktuální
+        // podobu a prohlížeč ji převezme bez nového nasazení (soubor v repu je jen výchozí).
+        let DEFAULT_PROXY_SERVERS = [
             // PROXY-SERVERS:BEGIN
             'http://wtzi.borec.cz/index.php',
             'http://wtzi.euweb.cz/index.php',
@@ -3598,7 +3600,21 @@
 
             function apply(cfg) {
                 if (!cfg || !cfg.success) return;
-                if (cfg.maintenance) {
+
+                // Proxy servery spravuje admin panel; seznam z /api/config přebíjí ten
+                // z buildu, takže přidání/ubrání proxy platí bez nasazení.
+                if (Array.isArray(cfg.proxies)) {
+                    const live = cfg.proxies.filter(u => typeof u === 'string' && /^https?:\/\//i.test(u.trim()));
+                    if (live.length || cfg.proxies.length === 0) DEFAULT_PROXY_SERVERS = live;
+                }
+
+                if (cfg.shutdown) {
+                    banner.textContent = '⏻ Wflix je mimo provoz.';
+                    banner.hidden = false;
+                } else if (cfg.fullMaintenance) {
+                    banner.textContent = '🔒 ' + (cfg.message || 'Wflix je dočasně uzamčený.');
+                    banner.hidden = false;
+                } else if (cfg.maintenance) {
                     banner.textContent = '🛠 ' + (cfg.message || 'Wflix je dočasně mimo provoz.');
                     banner.hidden = false;
                 } else {

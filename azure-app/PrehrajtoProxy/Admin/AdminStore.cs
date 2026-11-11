@@ -17,6 +17,16 @@ public sealed class FlagsConfig
 {
     /// <summary>Všechno /api kromě /api/config, /api/health a /api/admin vrací 503.</summary>
     public bool Maintenance { get; set; }
+    /// <summary>
+    /// Úplná údržba: místo webu se ukáže zamykací stránka. Dovnitř se dostane jen ten,
+    /// kdo zná admin heslo (přihlášení v panelu), takže se dá web kdykoli odemknout.
+    /// </summary>
+    public bool FullMaintenance { get; set; }
+    /// <summary>
+    /// Vypnutí frontendu: web i veřejné /api přestanou existovat, zůstává jen admin panel
+    /// a endpoints, které panel potřebuje (/api/admin, /api/config, /api/health, /api/version).
+    /// </summary>
+    public bool FrontendShutdown { get; set; }
     public string MaintenanceMessage { get; set; } = "Wflix je dočasně mimo provoz. Zkus to za chvíli.";
     /// <summary>Stahování (/api/stream?download=1). Přehrávání přes server zůstává.</summary>
     public bool Downloads { get; set; } = true;
@@ -71,15 +81,39 @@ public sealed class BanEntry
 
 public sealed class AdminState
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
     public FlagsConfig Flags { get; set; } = new();
     public SourcesConfig Sources { get; set; } = new();
     public List<BanEntry> Bans { get; set; } = new();
+    /// <summary>
+    /// Proxy servery spravované z panelu. null = panel je ještě neřídí a platí seznam
+    /// z konfigurace (appsettings / Prehraj__ProxyUrls). Prázdný seznam znamená "žádná proxy".
+    /// </summary>
+    public List<ProxyEntry>? Proxies { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public string? UpdatedBy { get; set; }
 }
 
+public sealed class ProxyEntry
+{
+    public string Url { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public string Note { get; set; } = "";
+    public DateTimeOffset AddedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed record AuditEntry(DateTimeOffset At, string Action, string Actor, string Details);
+
+// Jeden klient, který právě něco dělá - IP, časy, počet požadavků a poslední cesta.
+// Geolokaci doplňuje GeoIpService (Admin/GeoIp.cs) až při pohledu do panelu.
+public sealed record VisitorSnapshot(
+    string Ip,
+    DateTimeOffset FirstSeen,
+    DateTimeOffset LastSeen,
+    long Requests,
+    string? Ua,
+    string? Path,
+    bool Banned);
 
 // ---------------------------------------------------------------------------
 // Počítadla cache. IMemoryCache neumí "smaž všechno se prefixem", tak si klíče
@@ -238,6 +272,7 @@ public sealed class AdminStore
             parsed.Flags ??= new FlagsConfig();
             parsed.Sources ??= new SourcesConfig();
             parsed.Bans ??= new List<BanEntry>();
+            parsed.Proxies = NormalizeProxies(parsed.Proxies);
             parsed.Sources.MaxPage = Math.Clamp(parsed.Sources.MaxPage, 1, 50);
             lock (gate)
             {
@@ -275,6 +310,7 @@ public sealed class AdminStore
             clone.Flags ??= new FlagsConfig();
             clone.Sources ??= new SourcesConfig();
             clone.Bans ??= new List<BanEntry>();
+            clone.Proxies = NormalizeProxies(clone.Proxies);
             clone.Sources.MaxPage = Math.Clamp(clone.Sources.MaxPage, 1, 50);
             if (string.IsNullOrWhiteSpace(clone.Flags.MaintenanceMessage))
                 clone.Flags.MaintenanceMessage = new FlagsConfig().MaintenanceMessage;
@@ -433,6 +469,26 @@ public sealed class AdminStore
 
         if (perClient.Count > 4096) perClient.Clear();
         perClient.AddOrUpdate(client, 1, (_, v) => v + 1);
+
+        // Požadavky po minutách - podklad pro graf v panelu (posledních 60 minut).
+        var minute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
+        perMinute.AddOrUpdate(minute, 1, (_, v) => v + 1);
+        if (perMinute.Count > 180)
+            foreach (var kv in perMinute)
+                if (kv.Key < minute - 120) perMinute.TryRemove(kv.Key, out _);
+    }
+
+    private readonly ConcurrentDictionary<long, int> perMinute = new();
+
+    /// <summary>Počty požadavků po minutách, od nejstarší po tu současnou.</summary>
+    public int[] RequestsPerMinute(int minutes = 60)
+    {
+        minutes = Math.Clamp(minutes, 1, 120);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
+        var result = new int[minutes];
+        for (var i = 0; i < minutes; i++)
+            result[i] = perMinute.TryGetValue(now - minutes + 1 + i, out var v) ? v : 0;
+        return result;
     }
 
     public (long Requests, long RateLimited, long ServerErrors) Counters =>
@@ -443,6 +499,87 @@ public sealed class AdminStore
         .Take(take)
         .Select(kv => (object)new { client = kv.Key, requests = kv.Value })
         .ToArray();
+
+    // ---------------------------------------------------------------- proxy servery
+    /// <summary>
+    /// Pročistí seznam proxy serverů ze stavu: jen http(s), bez duplicit, max 100.
+    /// null zůstává null - to znamená "panel proxy neřídí, platí konfigurace".
+    /// </summary>
+    public static List<ProxyEntry>? NormalizeProxies(List<ProxyEntry>? proxies)
+    {
+        if (proxies == null) return null;
+        return proxies
+            .Where(p => p != null && ProxyPool.IsValidUrl(p.Url))
+            .GroupBy(p => p.Url.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ProxyEntry
+            {
+                Url = g.Key,
+                Enabled = g.First().Enabled,
+                Note = (g.First().Note ?? "").Trim() is { Length: > 80 } n ? n[..80] : (g.First().Note ?? "").Trim(),
+                AddedAt = g.First().AddedAt == default ? DateTimeOffset.UtcNow : g.First().AddedAt,
+            })
+            .Take(100)
+            .ToList();
+    }
+
+    // ---------------------------------------------------------------- přítomní klienti
+    private sealed class Visitor
+    {
+        public DateTimeOffset FirstSeen;
+        public DateTimeOffset LastSeen;
+        public long Requests;
+        public string? Ua;
+        public string? Path;
+    }
+
+    private readonly ConcurrentDictionary<string, Visitor> visitors = new(StringComparer.Ordinal);
+    private const int VisitorWindowMinutes = 10;
+
+    /// <summary>Zapíše návštěvu pro seznam \"kdo je právě na webu\". Volá se z middleware.</summary>
+    public void TouchVisitor(string ip, string? ua, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(ip)) return;
+        var now = DateTimeOffset.UtcNow;
+        ua = ua is { Length: > 120 } ? ua[..120] : ua;
+        path = path is { Length: > 120 } ? path[..120] : path;
+
+        visitors.AddOrUpdate(ip,
+            _ => new Visitor { FirstSeen = now, LastSeen = now, Requests = 1, Ua = ua, Path = path },
+            (_, v) =>
+            {
+                Interlocked.Increment(ref v.Requests);
+                v.LastSeen = now;
+                v.Ua = ua;
+                v.Path = path;
+                return v;
+            });
+
+        if (visitors.Count > 1024)
+        {
+            var cut = now.AddMinutes(-VisitorWindowMinutes * 6);
+            foreach (var kv in visitors)
+                if (kv.Value.LastSeen < cut) visitors.TryRemove(kv.Key, out _);
+        }
+    }
+
+    public VisitorSnapshot[] Visitors(int minutes = VisitorWindowMinutes, int take = 100)
+    {
+        var cut = DateTimeOffset.UtcNow.AddMinutes(-Math.Clamp(minutes, 1, 1440));
+        var bans = Current.Bans;
+        return visitors
+            .Where(kv => kv.Value.LastSeen >= cut)
+            .OrderByDescending(kv => kv.Value.LastSeen)
+            .Take(Math.Clamp(take, 1, 500))
+            .Select(kv => new VisitorSnapshot(
+                kv.Key,
+                kv.Value.FirstSeen,
+                kv.Value.LastSeen,
+                Interlocked.Read(ref kv.Value.Requests),
+                kv.Value.Ua,
+                kv.Value.Path,
+                bans.Any(b => b.Active && b.Kind == "ip" && string.Equals(b.Target, kv.Key, StringComparison.OrdinalIgnoreCase))))
+            .ToArray();
+    }
 
     // ---------------------------------------------------------------- audit
     public void RecordAudit(string action, string actor, string details)
