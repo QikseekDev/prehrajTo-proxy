@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#141414">
+    <meta name="theme-color" content="#0e0e10">
     <meta name="description" content="Wflix – vyhledávej a přehrávej filmy a seriály.">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Wflix">
@@ -14,17 +14,20 @@
     <meta name="twitter:title" content="Wflix – filmy a seriály">
     <meta name="twitter:description" content="Wflix – vyhledávej a přehrávej filmy a seriály.">
     <title>Wflix – filmy a seriály</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%23141414'/><text x='50' y='72' font-size='64' font-weight='900' text-anchor='middle' fill='%23e50914' font-family='Arial'>W</text></svg>">
-    <link rel="stylesheet" href="styles.css?v=20261109-1">
-    <link rel="stylesheet" href="intro.css?v=20261104-15">
-    <noscript><style>.intro { display: none !important; }</style></noscript>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230e0e10'/><text x='50' y='72' font-size='62' font-weight='700' text-anchor='middle' fill='%23e33229' font-family='Helvetica Neue,sans-serif'>W</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
+    <link rel="stylesheet" href="styles.css?v=20261112-1">
+    <link rel="stylesheet" href="intro.css?v=20261112-1">
+    <noscript><style>.intro { display: none; }</style></noscript>
     <!-- Světlý režim se musí zapnout dřív než první vykreslení, jinak stránka blikne tmavě. -->
     <script>
         try {
             var wfSaved = JSON.parse(localStorage.getItem('wflix-settings') || '{}');
             if (wfSaved.theme === 'light') {
                 document.documentElement.dataset.theme = 'light';
-                document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f5f5f5');
+                document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f2f0ec');
             }
         } catch (e) {}
     </script>
@@ -228,30 +231,30 @@
         </div>
         <div class="settings-wrap" id="settingsWrap">
             <button class="profile-btn" id="profileBtn" type="button" aria-label="Nastavení" title="Nastavení" onclick="openSettings()">
-                <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="11" cy="13" r="2.6" fill="#101010"/><circle cx="21" cy="13" r="2.6" fill="#101010"/><path d="M10 20.5c1.9 2.6 4 3.9 6 3.9s4.1-1.3 6-3.9" stroke="#101010" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.6" r="3.6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4.8 20.2c0.6-3.9 3.5-6.2 7.2-6.2s6.6 2.3 7.2 6.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
             </button>
         </div>
     </header>
 
     <div class="container">
-        <div id="status" class="status"></div>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
 
         <!-- Results -->
         <div id="resultsSection" class="results-section">
-            <div id="resultsState" class="results-state"></div>
+            <div id="resultsState" class="results-state" role="status" aria-live="polite"></div>
             <div id="resultsInfo" class="results-info"></div>
             <div id="resultsGrid" class="results-grid"></div>
         </div>
 
         <!-- Player -->
         <div id="playerSection" class="player-section">
-            <button class="back-btn" onclick="goBack()">← Zpět</button>
+            <button class="back-btn" onclick="goBack()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Zpět</button>
             <div class="video-container">
                 <video id="videoPlayer" controls></video>
                 <div class="player-end" id="playerEnd" hidden>
                     <h3 class="player-end-title" id="playerEndTitle"></h3>
                     <div class="player-end-actions">
-                        <button type="button" class="btn-play" id="endReplayBtn">↻ Pustit znovu</button>
+                        <button type="button" class="btn-play" id="endReplayBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5V9h-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Pustit znovu</button>
                         <button type="button" class="btn-info" id="endHomeBtn">Domovská stránka</button>
                         <button type="button" class="btn-info" id="endSearchBtn">Hledat další</button>
                     </div>
@@ -259,11 +262,11 @@
             </div>
             <div id="nowPlaying" class="now-playing"></div>
             <div class="player-actions">
-                <a id="dlBtn" class="dl-btn" href="#" download>⬇ Stáhnout video</a>
-                <button type="button" id="proxyBtn" class="dl-btn" hidden>▶ Přehrát přes server</button>
-                <button type="button" id="favBtn" class="dl-btn" hidden>☆ Do oblíbených</button>
-                <button type="button" id="pipBtn" class="dl-btn" hidden title="Obraz v obraze">⧉ Obraz v obraze</button>
-                <button type="button" id="castBtn" class="dl-btn" hidden title="Přehrát video na TV (Chromecast, AirPlay, odkaz)">📺 Přehrát na TV</button>
+                <a id="dlBtn" class="dl-btn" href="#" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5v10m0 0 3.8-3.8M12 14.5 8.2 10.7M5 18.5h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Stáhnout video</a>
+                <button type="button" id="proxyBtn" class="dl-btn" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.4v13.2L19 12z" fill="currentColor"/></svg>Přehrát přes server</button>
+                <button type="button" id="favBtn" class="dl-btn" hidden aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.7l2.32 4.7 5.18.76-3.75 3.66.89 5.16L12 16.54l-4.64 2.44.89-5.16L4.5 10.16l5.18-.76z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span class="btn-label">Do oblíbených</span></button>
+                <button type="button" id="pipBtn" class="dl-btn" hidden title="Obraz v obraze"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="12" y="11.5" width="7" height="6.5" rx="1.4" fill="currentColor"/></svg><span class="btn-label">Obraz v obraze</span></button>
+                <button type="button" id="castBtn" class="dl-btn" hidden title="Přehrát video na TV (Chromecast, AirPlay, odkaz)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8.2V6.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3.5 19.5h1M3.5 16a3.6 3.6 0 0 1 3.5 3.5M3.5 12.4a7.2 7.2 0 0 1 7.1 7.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="btn-label">Přehrát na TV</span></button>
                 <span class="sub-pick" id="subtitleBar" hidden>
                     <label for="subtitleSelect">Titulky</label>
                     <select id="subtitleSelect" class="set-select" aria-label="Titulky"></select>
@@ -307,7 +310,7 @@
 
         <!-- Přehrávač živého vysílání -->
         <div id="livePlayerSection" class="player-section">
-            <button class="back-btn" id="liveBackBtn">← Zpět na živě</button>
+            <button class="back-btn" id="liveBackBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Zpět na živě</button>
             <div class="video-container">
                 <video id="liveVideo" controls playsinline></video>
             </div>
@@ -317,7 +320,7 @@
 
         <!-- Statické stránky (odkazy v patičce) -->
         <div id="pageSection" class="page-section">
-            <button class="back-btn" id="pageBackBtn" onclick="closePage()">← Zpět</button>
+            <button class="back-btn" id="pageBackBtn" onclick="closePage()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Zpět</button>
             <h1 class="page-title" id="pageTitle"></h1>
             <div class="page-body" id="pageBody"></div>
         </div>
@@ -346,12 +349,12 @@
     </footer>
     <div id="castDlg" class="cast-dlg" hidden role="dialog" aria-modal="true" aria-labelledby="castTitle">
         <div class="cast-box">
-            <h2 id="castTitle">📺 Přehrát na TV</h2>
+            <h2 id="castTitle">Přehrát na TV</h2>
             <p class="cast-note">Telefon (nebo počítač) i TV musí být ve stejné Wi-Fi síti. Bluetooth na přenos videa nestačí.</p>
             <div class="cast-actions">
-                <button type="button" id="castNative" class="dl-btn">📡 Najít zařízení v síti (Chromecast, AirPlay)</button>
-                <button type="button" id="castShare" class="dl-btn" hidden>📤 Sdílet odkaz</button>
-                <button type="button" id="castCopy" class="dl-btn">🔗 Zkopírovat odkaz pro TV</button>
+                <button type="button" id="castNative" class="dl-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8.2V6.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3.5 19.5h1M3.5 16a3.6 3.6 0 0 1 3.5 3.5M3.5 12.4a7.2 7.2 0 0 1 7.1 7.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="btn-label">Najít zařízení v síti (Chromecast, AirPlay)</span></button>
+                <button type="button" id="castShare" class="dl-btn" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5V4.8m0 0L8.4 8.4M12 4.8l3.6 3.6M5 14.5v4a1.8 1.8 0 0 0 1.8 1.8h10.4a1.8 1.8 0 0 0 1.8-1.8v-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Sdílet odkaz</button>
+                <button type="button" id="castCopy" class="dl-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 5.5H6.5a1 1 0 0 0-1 1v9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Zkopírovat odkaz pro TV</button>
             </div>
             <input id="castLink" class="cast-link" type="text" readonly aria-label="Odkaz na video pro TV">
             <p id="castMsg" class="cast-msg" role="status"></p>
@@ -371,7 +374,7 @@
         <div class="cast-box health-box" onclick="event.stopPropagation()">
             <h2 id="healthTitle">Status služby</h2>
             <div id="healthContent" class="health-content" aria-live="polite">Načítám stav…</div>
-            <button type="button" id="healthClose" class="dl-btn cast-close">← Zpět</button>
+            <button type="button" id="healthClose" class="dl-btn cast-close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Zpět</button>
         </div>
     </div>
 
