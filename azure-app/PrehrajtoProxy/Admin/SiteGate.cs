@@ -44,13 +44,22 @@ public static class SiteGate
 
     public static async Task Invoke(HttpContext ctx, Func<Task> next, AdminStore store)
     {
+        var path = ctx.Request.Path;
+
+        // Ban platí na celý web, ne jen na /api: zablokovaný nemá vidět ani stránku.
+        // Panel zůstává otevřený, aby se ban dal zrušit.
+        if (!IsAdminArea(path) && store.ActiveBan(ctx) is { } ban)
+        {
+            await BlockBanned(ctx, ban, store);
+            return;
+        }
+
         var flags = store.Current.Flags;
         var shutdown = flags.FrontendShutdown;
         var locked = flags.FullMaintenance;
         var maintenance = flags.Maintenance;
         if (!shutdown && !locked && !maintenance) { await next(); return; }
 
-        var path = ctx.Request.Path;
         if (IsAdminArea(path) || IsMeta(path)) { await next(); return; }
 
         // Bez hesla by to nešlo odemknout - radši pustit web dál.
@@ -95,11 +104,47 @@ public static class SiteGate
         }));
     }
 
+    private static async Task BlockBanned(HttpContext ctx, BanEntry ban, AdminStore store)
+    {
+        var seconds = Math.Max(1, (int)(ban.Until - DateTimeOffset.UtcNow).TotalSeconds);
+        var minutes = Math.Max(1, (int)Math.Ceiling(seconds / 60.0));
+        var message = "Přístup z tohoto zařízení je zablokovaný."
+                      + (string.IsNullOrWhiteSpace(ban.Reason) ? "" : " (" + ban.Reason + ")")
+                      + " Zkus to znovu za " + minutes + " min.";
+
+        store.CountRequest(ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown", StatusCodes.Status403Forbidden);
+        ctx.Response.Headers.CacheControl = "no-store, max-age=0";
+        ctx.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+        ctx.Response.Headers.RetryAfter = seconds.ToString();
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+
+        if (WantsHtml(ctx.Request))
+        {
+            ctx.Response.ContentType = "text/html; charset=utf-8";
+            await ctx.Response.WriteAsync(Page("ban", message));
+            return;
+        }
+
+        ctx.Response.ContentType = "application/json; charset=utf-8";
+        await ctx.Response.WriteAsync(JsonSerializer.Serialize(new
+        {
+            success = false,
+            blocked = true,
+            until = ban.Until,
+            error = message,
+        }));
+    }
+
     // Stránka je celá v jednom souboru (žádné externí css/js) - musí fungovat i ve
     // chvíli, kdy jsou statické soubory zablokované.
     private static string Page(string kind, string message)
     {
-        var heading = kind == "lock" ? "Wflix je zamčený" : "Wflix je mimo provoz";
+        var heading = kind switch
+        {
+            "lock" => "Wflix je zamčený",
+            "ban" => "Přístup zablokován",
+            _ => "Wflix je mimo provoz",
+        };
         return Template.Replace("{{TITLE}}", HtmlEncoder.Default.Encode(heading))
                        .Replace("{{HEADING}}", HtmlEncoder.Default.Encode(heading))
                        .Replace("{{MESSAGE}}", HtmlEncoder.Default.Encode(message))

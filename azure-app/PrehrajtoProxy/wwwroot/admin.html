@@ -701,7 +701,20 @@
   }
 
   // ------------------------------------------------------------ api
-  function api(path, opts) {
+  // CSRF token z cookie se může rozejít s tím, co má stránka v paměti (odhlášení
+  // v jiné záložce, restart serveru). Místo chybové hlášky na každou akci se token
+  // jednou obnoví a požadavek zkusí znovu.
+  function refreshCsrf() {
+    return fetch('/api/admin/session', { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) {
+        if (s && s.authenticated && s.csrf) { csrf = s.csrf; return true; }
+        return false;
+      })
+      .catch(function () { return false; });
+  }
+
+  function api(path, opts, retried) {
     opts = opts || {};
     var init = { method: opts.method || 'GET', credentials: 'same-origin', headers: {} };
     if (opts.body !== undefined) {
@@ -714,6 +727,12 @@
       return res.text().then(function (text) {
         var data = null;
         try { data = text ? JSON.parse(text) : null; } catch (e) { /* ne-JSON */ }
+        if (res.status === 403 && data && /csrf/i.test(data.error || '') && !retried && path.indexOf('/session') === -1) {
+          return refreshCsrf().then(function (ok) {
+            if (!ok) throw new Error(data.error || 'Neplatný CSRF token. Načti stránku znovu.');
+            return api(path, opts, true);
+          });
+        }
         if (res.status === 401 && path.indexOf('/login') === -1) {
           showLogin('Přihlášení vypršelo.');
           throw new Error('Nejsi přihlášený.');
