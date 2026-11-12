@@ -156,9 +156,20 @@ ho streamovaně a drží v paměti jen aktuální blok; do prohlížeče posíl�
 }
 ```
 
-Jde použít i vlastní výstup z [iptv-org/epg](https://github.com/iptv-org/epg). Kanály se
-párují podle `tvg-id` bez varianty (`CT1.cz@SD` → `CT1.cz`), případně podle názvu.
-Endpoint `GET /api/live/epg` vrací `configured: false`, když `Epg:Urls` chybí.
+Jde použít i vlastní výstup z [iptv-org/epg](https://github.com/iptv-org/epg) nebo cokoli
+z indexu <https://epgshare01.online/epgshare01/>. Formát se pozná podle obsahu, ne podle
+přípony: XMLTV (`.xml`, `.xml.gz`) dodá programy, `.txt` seznam kanálů slouží jako slovník
+id (`Prima.Krimi.cz` → `primakrimi`), takže se trefí i kanál bez `tvg-id`.
+
+Kanály se párují podle `tvg-id` bez varianty (`CT1.cz@SD` → `CT1.cz`), pak podle aliasu
+z `.txt` seznamu a nakonec podle názvu. Endpoint `GET /api/live/epg` vrací
+`configured: false`, když `Epg:Urls` chybí.
+
+### Katalog zdrojů obsahu
+
+Přehled toho, které weby appka umí (prehraj.to, sledujteto, bombuj), které zná z Kodi
+pluginu Nokturno a proč je neumí (WebShare, HellSpy, FastShare, Sosáč, CZtor, Luna – chtějí
+účty nebo vlastní server), je v [docs/SOURCES.md](docs/SOURCES.md).
 
 ### Náhradní loga kanálů
 

@@ -65,11 +65,21 @@ dlaždice potřebují:
 "Epg": {
   "Urls": [
     "https://epgshare01.online/epgshare01/epg_ripper_CZ1.xml.gz",
-    "https://epgshare01.online/epgshare01/epg_ripper_SK1.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_SK1.xml.gz",
+    "https://epgshare01.online/epgshare01/epg_ripper_CZ1.txt",
+    "https://epgshare01.online/epgshare01/epg_ripper_SK1.txt"
   ],
   "TtlMinutes": 360
 }
 ```
+
+V `Epg:Urls` může být cokoli z indexu <https://epgshare01.online/epgshare01/>. Formát se
+pozná podle obsahu, ne podle přípony:
+
+- XMLTV (`.xml`, `.xml.gz`) – programy, ze kterých se počítá „teď“ a „následuje“,
+- `.txt` seznam kanálů – epgshare01 v něm publikuje id, která guide používá. Appka ho
+  bere jako slovník aliasů (`Prima.Krimi.cz` → `primakrimi`), takže se trefí i kanál,
+  který v playlistu nemá `tvg-id` a jmenuje se jen „Prima Krimi“.
 
 `GET /api/live/epg` → `{ success, configured, updated, now, count, channels: [{ id, name, now: { title, description, start, stop }, next: { … } }] }`
 
@@ -110,7 +120,7 @@ FLARESOLVERR_URL=http://127.0.0.1:8191   # prázdné/nenastavené = fallback vyp
 | [thetedotgg/prehrajto-scraper](https://github.com/thetedotgg/prehrajto-scraper) | Appka už prehraj.to scrapuje přes PHP proxy; druhý scraper by byl duplicitní zdroj pravdy | sladit selektory a fallbacky s `index.php` |
 | [warren-bank/node-HLS-Proxy](https://github.com/warren-bank/node-HLS-Proxy) | Náš `/api/live/hls` už playlist přepisuje včetně `URI="…"` (`EXT-X-MAP`, `EXT-X-KEY`, `EXT-X-MEDIA`) | jen by přidal druhý runtime (Node) vedle .NET |
 | [zhimin-dev/iptv-checker](https://github.com/zhimin-dev/iptv-checker) | Kontrola dostupnosti kanálů je fajn, ale je to samostatná služba s vlastním UI a během na pozadí | nová úloha na pozadí + úložiště výsledků |
-| Nokturno (plugin pro prehraj.to) | Licence říká „copying prohibited“, takže kód nejde převzít | jen jako inspirace pro chování, ne zdroj kódu |
+| [nokturno-app/plugin.video.nokturno](https://github.com/nokturno-app/plugin.video.nokturno) | Licence je „all rights reserved“ (copying prohibited), takže kód převzít nejde. Věcný seznam zdrojů, které plugin umí (WebShare, HellSpy, FastShare, Sosáč, CZtor, Luna…), je sepsaný v [SOURCES.md](SOURCES.md) – appka z nich podporuje prehraj.to, sledujteto a bombuj | zapojení dalšího zdroje znamená nový scraper v `index.php` (hledání + přímý odkaz + whitelist domén) |
 | Nuvio/Vega provider pluginy, Kodi a Stremio addony | Jiný runtime (JS pluginy / Python addony) a jiný model zdrojů | samostatný adaptér, ne úprava appky |
 | Watchparty / synchronizované přehrávání | Vyžaduje realtime server a stav relace | WebSocket vrstva + UI pro místnosti |
 | Přepsání přehrávače na Video.js | Současný `<video>` + hls.js pokrývá HLS i MP4 včetně titulků | velký zásah do `script.js` bez užitku pro uživatele |

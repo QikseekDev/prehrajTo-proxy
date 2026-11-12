@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Text;
 using System.Xml;
 
 namespace Wflix.Meta;
@@ -15,6 +16,12 @@ public sealed class EpgSnapshot
     public DateTimeOffset Loaded { get; init; }
     public Dictionary<string, EpgChannel> Channels { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> NameKeys { get; } = new(StringComparer.Ordinal);
+
+    // Aliasy z doprovodných .txt seznamů kanálů (epgshare01 jimi publikuje id, která
+    // guide používá): "primakrimi" -> "primakrimicz". Díky tomu se trefí i kanál, který
+    // v playlistu nemá tvg-id a jmenuje se jen "Prima Krimi".
+    public Dictionary<string, string> Aliases { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> Listed { get; } = new(StringComparer.Ordinal);
 }
 
 // Programový průvodce pro Živě. Kanály v playlistech nesou tvg-id, který u iptv-org
@@ -84,6 +91,13 @@ public sealed class EpgService
         if (channel == null)
         {
             var nameKey = TextNorm.Key(name);
+            if (nameKey.Length > 1 && snapshot.Aliases.TryGetValue(nameKey, out var aliased)
+                && snapshot.Channels.TryGetValue(aliased, out var byAlias)) channel = byAlias;
+        }
+
+        if (channel == null)
+        {
+            var nameKey = TextNorm.Key(name);
             if (nameKey.Length > 1 && snapshot.NameKeys.TryGetValue(nameKey, out var mapped)
                 && snapshot.Channels.TryGetValue(mapped, out var byName)) channel = byName;
         }
@@ -147,12 +161,20 @@ public sealed class EpgService
                 // nesežrala paměť instance.
                 if (bytes.Length == 0 || bytes.Length > 64 * 1024 * 1024) continue;
 
-                Stream stream = new MemoryStream(bytes, writable: false);
-                if (bytes.Length > 1 && bytes[0] == 0x1f && bytes[1] == 0x8b)
-                    stream = new GZipStream(stream, CompressionMode.Decompress);
-
-                await using (stream)
-                    await ParseAsync(stream, snapshot, cutoff, ct);
+                // epgshare01 publikuje ke každému guidu i .txt se seznamem id kanálů -
+                // podle prvního znaku poznáme, jestli jde o XMLTV, nebo o ten seznam.
+                var isGzip = bytes.Length > 1 && bytes[0] == 0x1f && bytes[1] == 0x8b;
+                if (await LooksLikeXmlAsync(bytes, isGzip, ct))
+                {
+                    Stream stream = new MemoryStream(bytes, writable: false);
+                    if (isGzip) stream = new GZipStream(stream, CompressionMode.Decompress);
+                    await using (stream)
+                        await ParseAsync(stream, snapshot, cutoff, ct);
+                }
+                else
+                {
+                    ParseChannelList(DecodeText(bytes, isGzip), snapshot);
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -167,6 +189,15 @@ public sealed class EpgService
 
         foreach (var channel in snapshot.Channels.Values)
             channel.Programmes.Sort((a, b) => a.Start.CompareTo(b.Start));
+
+        foreach (var id in snapshot.Listed)
+        {
+            var full = TextNorm.Key(TextNorm.StripVariant(id));
+            if (full.Length < 3 || !snapshot.Channels.ContainsKey(full)) continue;
+            var bare = TextNorm.Key(WithoutCountrySuffix(id));
+            if (bare.Length > 2 && !snapshot.Channels.ContainsKey(bare) && !snapshot.Aliases.ContainsKey(bare))
+                snapshot.Aliases[bare] = full;
+        }
 
         // Jméno kanálu z guides je pro porovnání spolehlivější než id: playlisty píšou
         // "ČT1", guide "ČT 1" - normalizace z toho udělá stejný klíč.
@@ -259,6 +290,58 @@ public sealed class EpgService
                 start.Value,
                 stop.Value));
         }
+    }
+
+    // První smysluplný znak rozhodne: '<' = XMLTV, cokoli jiného = seznam id po řádcích.
+    // GZip se kvůli tomu rozbaluje dvakrát, ale jen kousek - GZipStream přečte hlavičku
+    // a první blok, ne celý guide.
+    private static async Task<bool> LooksLikeXmlAsync(byte[] bytes, bool isGzip, CancellationToken ct)
+    {
+        Stream stream = new MemoryStream(bytes, writable: false);
+        if (isGzip) stream = new GZipStream(stream, CompressionMode.Decompress);
+        await using (stream)
+        {
+            var buffer = new byte[512];
+            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+            var start = read >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF ? 3 : 0;
+            for (var i = start; i < read; i++)
+            {
+                if (buffer[i] is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n') continue;
+                return buffer[i] == (byte)'<';
+            }
+        }
+        return false;
+    }
+
+    private static string DecodeText(byte[] bytes, bool isGzip)
+    {
+        if (!isGzip) return Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
+        using var raw = new MemoryStream(bytes, writable: false);
+        using var gz = new GZipStream(raw, CompressionMode.Decompress);
+        using var text = new StreamReader(gz, Encoding.UTF8);
+        return text.ReadToEnd().TrimStart('\uFEFF');
+    }
+
+    // Seznam id kanálů z epgshare01 .txt: první řádek je časová značka, pak id po
+    // jednom na řádek. Programy v něm nejsou - slouží jen jako slovník id.
+    private static void ParseChannelList(string text, EpgSnapshot snapshot)
+    {
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length < 3 || line[0] == '#' || line.StartsWith("--", StringComparison.Ordinal)) continue;
+            if (line.Contains(' ')) continue;                       // poznámky a hlavičky
+            if (line.All(char.IsDigit)) continue;                    // "202611121139"
+            snapshot.Listed.Add(line);
+        }
+    }
+
+    // "Prima.Krimi.cz" -> "Prima.Krimi"
+    private static string WithoutCountrySuffix(string id)
+    {
+        var value = (id ?? "").Trim();
+        var dot = value.LastIndexOf('.');
+        return dot > 0 && dot == value.Length - 3 ? value[..dot] : value;
     }
 
     // XMLTV čas: "20261112193000 +0100" nebo bez zóny. Ručně, protože DateTimeOffset.Parse

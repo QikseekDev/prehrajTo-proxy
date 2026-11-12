@@ -1482,6 +1482,8 @@ app.MapGet("/api/live/epg", async (EpgService epg, CancellationToken ct) =>
         updated = snapshot.Loaded,
         now = at,
         count = entries.Count,
+        // Počet aliasů z .txt seznamů (diagnostika párování, v UI se nepoužívá).
+        aliases = snapshot.Aliases.Count,
         channels = entries,
     });
 }).RequireRateLimiting("api");
