@@ -1,0 +1,54 @@
+name: Deploy PHP proxy to Webzdarma (FTP)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'index.php'
+      - 'router.php'
+      - '.github/workflows/deploy-webzdarma-ftp.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webzdarma-ftp-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Upload to ${{ matrix.username }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - username: vokounvojta03-3385.wz.cz
+          - username: vokounvojta03-3621.wz.cz
+          - username: vokounvojta03-9456.wz.cz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare deploy payload
+        run: |
+          mkdir -p deploy
+          cp index.php router.php deploy/
+          ls -la deploy
+
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ftp5.webzdarma.cz
+          port: 21
+          username: ${{ matrix.username }}
+          # Heslo je uloženo v GitHub jako secret WZ_PASSWORD (stejné pro všechny 3 účty).
+          # Pokud ho máte jako Actions variable, změňte na: ${{ vars.WZ_PASSWORD }}
+          password: ${{ secrets.WZ_PASSWORD }}
+          protocol: ftp
+          local-dir: ./deploy/
+          server-dir: ./
+          dangerous-clean-slate: false
+          log-level: minimal
