@@ -130,7 +130,25 @@ public static class AdminEndpoints
 
             var ip = ClientIp(ctx);
             var signedIn = store.ValidateSession(ctx.Request.Cookies[AdminStore.SessionCookie]);
-            if (signedIn)
+            var password = await ReadPasswordAsync(ctx);
+
+            if (!string.IsNullOrEmpty(password))
+            {
+                // Zadané heslo je samo důkaz - CSRF chrání jen cookie, takže tady nemá co řešit.
+                // (Dřív se sem cpal CSRF požadavek i když přišlo heslo, takže odemčení ze
+                // zamykací stránky v prohlížeči, kde je správce přihlášený, hlásilo "Neplatný
+                // CSRF token" a vypadalo to jako špatné heslo.)
+                if (store.LoginBlocked(ip))
+                    return Results.Json(new { success = false, error = "Příliš mnoho pokusů. Zkus to za 10 minut." }, statusCode: 429);
+                if (!store.PasswordMatches(password))
+                {
+                    store.LoginFailed(ip);
+                    store.RecordAudit("unlock-failed", ip, "");
+                    return Results.Json(new { success = false, error = "Špatné heslo." }, statusCode: 401);
+                }
+                store.LoginSucceeded(ip);
+            }
+            else if (signedIn)
             {
                 var cookie = ctx.Request.Cookies[AdminStore.CsrfCookie] ?? "";
                 var header = ctx.Request.Headers["X-Wflix-CSRF"].ToString();
@@ -140,26 +158,7 @@ public static class AdminEndpoints
             }
             else
             {
-                if (store.LoginBlocked(ip))
-                    return Results.Json(new { success = false, error = "Příliš mnoho pokusů. Zkus to za 10 minut." }, statusCode: 429);
-                // Z panelu chodí prázdné tělo (stačí session) - heslo se čte jen tady.
-                string? password = null;
-                try
-                {
-                    using var doc = await JsonDocument.ParseAsync(ctx.Request.Body, default, ctx.RequestAborted);
-                    if (doc.RootElement.ValueKind == JsonValueKind.Object
-                        && doc.RootElement.TryGetProperty("password", out var pv)
-                        && pv.ValueKind == JsonValueKind.String)
-                        password = pv.GetString();
-                }
-                catch (JsonException) { /* prázdné/nevalidní tělo = bez hesla */ }
-                if (!store.PasswordMatches(password))
-                {
-                    store.LoginFailed(ip);
-                    store.RecordAudit("unlock-failed", ip, "");
-                    return Results.Json(new { success = false, error = "Špatné heslo." }, statusCode: 401);
-                }
-                store.LoginSucceeded(ip);
+                return Results.Json(new { success = false, error = "Zadej heslo." }, statusCode: 401);
             }
 
             ctx.Response.Cookies.Append(AdminStore.UnlockCookie, store.IssueUnlock(), new CookieOptions
@@ -170,7 +169,7 @@ public static class AdminEndpoints
                 Path = "/",
                 MaxAge = AdminStore.UnlockMaxAge,
             });
-            store.RecordAudit("unlock", signedIn ? Actor(ctx) : ip, signedIn ? "z panelu" : "heslem");
+            store.RecordAudit("unlock", signedIn ? Actor(ctx) : ip, password != null ? "heslem" : "z panelu");
             return Results.Json(new { success = true, minutes = (int)AdminStore.UnlockMaxAge.TotalMinutes });
         }).RequireRateLimiting("admin");
 
@@ -544,6 +543,23 @@ public static class AdminEndpoints
     private static string ClientIp(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
     private static string Actor(HttpContext ctx) => ClientIp(ctx);
+
+    // Tělo s heslem je nepovinné - panel posílá prázdné (má session), zamykací
+    // stránka posílá {"password":"..."}. Heslo se bere tak, jak přišlo (žádné
+    // ořezávání ani změna velikosti písmen), jinak by přestalo sedět.
+    private static async Task<string?> ReadPasswordAsync(HttpContext ctx)
+    {
+        try
+        {
+            using var doc = await JsonDocument.ParseAsync(ctx.Request.Body, default, ctx.RequestAborted);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("password", out var pv)
+                && pv.ValueKind == JsonValueKind.String)
+                return pv.GetString();
+        }
+        catch (JsonException) { /* prázdné nebo nevalidní tělo = bez hesla */ }
+        return null;
+    }
 
     private static string Describe(FlagsConfig f) => string.Join(",", new[]
     {
