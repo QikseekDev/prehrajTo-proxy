@@ -475,7 +475,7 @@ static bool IsPrehrajUrl(string u) =>
 static bool IsAllowedSourcePageUrl(string u) =>
     Uri.TryCreate(u, UriKind.Absolute, out var x)
     && (x.Scheme == Uri.UriSchemeHttp || x.Scheme == Uri.UriSchemeHttps)
-    && IsAllowedHost(x.Host, "prehraj.to", "bombuj.si", "sledujteto.cz");
+    && IsAllowedHost(x.Host, "prehraj.to", "bombuj.si", "sledujteto.cz", "hellspy.to", "fastshare.cz", "fastshare.cloud", "sdilej.cz");
 
 static string NormalizeSource(string? s)
 {
@@ -485,6 +485,9 @@ static string NormalizeSource(string? s)
         "prehraj" or "prehrajto" or "prehraj.to" => "prehrajto",
         "bombuj" or "bombuj.si" => "bombuj",
         "sledujteto" or "sledujteto.cz" or "old.sledujteto.cz" => "sledujteto",
+        "hellspy" or "hellspy.to" => "hellspy",
+        "fastshare" or "fastshare.cz" or "fastshare.cloud" => "fastshare",
+        "sdilej" or "sdilej.cz" => "sdilej",
         "all" or "merge" or "both" or "prehrajto+sledujteto" => "all",
         _ => "prehrajto"
     };
@@ -966,6 +969,7 @@ app.MapGet("/api/search", async (string q, int? page, string? source, string[]? 
     // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nikdy nechodí (datacentrová IP
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
     var query = $"action=search&q={Uri.EscapeDataString(q)}&source={Uri.EscapeDataString(src)}" + (pg > 1 ? $"&page={pg}" : "")
+                + (src == "all" ? "&only=" + Uri.EscapeDataString(string.Join(",", st.Sources.Enabled())) : "")
                 + (st.Sources.Fallback ? "" : "&fallback=0");
     var proxies = EffectiveProxies(proxy, proxyPool.Current);
     var sources = OrderedProxies(proxies)
@@ -1568,6 +1572,9 @@ app.MapGet("/api/proxy", async (string url, string? source, string[]? proxy, IHt
     {
         if (IsAllowedHost(u.Host, "bombuj.si")) src = "bombuj";
         else if (IsAllowedHost(u.Host, "sledujteto.cz")) src = "sledujteto";
+        else if (IsAllowedHost(u.Host, "hellspy.to")) src = "hellspy";
+        else if (IsAllowedHost(u.Host, "fastshare.cz", "fastshare.cloud")) src = "fastshare";
+        else if (IsAllowedHost(u.Host, "sdilej.cz")) src = "sdilej";
         else if (IsAllowedHost(u.Host, "prehraj.to")) src = "prehrajto";
     }
     // Vypnutý zdroj se neobsluhuje ani tady - jinak by se dal obejít /api/search a přehrávat dál.
@@ -1581,7 +1588,7 @@ app.MapGet("/api/proxy", async (string url, string? source, string[]? proxy, IHt
             enabled = adminStore.Current.Sources.Enabled(),
         }, statusCode: 400);
     if (!IsAllowedSourcePageUrl(url))
-        return Results.BadRequest(new { success = false, error = "URL must be from a supported source (prehraj.to, bombuj.si, sledujteto.cz)" });
+        return Results.BadRequest(new { success = false, error = "URL must be from a supported source (prehraj.to, bombuj.si, sledujteto.cz, hellspy.to, fastshare.cz, sdilej.cz)" });
 
     // Jen PHP proxy servery, zkoušené postupně. 2xx s normální odpovědí = vyhrává;
     // 429/403/5xx nebo {"success":false} = prohra a bere se další zdroj.

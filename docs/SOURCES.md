@@ -1,6 +1,10 @@
 # Zdroje obsahu: co appka umí a co je jen katalog
 
-Wflix umí tři weby: **prehraj.to** (přes PHP proxy), **bombuj.si** a **sledujteto.cz**.
+Wflix umí šest webů: **prehraj.to** (přes PHP proxy), **bombuj.si**, **sledujteto.cz**,
+**hellspy.to**, **fastshare.cz** a **sdilej.cz**. Všechny kromě prehraj.to jedou přes
+veřejná JSON rozhraní a jsou součástí „vrstvy jedna“ – hledají se souběžně při
+„Více výsledků“ (`source=all`), žádný z nich není fallback jiného.
+
 Vedle toho existuje řada českých úložišť, která agregují přehrávače jako
 [Nokturno](https://github.com/nokturno-app/plugin.video.nokturno) pro Kodi. Tenhle
 dokument je jejich katalog: co to je, jaký má veřejný web a co by zapojení vyžadovalo.
@@ -11,28 +15,31 @@ dokument je jejich katalog: co to je, jaký má veřejný web a co by zapojení 
 
 ## 1. Zdroje, které appka používá
 
-| Zdroj | Veřejná adresa | Přístup | Stav ve Wflixu |
-|---|---|---|---|
-| Přehraj.to | `prehraj.to` | bez účtu (HTML), geoblokace mimo ČR | **podporováno** – `index.php` (`searchPrehraj`, `resolveSourceVideo`) + `Meta/*` |
-| Sledujteto | `sledujteto.cz` | bez účtu pro hledání, Premium pro plné přehrávání | **podporováno** – `index.php` (`searchSledujteto`) |
-| Bombuj | `bombuj.si` | bez účtu | **podporováno** – `index.php` (`searchBombuj`) |
+| Zdroj | Veřejná adresa | Rozhraní | Přístup | Stav ve Wflixu |
+|---|---|---|---|---|
+| Přehraj.to | `prehraj.to` | HTML stránka hledání | bez účtu, geoblokace mimo ČR | **podporováno** – `searchPrehraj`, `resolveSourceVideo` + `Meta/*` |
+| Sledujteto | `sledujteto.cz` | `/api/web/videos` | bez účtu pro hledání, Premium pro plné přehrávání | **podporováno** – `searchSledujteto` |
+| Bombuj | `bombuj.si` | autocomplete z `uvod.php` | bez účtu | **podporováno** – `searchBombuj` |
+| HellSpy | `hellspy.to` | `api.hellspy.to/gw/search`, `gw/video/<id>/<hash>/download` (302) | bez účtu a tokenu | **podporováno** – `searchHellspy`, `parseHellspyBody`; při 429 se zdroj přeskočí |
+| FastShare | `fastshare.cz` | `api/api_kodi.php?process=search` | hledání bez účtu, přehrávání někdy s účtem | **podporováno** – `searchFastshare(..., 'fastshare')` |
+| Sdilej.cz | `sdilej.cz` | stejné `api/api_kodi.php` (společný katalog) | jako FastShare | **podporováno** – `searchFastshare(..., 'sdilej')` |
 
-Přepínač zdrojů je v UI (`src`/`source` parametr) a v `appsettings.json`; appka
-nevolá žádný z těch webů přímo z Azure, prehraj.to jde vždy přes PHP proxy.
+Přepínač zdrojů je v adminu (Zdroje) a v API (`source` parametr, `only=...` pro `all`);
+appka nevolá žádný z těch webů přímo z Azure, všechny jdou přes PHP proxy (česká IP).
+HellSpy vrací jen soubory (`GWSearchVideo`), ne katalog filmů – proto se v UI zobrazují
+jako běžné položky se zdrojem `hellspy` a přehrávají se z podepsané CDN adresy.
 
 ## 2. Zdroje z Nokturna, které appka neumí
 
 | Zdroj | Veřejná adresa | Co vyžaduje | Proč není ve Wflixu |
 |---|---|---|---|
 | WebShare | `webshare.cz` | účet (API token) | přihlašovací údaje per uživatel; appka je bez přihlášení a bez účtů |
-| HellSpy | `hellspy.to` | nic (veřejné rozhraní) | jde o fulltext souborů, ne o katalog filmů – chtělo by vlastní UI a stránkování |
-| FastShare / Sdilej.cz | `fastshare.cz`, `sdilej.cz` | účet nebo kredit pro přehrávání | hledání bez účtu ano, přehrávání ne |
 | Sosáč / Streamuj.tv | `sosac.tv`, `streamuj.tv` | Premium účet | streamy jsou vázané na účet a předplatné |
 | CZtor | `cztor.com` | účet párovaný PINem | torrenty – mimo rozsah appky (a právně rizikovější) |
 | Luna | vlastní server (`http://<ip>:7126`) | běžící instance u uživatele | lokální služba, ne veřejný web |
 | Vlastní úložiště | WebDAV / NAS / SMB | přístupové údaje | appka nemá uživatelské účty ani úložiště |
 
-Společný jmenovatel: všechno kromě HellSpy chce účet nebo vlastní server. Wflix je
+Společný jmenovatel: všechno v téhle tabulce chce účet nebo vlastní server. Wflix je
 veřejná appka bez registrace, takže by musela držet cizí credentials – to záměrně nedělá.
 
 ## 3. Co by zapojení jednoho zdroje obnášelo
@@ -52,5 +59,7 @@ whitelist a nový zdroj se musí přidat vědomě.
 ## 4. Odkazy
 
 - Nokturno (Kodi/HA přehrávač, katalog zdrojů): https://github.com/nokturno-app/plugin.video.nokturno
+- HellSpy veřejné rozhraní: https://api.hellspy.to/gw/search?query=matrix
+- FastShare / Sdilej API pro Kodi: https://fastshare.cz/api/api_kodi.php, https://sdilej.cz/api/api_kodi.php
 - Přehraj.to scraper jako inspirace: https://github.com/thetedotgg/prehrajto-scraper
 - Co všechno se z výzkumu integrovalo: [EXPANSION.md](EXPANSION.md)
