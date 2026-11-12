@@ -33,9 +33,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install lftp
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
-
       - name: Prepare deploy payload
         run: |
           mkdir -p deploy
@@ -61,20 +58,22 @@ jobs:
             upload_to_host() {
               local host="$1"
               echo "Trying FTP host: $host"
-              lftp -e "
-                set cmd:fail-exit yes;
-                set ftp:ssl-allow no;
-                set net:max-retries 2;
-                set net:reconnect-interval-base 5;
-                set net:timeout 30;
-                set net:idle 30;
-                set xfer:timeout 60;
-                set ftp:passive-mode on;
-                open -u \"$FTP_USER\",\"$FTP_PASS\" \"$host\";
-                lcd deploy;
-                mput -e index.php router.php;
-                ls -l index.php router.php;
-                bye
-              "
+              for f in index.php router.php; do
+                echo "Uploading $f -> ftp://$host/$f"
+                curl --fail --show-error --silent \
+                  --ftp-pasv \
+                  --connect-timeout 20 \
+                  --max-time 120 \
+                  -T "deploy/$f" \
+                  --user "$FTP_USER:$FTP_PASS" \
+                  "ftp://$host/$f"
+              done
+              echo "Listing uploaded files on $host"
+              curl --fail --show-error --silent \
+                --ftp-pasv \
+                --connect-timeout 20 \
+                --max-time 60 \
+                --user "$FTP_USER:$FTP_PASS" \
+                "ftp://$host/" | sed -n '1,40p' || true
             }
             upload_to_host "$FTP_HOST_PRIMARY" || upload_to_host "$FTP_HOST_FALLBACK"
