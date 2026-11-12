@@ -4,17 +4,19 @@ using System.Text.Json;
 namespace Wflix.Admin;
 
 // ---------------------------------------------------------------------------
-// "Vrata" před webem. Dvě věci, které jdou udělat z panelu:
+// "Vrata" před webem. Tři režimy, které jdou udělat z panelu:
 //
-//  1. Úplná údržba    - místo webu se ukáže zamykací stránka. Odemkne ji admin
-//                       heslo (stejné přihlášení jako do panelu), takže web
+//  1. Mimo provoz     - místo webu i veřejných /api se ukáže stránka s hláškou
+//                       (503, Retry-After).
+//  2. Zamknout web    - zamykací stránka s polem pro admin heslo, takže web
 //                       nejde zamknout nadobro.
-//  2. Vypnutí frontendu - web a veřejné /api přestanou existovat, zůstává jen
-//                       panel a endpoints, které panel potřebuje k odemčení.
-//                       Nic z toho se nevypíná, takže nemůže vzniknout softlock.
+//  3. Vypnutí frontendu - web a veřejné /api přestanou existovat, zůstává jen
+//                       panel. Bez dveří - proto se to nedá odemknout, jen vypnout.
 //
-// Když admin není nastavený (žádné heslo), obě věci se ignorují - jinak by se
-// web zamkl a nešel by odemknout.
+// Přihlášení do panelu samo web neodemyká: jinak by se zamčený web tvářil, že
+// funguje, protože ho správce vidí. Odemyká až cookie z /api/admin/unlock (30 min).
+// Panel a endpoints, které potřebuje, zůstávají otevřené vždy - jinak by vznikl
+// softlock. Když admin není nastavený (žádné heslo), režimy se ignorují.
 // ---------------------------------------------------------------------------
 
 public static class SiteGate
@@ -45,7 +47,8 @@ public static class SiteGate
         var flags = store.Current.Flags;
         var shutdown = flags.FrontendShutdown;
         var locked = flags.FullMaintenance;
-        if (!shutdown && !locked) { await next(); return; }
+        var maintenance = flags.Maintenance;
+        if (!shutdown && !locked && !maintenance) { await next(); return; }
 
         var path = ctx.Request.Path;
         if (IsAdminArea(path) || IsMeta(path)) { await next(); return; }
@@ -53,8 +56,11 @@ public static class SiteGate
         // Bez hesla by to nešlo odemknout - radši pustit web dál.
         if (!store.Enabled) { await next(); return; }
 
-        // Odemčeno admin heslem: platí pro celý web, ne jen pro panel.
-        if (!shutdown && store.ValidateSession(ctx.Request.Cookies[AdminStore.SessionCookie]))
+        // Odemčení správcem (cookie z /api/admin/unlock, 30 minut) platí na celý web.
+        // Přihlášení do panelu samo o sobě web neodemyká - jinak by se zamčený web
+        // tvářil, že funguje, protože ho správce vidí. Úplné vypnutí frontendu dveře
+        // nemá: tam zůstává jen panel, aby šlo provoz vrátit.
+        if (!shutdown && store.ValidateUnlock(ctx.Request.Cookies[AdminStore.UnlockCookie]))
         {
             await next();
             return;
@@ -69,9 +75,11 @@ public static class SiteGate
 
         if (WantsHtml(ctx.Request))
         {
-            ctx.Response.StatusCode = shutdown ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status200OK;
+            // Zámek má na stránce přihlášení, takže je to platná stránka (200). Mimo
+            // provoz a vypnutý frontend jsou dočasné odstávky, proto 503.
+            ctx.Response.StatusCode = locked ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable;
             ctx.Response.ContentType = "text/html; charset=utf-8";
-            await ctx.Response.WriteAsync(shutdown ? OfflineHtml(message) : LockHtml(message));
+            await ctx.Response.WriteAsync(Page(locked ? "lock" : "offline", message));
             return;
         }
 
@@ -82,25 +90,21 @@ public static class SiteGate
             success = false,
             locked,
             shutdown,
-            maintenance = locked,
+            maintenance,
             error = message,
         }));
     }
 
-    // Zamykací stránka je celá v jednom souboru (žádné externí css/js) - musí fungovat
-    // i ve chvíli, kdy jsou statické soubory zablokované. Odemčení = normální login
-    // do panelu, po kterém se stránka načte znovu (cookie platí i pro web).
-    private static string LockHtml(string message) =>
-        Template.Replace("{{TITLE}}", HtmlEncoder.Default.Encode("Wflix je zamčený"))
-                .Replace("{{HEADING}}", HtmlEncoder.Default.Encode("Wflix je zamčený"))
-                .Replace("{{MESSAGE}}", HtmlEncoder.Default.Encode(message))
-                .Replace("{{FORM}}", UnlockForm);
-
-    private static string OfflineHtml(string message) =>
-        Template.Replace("{{TITLE}}", HtmlEncoder.Default.Encode("Wflix je mimo provoz"))
-                .Replace("{{HEADING}}", HtmlEncoder.Default.Encode("Wflix je mimo provoz"))
-                .Replace("{{MESSAGE}}", HtmlEncoder.Default.Encode(message))
-                .Replace("{{FORM}}", "");
+    // Stránka je celá v jednom souboru (žádné externí css/js) - musí fungovat i ve
+    // chvíli, kdy jsou statické soubory zablokované.
+    private static string Page(string kind, string message)
+    {
+        var heading = kind == "lock" ? "Wflix je zamčený" : "Wflix je mimo provoz";
+        return Template.Replace("{{TITLE}}", HtmlEncoder.Default.Encode(heading))
+                       .Replace("{{HEADING}}", HtmlEncoder.Default.Encode(heading))
+                       .Replace("{{MESSAGE}}", HtmlEncoder.Default.Encode(message))
+                       .Replace("{{FORM}}", kind == "lock" ? UnlockForm : "");
+    }
 
     private const string UnlockForm = """
         <form id="unlock">
@@ -108,6 +112,7 @@ public static class SiteGate
             <button type="submit" id="go">Odemknout</button>
         </form>
         <div id="err" class="err"></div>
+        <div class="note">Odemčení platí 30 minut pro tenhle prohlížeč.</div>
         <script>
         (function () {
             var form = document.getElementById('unlock');
@@ -118,7 +123,7 @@ public static class SiteGate
                 e.preventDefault();
                 if (!pw.value) { err.textContent = 'Zadej heslo.'; return; }
                 go.disabled = true;
-                fetch('/api/admin/login', {
+                fetch('/api/admin/unlock', {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: { 'Content-Type': 'application/json' },
@@ -127,6 +132,7 @@ public static class SiteGate
                     return res.json().catch(function () { return {}; }).then(function (d) {
                         if (res.ok) { location.reload(); return; }
                         err.textContent = d.error || ('Nepovedlo se (' + res.status + ').');
+                        if (res.status === 429) { go.disabled = true; return; }
                         go.disabled = false;
                     });
                 }).catch(function () {
@@ -166,6 +172,7 @@ public static class SiteGate
             button:hover { background: #c00812; }
             button:disabled { opacity: .6; cursor: default; }
             .err { min-height: 18px; margin-top: 10px; color: #ff6b6b; font-size: 13px; }
+            .note { margin-top: 4px; font-size: 12px; color: #6f6f6f; }
             .foot { margin-top: 18px; padding-top: 14px; border-top: 1px solid #2c2c2c; font-size: 12px; color: #8c8c8c; }
             a { color: #8c8c8c; }
         </style>

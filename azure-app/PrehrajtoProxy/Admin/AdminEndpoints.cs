@@ -119,6 +119,61 @@ public static class AdminEndpoints
             return Results.Json(new { success = true, csrf });
         }).RequireRateLimiting("admin");
 
+        // Odemčení zamčeného webu na 30 minut. Buď z panelu (přihlášený správce + CSRF),
+        // nebo heslem přímo ze zamykací stránky. Přihlášení do panelu web samo neodemyká -
+        // jinak by zamčený web vypadal, že funguje, protože ho správce vidí.
+        app.MapPost("/api/admin/unlock", async (HttpContext ctx) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store, max-age=0";
+            if (!store.Enabled)
+                return Results.Json(new { success = false, error = "Admin není nakonfigurovaný. Nastav ADMIN_PASSWORD." }, statusCode: 503);
+
+            var ip = ClientIp(ctx);
+            var signedIn = store.ValidateSession(ctx.Request.Cookies[AdminStore.SessionCookie]);
+            if (signedIn)
+            {
+                var cookie = ctx.Request.Cookies[AdminStore.CsrfCookie] ?? "";
+                var header = ctx.Request.Headers["X-Wflix-CSRF"].ToString();
+                if (cookie.Length < 16 || header.Length != cookie.Length
+                    || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(cookie), Encoding.UTF8.GetBytes(header)))
+                    return Results.Json(new { success = false, error = "Neplatný CSRF token. Načti stránku znovu." }, statusCode: 403);
+            }
+            else
+            {
+                if (store.LoginBlocked(ip))
+                    return Results.Json(new { success = false, error = "Příliš mnoho pokusů. Zkus to za 10 minut." }, statusCode: 429);
+                // Z panelu chodí prázdné tělo (stačí session) - heslo se čte jen tady.
+                string? password = null;
+                try
+                {
+                    using var doc = await JsonDocument.ParseAsync(ctx.Request.Body, default, ctx.RequestAborted);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Object
+                        && doc.RootElement.TryGetProperty("password", out var pv)
+                        && pv.ValueKind == JsonValueKind.String)
+                        password = pv.GetString();
+                }
+                catch (JsonException) { /* prázdné/nevalidní tělo = bez hesla */ }
+                if (!store.PasswordMatches(password))
+                {
+                    store.LoginFailed(ip);
+                    store.RecordAudit("unlock-failed", ip, "");
+                    return Results.Json(new { success = false, error = "Špatné heslo." }, statusCode: 401);
+                }
+                store.LoginSucceeded(ip);
+            }
+
+            ctx.Response.Cookies.Append(AdminStore.UnlockCookie, store.IssueUnlock(), new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = ctx.Request.IsHttps,
+                SameSite = SameSiteMode.Lax,
+                Path = "/",
+                MaxAge = AdminStore.UnlockMaxAge,
+            });
+            store.RecordAudit("unlock", signedIn ? Actor(ctx) : ip, signedIn ? "z panelu" : "heslem");
+            return Results.Json(new { success = true, minutes = (int)AdminStore.UnlockMaxAge.TotalMinutes });
+        }).RequireRateLimiting("admin");
+
         app.MapGet("/api/admin/session", (HttpContext ctx) =>
         {
             ctx.Response.Headers.CacheControl = "no-store, max-age=0";

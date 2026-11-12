@@ -306,7 +306,9 @@ app.Use(async (ctx, next) =>
     var flags = adminStore.Current.Flags;
     var alwaysOpen = isAdmin
         || ctx.Request.Path.StartsWithSegments("/api/config")
-        || ctx.Request.Path.StartsWithSegments("/api/health");
+        || ctx.Request.Path.StartsWithSegments("/api/health")
+        // Správce s odemčeným webem (cookie z /api/admin/unlock) vidí i /api.
+        || adminStore.ValidateUnlock(ctx.Request.Cookies[AdminStore.UnlockCookie]);
     if (flags.Maintenance && !alwaysOpen)
     {
         ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;

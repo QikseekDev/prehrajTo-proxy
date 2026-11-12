@@ -162,7 +162,10 @@ public sealed class AdminStore
 {
     public const string SessionCookie = "wflix_admin";
     public const string CsrfCookie = "wflix_admin_csrf";
+    /// <summary>Dveře do zamčeného webu: cookie z /api/admin/unlock, platí 30 minut.</summary>
+    public const string UnlockCookie = "wflix_unlock";
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(12);
+    private static readonly TimeSpan UnlockLifetime = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan ReloadThrottle = TimeSpan.FromSeconds(1);
 
     private static readonly JsonSerializerOptions Json = new()
@@ -372,6 +375,36 @@ public sealed class AdminStore
     }
 
     public static TimeSpan SessionMaxAge => SessionLifetime;
+
+    // Odemčení webu je jiný token než přihlášení do panelu (jiný podpis s jiným
+    // prefixem), takže se nedá zaměnit: přihlášení samo o sobě web neodemyká a
+    // odemčení samo o sobě nedává přístup do panelu.
+    public static TimeSpan UnlockMaxAge => UnlockLifetime;
+
+    public string IssueUnlock()
+    {
+        var exp = DateTimeOffset.UtcNow.Add(UnlockLifetime).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+        return exp + "." + SignUnlock(exp);
+    }
+
+    private string SignUnlock(string payload)
+    {
+        using var hmac = new HMACSHA256(SHA256.HashData(Encoding.UTF8.GetBytes(Password ?? "")));
+        var raw = hmac.ComputeHash(Encoding.UTF8.GetBytes("wflix-unlock|" + payload));
+        return Convert.ToBase64String(raw).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    public bool ValidateUnlock(string? cookie)
+    {
+        if (!Enabled || string.IsNullOrWhiteSpace(cookie)) return false;
+        var dot = cookie.IndexOf('.');
+        if (dot <= 0 || dot == cookie.Length - 1) return false;
+        var payload = cookie[..dot];
+        var sig = cookie[(dot + 1)..];
+        if (!long.TryParse(payload, NumberStyles.Integer, CultureInfo.InvariantCulture, out var exp)) return false;
+        if (exp < DateTimeOffset.UtcNow.ToUnixTimeSeconds()) return false;
+        return CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(sig), Encoding.UTF8.GetBytes(SignUnlock(payload)));
+    }
 
     public static string NewCsrfToken() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).TrimEnd('=').Replace('+', '-').Replace('/', '_');

@@ -432,19 +432,21 @@
             <div class="card">
               <h2>Režimy dostupnosti</h2>
               <div class="sub">Údržba, zamknutí webu nebo úplné vypnutí frontendu. Panel zůstává dostupný, aby šlo vrátit provoz.</div>
-              <label class="check" style="cursor:default"><input type="checkbox" id="fMaintenance"><span><b>Údržba</b><span class="hint">Všechno /api kromě /api/config, /api/health a /api/admin → 503.</span></span></label>
+              <label class="check" style="cursor:default"><input type="checkbox" id="fMaintenance"><span><b>Mimo provoz</b><span class="hint">Místo webu i všech veřejných /api se ukáže stránka s hláškou (503). Panel zůstává dostupný.</span></span></label>
               <div class="mt">
                 <label for="fMessage" class="muted" style="display:block;font-size:12px;margin-bottom:6px">Hláška při údržbě</label>
                 <input id="fMessage" type="text" maxlength="300" placeholder="Např. Probíhá krátká údržba, zkuste to za chvíli.">
               </div>
               <div class="mt">
-                <label class="check" style="cursor:default"><input type="checkbox" id="fFull"><span><b>Úplná údržba – zamknout web</b><span class="hint">Místo webu se zobrazí zamykací stránka. Odemčení vyžaduje admin heslo.</span></span></label>
-                <label class="check" style="cursor:default"><input type="checkbox" id="fShutdown"><span><b>Vypnout frontend</b><span class="hint">Web i veřejné /api vrací 503. Panel a endpointy pro odemčení zůstávají dostupné.</span></span></label>
+                <label class="check" style="cursor:default"><input type="checkbox" id="fFull"><span><b>Zamknout web</b><span class="hint">Zamykací stránka s odemčením heslem. Přihlášení do panelu web samo neodemyká.</span></span></label>
+                <label class="check" style="cursor:default"><input type="checkbox" id="fShutdown"><span><b>Vypnout frontend</b><span class="hint">Web i veřejné /api vrací 503 a nejde odemknout - zůstává jen tenhle panel.</span></span></label>
               </div>
               <div class="row">
                 <button id="saveFlags" class="primary">Uložit vypínače</button>
+                <button id="unlockSite" class="ghost">Odemknout si web na 30 min</button>
                 <span class="muted">Naposledy změnil <span id="flagsBy" class="mono">–</span></span>
               </div>
+              <div class="sub" style="margin-top:8px">Zamčený nebo odstavený web vidí i správce - odemčení je proto samostatné tlačítko a platí 30 minut pro tenhle prohlížeč.</div>
             </div>
           </div>
         </section>
@@ -1236,9 +1238,15 @@
 
     $('saveFlags').addEventListener('click', function () {
       if ($('fShutdown').checked && !confirm('Vypnout celý frontend? Web i veřejné /api budou vracet 503, dokud to nevypnete. Panel zůstane dostupný.')) return;
-      if ($('fFull').checked && !$('fShutdown').checked && !confirm('Zamknout web? Uživatelé uvidí zamykací stránku a dovnitř se dostane jen ten, kdo zná admin heslo.')) return;
-      if ($('fMaintenance').checked && !$('fFull').checked && !$('fShutdown').checked && !confirm('Zapnout údržbu? Všichni uživatelé uvidí 503, dokud to nevypnete.')) return;
+      if ($('fFull').checked && !$('fShutdown').checked && !confirm('Zamknout web? Uživatelé uvidí zamykací stránku a dovnitř se dostane jen ten, kdo zná admin heslo. Ty se dostaneš přes tlačítko „Odemknout si web“.')) return;
+      if ($('fMaintenance').checked && !$('fFull').checked && !$('fShutdown').checked && !confirm('Zapnout mimo provoz? Místo webu se všem ukáže stránka s hláškou, dokud to nevypnete.')) return;
       post('/api/admin/flags', flagsBody(), 'Vypínače uloženy.');
+    });
+
+    $('unlockSite').addEventListener('click', function () {
+      api('/api/admin/unlock', { method: 'POST' }).then(function (d) {
+        msg('Web je odemčený na ' + (d && d.minutes ? d.minutes : 30) + ' minut pro tenhle prohlížeč.', true);
+      }).catch(function (e) { msg(e.message, false); });
     });
 
     $('vRefresh').addEventListener('click', function () { refreshVisitors(); msg('Seznam obnoven.', true); });
