@@ -5,31 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>Wflix admin</title>
+<link rel="stylesheet" href="fonts.css?v=20261112-1">
 <style>
+  /* Stejná paleta a rádiusy jako klientská appka (styles.css) - panel má
+     vypadat jako součást produktu, ne jako jiný nástroj. */
   :root {
-    --bg: #0e1116;
-    --bg-elev: #141922;
-    --bg-soft: #1a2130;
-    --line: #26303f;
-    --line-soft: #1e2634;
-    --text: #e7ecf5;
-    --muted: #94a1b5;
-    --muted-2: #6f7d92;
-    --accent: #cf3f48;
-    --accent-hover: #b9333b;
-    --accent-soft: rgba(207, 63, 72, .13);
-    --green: #3cc47c;
-    --amber: #dfb055;
-    --red: #f47070;
-    --radius: 12px;
-    --radius-sm: 8px;
-    --shadow: 0 16px 40px rgba(0,0,0,.35);
+    --bg: #0e0e10;
+    --bg-elev: #131315;
+    --bg-soft: #1a1a1c;
+    --line: #2c2c2f;
+    --line-soft: #232326;
+    --text: #f5f3ef;
+    --muted: #94928d;
+    --muted-2: #6f6d6a;
+    --accent: #e33229;
+    --accent-hover: #c8281f;
+    --accent-soft: rgba(227, 50, 41, .14);
+    --green: #4fbf7a;
+    --amber: #e9b949;
+    --red: #ef6a5f;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 16px 40px rgba(0,0,0,.45);
     --sidebar-w: 264px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { min-height: 100%; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: 'Barlow', system-ui, -apple-system, "Segoe UI", sans-serif;
     background: var(--bg);
     color: var(--text);
     font-size: 14px;
@@ -242,6 +245,11 @@
   .inline > * { width: auto; }
   .mt { margin-top: 12px; }
   .muted { color: var(--muted); }
+  .amber { color: var(--amber); }
+  .w24 { width: 24px; }
+  .w28 { width: 28px; }
+  .w48 { width: 48px; }
+  .w56 { width: 56px; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
   .msg { margin-bottom: 14px; font-size: 13px; min-height: 0; }
   .msg:empty { display: none; }
@@ -495,17 +503,17 @@
               <div class="sub">Ve zvoleném okně se web sám přepne do režimu a po konci se vrátí do provozu. Časy jsou v pásmu tvého prohlížeče.</div>
               <div class="grid two">
                 <label class="check" style="cursor:default"><input type="checkbox" id="schOn"><span><b>Plán zapnutý</b><span class="hint">Vypnutý plán se nevyhodnocuje a web běží podle vypínačů výše.</span></span></label>
-                <label class="inline" style="gap:8px"><span class="muted">Režim</span>
+                <label class="inline"><span class="muted">Režim</span>
                   <select id="schMode">
                     <option value="maintenance">Mimo provoz (hláška)</option>
                     <option value="lock">Zamknout web (odemčení heslem)</option>
                     <option value="shutdown">Vypnout frontend (bez dveří)</option>
                   </select>
                 </label>
-                <label class="inline" style="gap:8px"><span class="muted" style="width:24px">Od</span>
+                <label class="inline"><span class="muted w24">Od</span>
                   <input id="schFrom" type="datetime-local">
                 </label>
-                <label class="inline" style="gap:8px"><span class="muted" style="width:28px">Do</span>
+                <label class="inline"><span class="muted w28">Do</span>
                   <input id="schUntil" type="datetime-local">
                 </label>
               </div>
@@ -539,7 +547,7 @@
                 <label class="check"><input type="checkbox" id="sFallback"><span>Automatický fallback<span class="hint">prehrajto → sledujteto při chybě nebo prázdném výsledku.</span></span></label>
               </div>
               <div class="row">
-                <label class="inline" style="gap:8px">
+                <label class="inline">
                   <span class="muted">Max. stránka</span>
                   <input id="sMaxPage" type="number" min="1" max="50" step="1" style="width:88px">
                 </label>
@@ -617,7 +625,7 @@
               <h2>Kdo je na webu</h2>
               <div class="sub">Data jsou pouze v paměti procesu. Poloha je odhad (GeoIP), ne přesná GPS pozice.</div>
               <div class="inline" style="gap:10px">
-                <label class="inline" style="gap:8px"><span class="muted">Okno</span>
+                <label class="inline"><span class="muted">Okno</span>
                   <select id="vMinutes"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="30">30 min</option><option value="60">60 min</option></select>
                 </label>
                 <button id="vRefresh" class="small">Obnovit</button>
@@ -639,16 +647,16 @@
               <h2>Nový ban</h2>
               <div class="sub">Blokování podle IP nebo klientského identifikátoru (cid). Použijte při scrapingu nebo zneužití.</div>
               <div class="grid two">
-                <label class="inline" style="gap:8px"><span class="muted" style="width:48px">Typ</span>
+                <label class="inline"><span class="muted w48">Typ</span>
                   <select id="bKind"><option value="ip">IP</option><option value="cid">cid</option></select>
                 </label>
-                <label class="inline" style="gap:8px"><span class="muted" style="width:48px">Cíl</span>
+                <label class="inline"><span class="muted w48">Cíl</span>
                   <input id="bTarget" type="text" placeholder="1.2.3.4 nebo cid-abc123">
                 </label>
-                <label class="inline" style="gap:8px"><span class="muted" style="width:56px">Minuty</span>
+                <label class="inline"><span class="muted w56">Minuty</span>
                   <input id="bMinutes" type="number" min="1" max="10080" value="60" style="width:96px">
                 </label>
-                <label class="inline" style="gap:8px"><span class="muted" style="width:48px">Důvod</span>
+                <label class="inline"><span class="muted w48">Důvod</span>
                   <input id="bReason" type="text" maxlength="200" placeholder="nepovinné">
                 </label>
               </div>
@@ -701,7 +709,7 @@
               <h2>Požadavky po minutách</h2>
               <div class="sub">Šedý sloupec = běžný provoz, červený = v minutě byla chyba 5xx. Jeden sloupec je jedna minuta.</div>
               <div class="toolbar">
-                <label class="inline" style="gap:8px"><span class="muted">Okno</span>
+                <label class="inline"><span class="muted">Okno</span>
                   <select id="trafficWindow">
                     <option value="15">15 min</option>
                     <option value="30" selected>30 min</option>
@@ -757,7 +765,7 @@
               <div class="sub">Vlož seznam IP adres nebo cid, každou na nový řádek (jde i čárka či mezera). Maximálně 200 položek naráz.</div>
               <textarea id="bulkText" rows="6" placeholder="203.0.113.9&#10;198.51.100.7&#10;cid-abc123"></textarea>
               <div class="toolbar mt">
-                <label class="inline" style="gap:8px"><span class="muted">Minuty</span><input id="bulkMinutes" type="number" min="1" max="10080" value="1440" style="width:100px"></label>
+                <label class="inline"><span class="muted">Minuty</span><input id="bulkMinutes" type="number" min="1" max="10080" value="1440" style="width:100px"></label>
                 <input id="bulkReason" type="text" maxlength="200" placeholder="důvod (nepovinné)" style="max-width:240px">
                 <button id="bulkRun" class="primary">Zablokovat vše</button>
               </div>
@@ -1052,7 +1060,7 @@
     p.style.borderColor = '';
     var plan = scheduleState(s);
     if (plan.on && plan.running) {
-      p.innerHTML = 'plán: <b style="color:#dfb055">' + scheduleLabel(plan.mode) + '</b>';
+      p.innerHTML = 'plán: <b class="amber">' + scheduleLabel(plan.mode) + '</b>';
       p.style.borderColor = '#463a1d';
       return;
     }
@@ -1060,10 +1068,10 @@
       p.innerHTML = 'web <b style="color:#f47070">vypnutý</b>';
       p.style.borderColor = '#4d2226';
     } else if (f.fullMaintenance) {
-      p.innerHTML = 'web <b style="color:#dfb055">zamčený</b>';
+      p.innerHTML = 'web <b class="amber">zamčený</b>';
       p.style.borderColor = '#463a1d';
     } else if (f.maintenance) {
-      p.innerHTML = 'web <b style="color:#dfb055">v údržbě</b>';
+      p.innerHTML = 'web <b class="amber">v údržbě</b>';
     } else {
       p.innerHTML = 'web <b style="color:#3cc47c">běží</b>';
     }

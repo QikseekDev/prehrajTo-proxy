@@ -54,41 +54,41 @@
         // Filmy pro homepage jinak chodí ze serveru (iTunes RSS, cache na 1 den) včetně plakátů.
         let CATALOG = [
             // q = hledaný výraz, t = zobrazený název
-            { t: 'Matrix', q: 'Matrix', y: 1999, g: ['Sci-fi','Akční'], e: '🕶️' },
-            { t: 'Interstellar', q: 'Interstellar', y: 2014, g: ['Sci-fi','Drama'], e: '🚀' },
-            { t: 'Počátek', q: 'Počátek Inception', y: 2010, g: ['Sci-fi','Thriller'], e: '🌀' },
-            { t: 'Duna', q: 'Duna 2021', y: 2021, g: ['Sci-fi'], e: '🏜️' },
-            { t: 'Blade Runner 2049', q: 'Blade Runner 2049', y: 2017, g: ['Sci-fi'], e: '🌆' },
-            { t: 'Temný rytíř', q: 'Temný rytíř', y: 2008, g: ['Akční','Thriller'], e: '🦇' },
-            { t: 'Gladiátor', q: 'Gladiátor', y: 2000, g: ['Akční','Drama'], e: '⚔️' },
-            { t: 'Top Gun: Maverick', q: 'Top Gun Maverick', y: 2022, g: ['Akční'], e: '✈️' },
-            { t: 'John Wick', q: 'John Wick', y: 2014, g: ['Akční','Thriller'], e: '🔫' },
-            { t: 'Mad Max: Fury Road', q: 'Mad Max Fury Road', y: 2015, g: ['Akční','Sci-fi'], e: '🔥' },
-            { t: 'Vykoupení z věznice Shawshank', q: 'Vykoupení z věznice Shawshank', y: 1994, g: ['Drama'], e: '⛓️' },
-            { t: 'Forrest Gump', q: 'Forrest Gump', y: 1994, g: ['Drama'], e: '🍫' },
-            { t: 'Pulp Fiction', q: 'Pulp Fiction', y: 1994, g: ['Thriller','Drama'], e: '💼' },
-            { t: 'Klub rváčů', q: 'Klub rváčů', y: 1999, g: ['Drama','Thriller'], e: '🧼' },
-            { t: 'Mlčení jehňátek', q: 'Mlčení jehňátek', y: 1991, g: ['Thriller'], e: '🦋' },
-            { t: 'Šestý smysl', q: 'Šestý smysl', y: 1999, g: ['Thriller','Drama'], e: '👻' },
-            { t: 'Parazit', q: 'Parazit', y: 2019, g: ['Thriller','Drama'], e: '🏠' },
-            { t: 'Oppenheimer', q: 'Oppenheimer', y: 2023, g: ['Drama'], e: '💥' },
-            { t: 'Pán prstenů: Společenstvo Prstenu', q: 'Pán prstenů Společenstvo Prstenu', y: 2001, g: ['Fantasy','Akční'], e: '💍' },
-            { t: 'Harry Potter a Kámen mudrců', q: 'Harry Potter a Kámen mudrců', y: 2001, g: ['Fantasy','Rodinné'], e: '⚡' },
-            { t: 'Piráti z Karibiku: Prokletí Černé perly', q: 'Piráti z Karibiku Prokletí Černé perly', y: 2003, g: ['Fantasy','Akční'], e: '🏴‍☠️' },
-            { t: 'Shrek', q: 'Shrek', y: 2001, g: ['Rodinné','Animované'], e: '👹' },
-            { t: 'Toy Story', q: 'Toy Story', y: 1995, g: ['Rodinné','Animované'], e: '🤠' },
-            { t: 'Lví král', q: 'Lví král', y: 1994, g: ['Rodinné','Animované'], e: '🦁' },
-            { t: 'Hledá se Nemo', q: 'Hledá se Nemo', y: 2003, g: ['Rodinné','Animované'], e: '🐠' },
-            { t: 'Ledové království', q: 'Ledové království', y: 2013, g: ['Rodinné','Animované'], e: '❄️' },
-            { t: 'Coco', q: 'Coco', y: 2017, g: ['Rodinné','Animované'], e: '💀' },
-            { t: 'Pelíšky', q: 'Pelíšky', y: 1999, g: ['České','Komedie'], e: '🏡' },
-            { t: 'Kolja', q: 'Kolja', y: 1996, g: ['České','Drama'], e: '🎻' },
-            { t: 'Samotáři', q: 'Samotáři', y: 2000, g: ['České','Komedie'], e: '💑' },
-            { t: 'Vesničko má středisková', q: 'Vesničko má středisková', y: 1985, g: ['České','Komedie'], e: '🌾' },
-            { t: 'Tmavomodrý svět', q: 'Tmavomodrý svět', y: 2001, g: ['České','Drama'], e: '🛩️' },
-            { t: 'Anděl Páně', q: 'Anděl Páně', y: 2005, g: ['České','Komedie'], e: '😇' },
-            { t: 'Prci, prci, prcičky', q: 'American Pie', y: 1999, g: ['Komedie'], e: '🥧' },
-            { t: 'Pařba ve Vegas', q: 'Hangover Pařba ve Vegas', y: 2009, g: ['Komedie'], e: '🎰' },
+            { t: 'Matrix', q: 'Matrix', y: 1999, g: ['Sci-fi','Akční'] },
+            { t: 'Interstellar', q: 'Interstellar', y: 2014, g: ['Sci-fi','Drama'] },
+            { t: 'Počátek', q: 'Počátek Inception', y: 2010, g: ['Sci-fi','Thriller'] },
+            { t: 'Duna', q: 'Duna 2021', y: 2021, g: ['Sci-fi'] },
+            { t: 'Blade Runner 2049', q: 'Blade Runner 2049', y: 2017, g: ['Sci-fi'] },
+            { t: 'Temný rytíř', q: 'Temný rytíř', y: 2008, g: ['Akční','Thriller'] },
+            { t: 'Gladiátor', q: 'Gladiátor', y: 2000, g: ['Akční','Drama'] },
+            { t: 'Top Gun: Maverick', q: 'Top Gun Maverick', y: 2022, g: ['Akční'] },
+            { t: 'John Wick', q: 'John Wick', y: 2014, g: ['Akční','Thriller'] },
+            { t: 'Mad Max: Fury Road', q: 'Mad Max Fury Road', y: 2015, g: ['Akční','Sci-fi'] },
+            { t: 'Vykoupení z věznice Shawshank', q: 'Vykoupení z věznice Shawshank', y: 1994, g: ['Drama'] },
+            { t: 'Forrest Gump', q: 'Forrest Gump', y: 1994, g: ['Drama'] },
+            { t: 'Pulp Fiction', q: 'Pulp Fiction', y: 1994, g: ['Thriller','Drama'] },
+            { t: 'Klub rváčů', q: 'Klub rváčů', y: 1999, g: ['Drama','Thriller'] },
+            { t: 'Mlčení jehňátek', q: 'Mlčení jehňátek', y: 1991, g: ['Thriller'] },
+            { t: 'Šestý smysl', q: 'Šestý smysl', y: 1999, g: ['Thriller','Drama'] },
+            { t: 'Parazit', q: 'Parazit', y: 2019, g: ['Thriller','Drama'] },
+            { t: 'Oppenheimer', q: 'Oppenheimer', y: 2023, g: ['Drama'] },
+            { t: 'Pán prstenů: Společenstvo Prstenu', q: 'Pán prstenů Společenstvo Prstenu', y: 2001, g: ['Fantasy','Akční'] },
+            { t: 'Harry Potter a Kámen mudrců', q: 'Harry Potter a Kámen mudrců', y: 2001, g: ['Fantasy','Rodinné'] },
+            { t: 'Piráti z Karibiku: Prokletí Černé perly', q: 'Piráti z Karibiku Prokletí Černé perly', y: 2003, g: ['Fantasy','Akční'] },
+            { t: 'Shrek', q: 'Shrek', y: 2001, g: ['Rodinné','Animované'] },
+            { t: 'Toy Story', q: 'Toy Story', y: 1995, g: ['Rodinné','Animované'] },
+            { t: 'Lví král', q: 'Lví král', y: 1994, g: ['Rodinné','Animované'] },
+            { t: 'Hledá se Nemo', q: 'Hledá se Nemo', y: 2003, g: ['Rodinné','Animované'] },
+            { t: 'Ledové království', q: 'Ledové království', y: 2013, g: ['Rodinné','Animované'] },
+            { t: 'Coco', q: 'Coco', y: 2017, g: ['Rodinné','Animované'] },
+            { t: 'Pelíšky', q: 'Pelíšky', y: 1999, g: ['České','Komedie'] },
+            { t: 'Kolja', q: 'Kolja', y: 1996, g: ['České','Drama'] },
+            { t: 'Samotáři', q: 'Samotáři', y: 2000, g: ['České','Komedie'] },
+            { t: 'Vesničko má středisková', q: 'Vesničko má středisková', y: 1985, g: ['České','Komedie'] },
+            { t: 'Tmavomodrý svět', q: 'Tmavomodrý svět', y: 2001, g: ['České','Drama'] },
+            { t: 'Anděl Páně', q: 'Anděl Páně', y: 2005, g: ['České','Komedie'] },
+            { t: 'Prci, prci, prcičky', q: 'American Pie', y: 1999, g: ['Komedie'] },
+            { t: 'Pařba ve Vegas', q: 'Hangover Pařba ve Vegas', y: 2009, g: ['Komedie'] },
         ];
         const BUILTIN_CATALOG = CATALOG;   // pořád tenhle seznam - a zdroj českých klasik
 
@@ -875,7 +875,7 @@
                 ${rank ? `<span class="rank">${rank}</span>` : ''}
                 <span class="art" style="background:${posterGradient(m.t)}">
                     <img class="thumb${m.img ? ' portrait' : ''}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
-                    <span class="emoji" aria-hidden="true">${escapeHtml(monogram(m.t))}</span>
+                    <span class="mark" aria-hidden="true">${escapeHtml(monogram(m.t))}</span>
                     <span class="shade"></span>
                     <span class="play">${ICON.play}</span>
                     <span class="p-title">${escapeHtml(m.t)}</span>
@@ -908,7 +908,7 @@
             const m = CATALOG[(day + heroOffset) % CATALOG.length];
             document.getElementById('hero').innerHTML = `
                 <div class="hero" style="--hero-bg:${posterGradient(m.t)}">
-                    <div class="hero-emoji" aria-hidden="true">${escapeHtml(monogram(m.t))}</div>
+                    <div class="hero-mark" aria-hidden="true">${escapeHtml(monogram(m.t))}</div>
                     <div class="hero-content">
                         <div class="hero-tag"><span class="w">W</span> TIP DNE</div>
                         <h2>${escapeHtml(m.t)}</h2>
@@ -1000,6 +1000,16 @@
             if (item) openFromCatalog(item.dataset.q);
         });
 
+
+        // Aktivní položka lišty pro čtečky i pro podtržení (aria-current).
+        document.addEventListener('click', (e) => {
+            const link = e.target && e.target.closest ? e.target.closest('.nav-links .nav-link') : null;
+            if (!link) return;
+            document.querySelectorAll('.nav-links .nav-link').forEach(el => {
+                if (el === link) el.setAttribute('aria-current', 'page');
+                else el.removeAttribute('aria-current');
+            });
+        }, true);
         // Záložka je <span role="button"> (karta je <button>/<a>), takže Enter a mezerník
         // musí obsluhovat sama - prohlížeč je u ne-tlačítek sám neaktivuje.
         document.addEventListener('keydown', (e) => {
@@ -3362,7 +3372,7 @@
             const img = it.poster || '';
             const art = img
                 ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(img)}" onerror="this.remove()">`
-                : '<span class="emoji" aria-hidden="true">' + escapeHtml(monogram(it.title)) + '</span>';
+                : '<span class="mark" aria-hidden="true">' + escapeHtml(monogram(it.title)) + '</span>';
             const pct = (isCont && it._d > 0) ? Math.max(0, Math.min(100, (it._t / it._d) * 100)) : 0;
             const prog = pct ? `<span class="progress"><i style="width:${pct}%"></i></span>` : '';
             const meta = isCont

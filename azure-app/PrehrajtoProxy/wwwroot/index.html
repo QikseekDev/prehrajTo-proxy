@@ -15,9 +15,7 @@
     <meta name="twitter:description" content="Wflix – vyhledávej a přehrávej filmy a seriály.">
     <title>Wflix – filmy a seriály</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230e0e10'/><text x='50' y='72' font-size='62' font-weight='700' text-anchor='middle' fill='%23e33229' font-family='Helvetica Neue,sans-serif'>W</text></svg>">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
+    <link rel="stylesheet" href="fonts.css?v=20261112-1">
     <link rel="stylesheet" href="styles.css?v=20261112-1">
     <link rel="stylesheet" href="intro.css?v=20261112-1">
     <noscript><style>.intro { display: none; }</style></noscript>
@@ -33,6 +31,7 @@
     </script>
 </head>
 <body>
+    <a class="skip-link" href="#obsah">Přeskočit na obsah</a>
     <!-- Wflix intro: červené W ze čtyř štětců, zoom a lampy -->
     <div class="intro" id="intro" aria-hidden="true">
         <div class="nf" data-letter="W">
@@ -212,12 +211,12 @@
 
     <!-- Top bar -->
     <header class="nav" id="nav">
-        <div class="logo" onclick="goHome()" title="Domů">Wflix</div>
-        <nav class="nav-links">
-            <a onclick="goHome()">Domů</a>
-            <a onclick="goHome(); setChip('České')">České filmy</a>
-            <a onclick="goHome(); setChip('Rodinné')">Rodinné</a>
-            <a onclick="openLibrary()">Knihovna</a>
+        <button class="logo" type="button" onclick="goHome()" title="Domů">Wflix</button>
+        <nav class="nav-links" aria-label="Hlavní">
+            <button class="nav-link" type="button" data-nav="home" aria-current="page" onclick="goHome()">Domů</button>
+            <button class="nav-link" type="button" data-nav="home" onclick="goHome(); setChip('České')">České filmy</button>
+            <button class="nav-link" type="button" data-nav="home" onclick="goHome(); setChip('Rodinné')">Rodinné</button>
+            <button class="nav-link" type="button" data-nav="library" onclick="openLibrary()">Knihovna</button>
         </nav>
         <button class="nav-live" id="liveBtn" type="button" title="Živé vysílání">
             <svg class="live-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6.5" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 3l4 3 4-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 10.8v4.4l4-2.2z" fill="currentColor"/></svg>Živě
@@ -227,6 +226,7 @@
                 <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 20.6 20.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                 <span class="search-spinner" aria-hidden="true"></span>
             </button>
+            <label class="visually-hidden" for="searchInput">Hledat filmy a seriály</label>
             <input type="text" id="searchInput" placeholder="Hledat filmy a seriály" autocomplete="off">
         </div>
         <div class="settings-wrap" id="settingsWrap">
@@ -236,7 +236,7 @@
         </div>
     </header>
 
-    <div class="container">
+    <main class="container" id="obsah">
         <div id="status" class="status" role="status" aria-live="polite"></div>
 
         <!-- Results -->
@@ -331,7 +331,7 @@
             <div id="chips" class="chips"></div>
             <div id="catalogRows"></div>
         </div>
-    </div>
+    </main>
 
     <!-- Patička po vzoru Netflixu -->
     <footer class="footer">
