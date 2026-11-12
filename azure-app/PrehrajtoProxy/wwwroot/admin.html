@@ -6,915 +6,1370 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Wflix admin</title>
 <style>
-    :root { --red: #e50914; --bg: #141414; --panel: #1b1b1b; --line: #2c2c2c; --text: #e5e5e5; --muted: #8c8c8c; --green: #46d369; --amber: #f5c518; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
-    .hidden { display: none !important; }
-    header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 20px; background: #101010; border-bottom: 1px solid var(--line); }
-    .logo { font-weight: 900; font-size: 22px; color: var(--red); letter-spacing: -0.3px; }
-    .logo small { font-weight: 400; font-size: 12px; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
-    header .spacer { flex: 1; }
-    .pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--muted); }
-    .pill b { color: var(--text); font-weight: 600; }
-    main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 18px; }
-    section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
-    h2 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
-    .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; line-height: 1.45; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 18px; }
-    label.check { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; padding: 6px 0; line-height: 1.35; }
-    label.check input { margin-top: 2px; accent-color: var(--red); }
-    label.check .hint { display: block; color: var(--muted); font-size: 12px; }
-    input[type=text], input[type=password], input[type=number], select, textarea { background: #0f0f0f; color: var(--text); border: 1px solid #3a3a3a; border-radius: 5px; padding: 8px 10px; font: inherit; width: 100%; }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--red); }
-    button { font: inherit; cursor: pointer; border: 1px solid #3a3a3a; background: #232323; color: var(--text); border-radius: 5px; padding: 8px 14px; }
-    button:hover { background: #2d2d2d; }
-    button.primary { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
-    button.primary:hover { background: #c00812; }
-    button.small { padding: 3px 9px; font-size: 12px; }
-    button:disabled { opacity: .5; cursor: default; }
-    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
-    .msg { margin-top: 10px; font-size: 13px; min-height: 18px; }
-    .msg.err { color: #ff6b6b; }
-    .msg.ok { color: var(--green); }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 4px; }
-    .stat { background: #131313; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
-    .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
-    .stat .v { font-size: 19px; font-weight: 700; margin-top: 3px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-    th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
-    td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
-    .ok { color: var(--green); } .bad { color: #ff6b6b; } .warn { color: var(--amber); }
-    .login { max-width: 380px; margin: 12vh auto 0; }
-    .login h1 { font-size: 20px; margin-bottom: 6px; }
-    .login input { margin: 14px 0 10px; }
-    .login button { width: 100%; }
-    .banner { border-left: 3px solid var(--red); background: #1f1414; padding: 10px 14px; border-radius: 5px; color: #ffb3b3; }
-    .banner.warn { border-color: var(--amber); background: #1f1c10; color: #ffe08a; }
-    .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .inline > * { width: auto; }
-    .purge-grid { display: flex; gap: 8px; flex-wrap: wrap; }
-    .mt { margin-top: 12px; }
-    .muted { color: var(--muted); }
-    .cache-mini { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
-    .spark { display: flex; align-items: flex-end; gap: 2px; height: 46px; margin-top: 8px; }
-    .spark i { flex: 1; background: #262626; border-radius: 1px 1px 0 0; min-height: 2px; }
-    .spark i.on { background: var(--red); }
-    .chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; font-size: 12px; color: var(--muted); }
-    .chip b { color: var(--text); }
-    tr.off td { opacity: .45; }
-    .ua { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+  :root {
+    --bg: #0e1116;
+    --bg-elev: #141922;
+    --bg-soft: #1a2130;
+    --line: #26303f;
+    --line-soft: #1e2634;
+    --text: #e7ecf5;
+    --muted: #94a1b5;
+    --muted-2: #6f7d92;
+    --accent: #cf3f48;
+    --accent-hover: #b9333b;
+    --accent-soft: rgba(207, 63, 72, .13);
+    --green: #3cc47c;
+    --amber: #dfb055;
+    --red: #f47070;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 16px 40px rgba(0,0,0,.35);
+    --sidebar-w: 264px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { min-height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "tnum" 0;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .hidden { display: none !important; }
+
+  /* ------------------------------------------------ login */
+  #login { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+  .login-card {
+    width: 100%;
+    max-width: 404px;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 26px;
+    box-shadow: var(--shadow);
+  }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .brand-mark {
+    width: 34px; height: 34px; flex: 0 0 34px;
+    border-radius: 9px;
+    background: #1d2531;
+    border: 1px solid #2d3849;
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 15px; color: var(--accent);
+  }
+  .brand-name { font-size: 15px; font-weight: 650; letter-spacing: .2px; }
+  .brand-sub { font-size: 11.5px; color: var(--muted-2); margin-top: 1px; letter-spacing: .02em; }
+  .login-card .sep { height: 1px; background: var(--line-soft); margin: 20px 0; }
+  .login-card h1 { font-size: 19px; font-weight: 650; letter-spacing: -.01em; margin-bottom: 5px; }
+  .subtle { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .field { margin-top: 18px; }
+  .field label { display: block; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-2); margin-bottom: 7px; }
+
+  /* ------------------------------------------------ shell */
+  #panel { min-height: 100vh; }
+  .app-shell { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: var(--sidebar-w);
+    flex: 0 0 var(--sidebar-w);
+    background: #10151d;
+    border-right: 1px solid var(--line-soft);
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    z-index: 40;
+  }
+  .sidebar-head { padding: 16px; border-bottom: 1px solid var(--line-soft); }
+  .nav { padding: 10px 8px 16px; overflow-y: auto; }
+  .nav-label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: var(--muted-2);
+    padding: 14px 10px 6px;
+    font-weight: 600;
+  }
+  .nav-btn {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    padding: 9px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    position: relative;
+    transition: background .14s ease, color .14s ease;
+  }
+  .nav-btn:hover { background: #171e29; color: var(--text); }
+  .nav-btn.active { background: #1a222e; color: #fff; }
+  .nav-btn.active::before {
+    content: "";
+    position: absolute;
+    left: -8px; top: 9px; bottom: 9px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .nav-btn .count {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .nav-btn.active .count { color: var(--muted); }
+  .sidebar-foot {
+    margin-top: auto;
+    padding: 12px 16px 16px;
+    border-top: 1px solid var(--line-soft);
+    color: var(--muted-2);
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+
+  .workspace { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 20px;
+    background: rgba(14,17,22,.88);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .icon-btn {
+    width: 36px; height: 36px;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 3px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    background: var(--bg-elev);
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .icon-btn:hover { background: var(--bg-soft); }
+  .icon-btn span { display: block; width: 2px; height: 15px; background: currentColor; border-radius: 2px; }
+  .app-shell.sidebar-collapsed .sidebar { display: none; }
+  .top-title { font-weight: 620; font-size: 14.5px; letter-spacing: .01em; }
+  .top-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-left: 2px; }
+  .pill {
+    border: 1px solid var(--line);
+    background: var(--bg-elev);
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 11.5px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .pill b { color: var(--text); font-weight: 620; }
+  .spacer { flex: 1; }
+  .top-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+
+  main { padding: 22px; max-width: 1120px; width: 100%; margin: 0 auto; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .view-head { margin-bottom: 18px; }
+  .view-head h1 { font-size: 21px; font-weight: 660; letter-spacing: -.015em; margin-bottom: 5px; }
+  .view-head p { color: var(--muted); font-size: 13px; max-width: 760px; }
+  .stack { display: grid; gap: 14px; }
+
+  .card {
+    background: var(--bg-elev);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    padding: 18px;
+  }
+  .card.pad-0 { padding: 0; overflow: hidden; }
+  .card h2 { font-size: 14px; font-weight: 640; letter-spacing: .005em; margin-bottom: 4px; }
+  .card .sub { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin-bottom: 14px; }
+  .card-head { padding: 16px 18px 0; }
+  .card-head h2 { margin-bottom: 4px; }
+  .card-head .sub { margin-bottom: 14px; }
+  .card-body { padding: 0 18px 18px; }
+  .section-title { font-size: 12.5px; font-weight: 620; margin: 16px 0 8px; color: #d8e0ec; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(238px, 1fr)); gap: 8px 18px; }
+  .grid.two { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+
+  /* ------------------------------------------------ controls */
+  label.check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 7px 0; line-height: 1.35; }
+  label.check input[type="checkbox"] { margin-top: 2px; accent-color: var(--accent); flex: 0 0 auto; }
+  label.check .hint { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  label.check b { font-weight: 620; }
+
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    background: #0d1219;
+    border: 1px solid #2b3646;
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    width: 100%;
+    transition: border-color .14s ease, box-shadow .14s ease;
+  }
+  input::placeholder { color: #5d6a7d; }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: #4c5f7a;
+    box-shadow: 0 0 0 3px rgba(76,95,122,.16);
+  }
+  button {
+    cursor: pointer;
+    border: 1px solid #2b3646;
+    background: #18202c;
+    border-radius: var(--radius-sm);
+    padding: 8px 13px;
+    transition: background .14s ease, border-color .14s ease, opacity .14s ease;
+  }
+  button:hover { background: #1e2836; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  button.ghost { background: transparent; }
+  button.small { padding: 4px 9px; font-size: 12px; }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .inline > * { width: auto; }
+  .mt { margin-top: 12px; }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .msg { margin-bottom: 14px; font-size: 13px; min-height: 0; }
+  .msg:empty { display: none; }
+  .msg.err { color: var(--red); }
+  .msg.ok { color: var(--green); }
+
+  /* ------------------------------------------------ data */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 1px; background: var(--line-soft); border: 1px solid var(--line-soft); border-radius: 10px; overflow: hidden; }
+  .stat { background: var(--bg-elev); padding: 13px 14px; }
+  .stat .k { color: var(--muted-2); font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+  .stat .v { font-size: 21px; font-weight: 660; margin-top: 5px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+
+  .spark { display: flex; align-items: flex-end; gap: 2px; height: 46px; margin-top: 14px; }
+  .spark i { flex: 1; background: #232c3a; border-radius: 1.5px 1.5px 0 0; min-height: 2px; }
+  .spark i.on { background: #5a6a85; }
+  .spark-legend { font-size: 11px; color: var(--muted-2); margin-top: 6px; }
+
+  .table-wrap { overflow: auto; border: 1px solid var(--line-soft); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 520px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th {
+    color: var(--muted-2);
+    font-weight: 620;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    background: #111722;
+    position: sticky; top: 0;
+  }
+  tbody tr:last-child td, table > tr:last-child td { border-bottom: 0; }
+  tr.off td { opacity: .45; }
+  td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
+  .ok { color: var(--green); } .bad { color: var(--red); } .warn { color: var(--amber); }
+
+  .kv { display: flex; gap: 14px; flex-wrap: wrap; }
+  .kv > span { font-size: 12px; color: var(--muted-2); }
+  .kv b { color: var(--text); font-weight: 620; font-variant-numeric: tabular-nums; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-soft); border-radius: 999px; padding: 3px 9px; font-size: 11.5px; color: var(--muted); background: #111722; }
+  .chip b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .ua { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+  .purge-grid { display: flex; gap: 7px; flex-wrap: wrap; }
+  .empty { color: var(--muted-2); font-size: 12.5px; padding: 10px 0; }
+
+  /* ------------------------------------------------ responsive */
+  .scrim { display: none; }
+  @media (max-width: 1000px) {
+    .sidebar {
+      position: fixed;
+      left: 0; top: 0; bottom: 0;
+      transform: translateX(-100%);
+      transition: transform .2s ease;
+      box-shadow: var(--shadow);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .scrim { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 35; opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+    .scrim.open { opacity: 1; pointer-events: auto; }
+    main { padding: 16px; }
+    .top-meta { display: none; }
+  }
+  @media (max-width: 620px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .topbar { padding: 10px 14px; }
+  }
 </style>
 </head>
 <body>
 
 <div id="login" class="hidden">
-    <div class="login">
-        <div class="logo" style="font-size:26px">Wflix</div>
-        <h1 style="margin-top:10px">Admin panel</h1>
-        <div class="sub">Vstup jen s heslem, které je nastavené na serveru (proměnná <span class="mono">ADMIN_PASSWORD</span>).</div>
-        <input id="password" type="password" placeholder="Heslo" autocomplete="current-password" autofocus>
-        <button id="loginBtn" class="primary">Přihlásit</button>
-        <div id="loginMsg" class="msg"></div>
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-mark">W</div>
+      <div>
+        <div class="brand-name">Wflix Admin</div>
+        <div class="brand-sub">Správa provozu</div>
+      </div>
     </div>
+    <div class="sep"></div>
+    <h1>Přihlášení</h1>
+    <p class="subtle">Přístup je chráněný heslem nastaveným na serveru v proměnné <span class="mono">ADMIN_PASSWORD</span>.</p>
+    <div class="field">
+      <label for="password">Heslo</label>
+      <input id="password" type="password" placeholder="Zadejte heslo" autocomplete="current-password" autofocus>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button id="loginBtn" class="primary" style="width:100%">Přihlásit se</button>
+    </div>
+    <div id="loginMsg" class="msg mt"></div>
+  </div>
 </div>
 
 <div id="panel" class="hidden">
-    <header>
-        <div class="logo">Wflix <small>admin</small></div>
-        <span class="pill" id="pillBuild">build …</span>
-        <span class="pill" id="pillUptime">uptime …</span>
-        <span class="pill" id="pillOnline">online …</span>
-        <span class="pill" id="pillState">web …</span>
-        <span class="spacer"></span>
-        <label class="check" style="padding:0;font-size:12px" title="Obnoví stav každých 15 s">
-            <input type="checkbox" id="auto" checked> <span>auto</span>
-        </label>
-        <button id="refreshBtn" class="small">Obnovit</button>
-        <button id="logoutBtn" class="small">Odhlásit</button>
-    </header>
+  <div class="app-shell">
+    <div id="scrim" class="scrim"></div>
 
-    <main>
+    <aside id="sidebar" class="sidebar" aria-label="Navigace">
+      <div class="sidebar-head">
+        <div class="brand">
+          <div class="brand-mark">W</div>
+          <div>
+            <div class="brand-name">Wflix Admin</div>
+            <div class="brand-sub">Provozní panel</div>
+          </div>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <div class="nav-label">Přehled</div>
+        <button class="nav-btn active" data-view="overview">Stav a diagnostika</button>
+        <div class="nav-label">Konfigurace</div>
+        <button class="nav-btn" data-view="flags">Vypínače</button>
+        <button class="nav-btn" data-view="sources">Zdroje</button>
+        <button class="nav-btn" data-view="cache">Cache</button>
+        <button class="nav-btn" data-view="proxies">Proxy servery</button>
+        <div class="nav-label">Provoz</div>
+        <button class="nav-btn" data-view="visitors">Návštěvníci<span class="count" id="navVisitors"></span></button>
+        <button class="nav-btn" data-view="bans">Bany a aktivita<span class="count" id="navBans"></span></button>
+        <button class="nav-btn" data-view="audit">Audit</button>
+      </nav>
+      <div class="sidebar-foot">Změny se ukládají na server. Kritické akce vyžadují potvrzení.</div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <button id="menuBtn" class="icon-btn" title="Menu" aria-label="Otevřít menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="top-title" id="topTitle">Stav a diagnostika</div>
+        <div class="top-meta">
+          <span class="pill" id="pillBuild">build …</span>
+          <span class="pill" id="pillUptime">uptime …</span>
+          <span class="pill" id="pillOnline">online …</span>
+          <span class="pill" id="pillState">web …</span>
+        </div>
+        <span class="spacer"></span>
+        <div class="top-actions">
+          <label class="check" style="padding:0;font-size:12px;gap:6px" title="Obnoví stav každých 15 s">
+            <input type="checkbox" id="auto" checked> <span>auto</span>
+          </label>
+          <button id="refreshBtn" class="small">Obnovit</button>
+          <button id="logoutBtn" class="small ghost">Odhlásit</button>
+        </div>
+      </header>
+
+      <main>
         <div id="msg" class="msg"></div>
 
-        <section id="opsSection">
-            <h2>Stav</h2>
-            <div class="sub">Běžící build, provoz a počítadla od startu procesu. Čísla jsou jen v paměti – restart je vynuluje.</div>
-            <div class="stats" id="stats"></div>
-            <div class="spark" id="spark" title="Požadavky po minutách za poslední hodinu"></div>
-            <div class="muted" style="font-size:11px;margin-top:4px">požadavky po minutách, posledních 60 minut</div>
-            <div class="row">
-                <button id="testBtn">Otestovat zdroje a proxy</button>
-                <span class="muted" id="testInfo"></span>
+        <section id="view-overview" class="view active">
+          <div class="view-head">
+            <h1>Stav a diagnostika</h1>
+            <p>Provozní metriky od startu procesu a rychlá kontrola dostupnosti zdrojů a proxy serverů.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h2>Provozní metriky</h2>
+              <div class="sub">Čísla jsou držena v paměti procesu – restart je vynuluje.</div>
+              <div class="stats" id="stats"></div>
+              <div class="spark" id="spark" title="Požadavky po minutách za poslední hodinu"></div>
+              <div class="spark-legend">Požadavky po minutách, posledních 60 minut</div>
             </div>
-            <div id="checks" class="mt"></div>
+            <div class="card">
+              <h2>Kontrola zdrojů a proxy</h2>
+              <div class="sub">Ověří, jestli upstream zdroje a proxy endpointy odpovídají.</div>
+              <div class="row" style="margin-top:0">
+                <button id="testBtn" class="primary">Otestovat zdroje a proxy</button>
+                <span class="muted" id="testInfo"></span>
+              </div>
+              <div id="checks" class="mt"></div>
+            </div>
+          </div>
         </section>
 
-        <section>
-            <h2>Vypínače</h2>
-            <div class="sub">Platí do sekundy, bez restartu a bez nasazení. Vypnuté zdroje vrací srozumitelnou chybu, ne ticho.</div>
-            <div class="grid">
-                <label class="check"><input type="checkbox" id="fDownloads"><span>Stahování<span class="hint">/api/stream?download=1 → 403. Přehrávání funguje dál.</span></span></label>
+        <section id="view-flags" class="view">
+          <div class="view-head">
+            <h1>Vypínače</h1>
+            <p>Okamžité přepnutí funkcí bez restartu a nasazení. Vypnutá část vrací srozumitelnou chybu.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h2>Funkce</h2>
+              <div class="sub">Stahování, živé vysílání, slučování výsledků a náhledy.</div>
+              <div class="grid">
+                <label class="check"><input type="checkbox" id="fDownloads"><span>Stahování<span class="hint">/api/stream?download=1 → 403. Přehrávání zůstává funkční.</span></span></label>
                 <label class="check"><input type="checkbox" id="fLive"><span>Živé vysílání<span class="hint">/api/live a /api/live/hls → 503.</span></span></label>
                 <label class="check"><input type="checkbox" id="fLiveRelay"><span>HLS relay<span class="hint">Jen relay; seznam kanálů a přímé přehrávání zůstávají.</span></span></label>
-                <label class="check"><input type="checkbox" id="fMerge"><span>Více výsledků (source=all)<span class="hint">Vypnuto → hledá jen jeden zapnutý zdroj.</span></span></label>
+                <label class="check"><input type="checkbox" id="fMerge"><span>Více výsledků (source=all)<span class="hint">Vypnuto → hledá se jen jeden zapnutý zdroj.</span></span></label>
                 <label class="check"><input type="checkbox" id="fItunes"><span>Náhledy z iTunes<span class="hint">Katalog a plakáty z prehraj.to fungují dál.</span></span></label>
+              </div>
             </div>
-            <div class="mt">
-                <label class="check" style="cursor:default"><input type="checkbox" id="fMaintenance"><span><b>Údržba</b><span class="hint">Všechno /api kromě /api/config, /api/health a /api/admin → 503. Panel zůstává dostupný.</span></span></label>
-                <input id="fMessage" type="text" maxlength="300" placeholder="Hláška při údržbě" style="margin-top:8px">
-            </div>
-            <div class="mt">
-                <label class="check" style="cursor:default"><input type="checkbox" id="fFull"><span><b>Úplná údržba – zamknout web</b><span class="hint">Místo webu se ukáže zamykací stránka s hláškou. Odemkne ji jen admin heslo (stejné přihlášení jako do panelu) a platí pro celý web.</span></span></label>
-                <label class="check" style="cursor:default"><input type="checkbox" id="fShutdown"><span><b>Vypnout frontend</b><span class="hint">Web i veřejné /api přestanou existovat (503). Panel a endpoints, které potřebuje k odemčení, zůstávají – nemůže vzniknout softlock.</span></span></label>
-            </div>
-            <div class="row">
+            <div class="card">
+              <h2>Režimy dostupnosti</h2>
+              <div class="sub">Údržba, zamknutí webu nebo úplné vypnutí frontendu. Panel zůstává dostupný, aby šlo vrátit provoz.</div>
+              <label class="check" style="cursor:default"><input type="checkbox" id="fMaintenance"><span><b>Údržba</b><span class="hint">Všechno /api kromě /api/config, /api/health a /api/admin → 503.</span></span></label>
+              <div class="mt">
+                <label for="fMessage" class="muted" style="display:block;font-size:12px;margin-bottom:6px">Hláška při údržbě</label>
+                <input id="fMessage" type="text" maxlength="300" placeholder="Např. Probíhá krátká údržba, zkuste to za chvíli.">
+              </div>
+              <div class="mt">
+                <label class="check" style="cursor:default"><input type="checkbox" id="fFull"><span><b>Úplná údržba – zamknout web</b><span class="hint">Místo webu se zobrazí zamykací stránka. Odemčení vyžaduje admin heslo.</span></span></label>
+                <label class="check" style="cursor:default"><input type="checkbox" id="fShutdown"><span><b>Vypnout frontend</b><span class="hint">Web i veřejné /api vrací 503. Panel a endpointy pro odemčení zůstávají dostupné.</span></span></label>
+              </div>
+              <div class="row">
                 <button id="saveFlags" class="primary">Uložit vypínače</button>
                 <span class="muted">Naposledy změnil <span id="flagsBy" class="mono">–</span></span>
+              </div>
             </div>
+          </div>
         </section>
 
-        <section>
-            <h2>Zdroje</h2>
-            <div class="sub">Když prehraj.to vrací 429, vypni ho a nech běžet sledujteto. „Více výsledků“ vyžaduje všechny tři zapnuté.</div>
-            <div class="grid">
-                <label class="check"><input type="checkbox" id="sPrehrajto"><span>prehraj.to<span class="hint">Výchozí zdroj, nejvíc 429.</span></span></label>
-                <label class="check"><input type="checkbox" id="sSledujteto"><span>sledujteto.cz<span class="hint">Fallback při prázdném výsledku.</span></span></label>
-                <label class="check"><input type="checkbox" id="sBombuj"><span>bombuj.si<span class="hint">Jen v režimu „Více výsledků“.</span></span></label>
-                <label class="check"><input type="checkbox" id="sFallback"><span>Automatický fallback<span class="hint">prehrajto → sledujteto při chybě/prázdném výsledku.</span></span></label>
-            </div>
-            <div class="row">
+        <section id="view-sources" class="view">
+          <div class="view-head">
+            <h1>Zdroje</h1>
+            <p>Aktivní zdroje, fallback chování a limit stránkování.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h2>Aktivní zdroje</h2>
+              <div class="sub">Při problémech (např. 429 na prehraj.to) lze zdroj vypnout a provoz přesměrovat na ostatní.</div>
+              <div class="grid">
+                <label class="check"><input type="checkbox" id="sPrehrajto"><span>prehraj.to<span class="hint">Výchozí zdroj, citlivější na rate limit.</span></span></label>
+                <label class="check"><input type="checkbox" id="sSledujteto"><span>sledujteto.cz<span class="hint">Fallback při prázdném výsledku nebo chybě.</span></span></label>
+                <label class="check"><input type="checkbox" id="sBombuj"><span>bombuj.si<span class="hint">Využitý zejména v režimu „Více výsledků“.</span></span></label>
+                <label class="check"><input type="checkbox" id="sFallback"><span>Automatický fallback<span class="hint">prehrajto → sledujteto při chybě nebo prázdném výsledku.</span></span></label>
+              </div>
+              <div class="row">
                 <label class="inline" style="gap:8px">
-                    <span class="muted">Max. stránka</span>
-                    <input id="sMaxPage" type="number" min="1" max="50" step="1" style="width:80px">
+                  <span class="muted">Max. stránka</span>
+                  <input id="sMaxPage" type="number" min="1" max="50" step="1" style="width:88px">
                 </label>
                 <button id="saveSources" class="primary">Uložit zdroje</button>
                 <span class="muted">Naposledy změnil <span id="sourcesBy" class="mono">–</span></span>
+              </div>
             </div>
+          </div>
         </section>
 
-        <section>
-            <h2>Cache</h2>
-            <div class="sub">Server drží výsledky hledání (30 min), náhledy (7 dní) a katalog (1 den). Špatný plakát nebo zastaralý výsledek jinak počká, až vyprší TTL.</div>
-            <div class="cache-mini" id="cacheInfo"></div>
-            <div class="row purge-grid">
+        <section id="view-cache" class="view">
+          <div class="view-head">
+            <h1>Cache</h1>
+            <p>Stav serverové cache pro hledání, náhledy, katalog i živé přenosy a její invalidace.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h2>Stav cache</h2>
+              <div class="sub">Server drží výsledky hledání, náhledy a katalog dle TTL. Pročištění vynutí nové načtení ze zdrojů.</div>
+              <div class="kv" id="cacheInfo"></div>
+            </div>
+            <div class="card">
+              <h2>Pročištění</h2>
+              <div class="sub">Vyberte rozsah. Volitelně lze požadavek rozeslat i na PHP proxy servery.</div>
+              <div class="purge-grid">
                 <button data-scope="search">Hledání</button>
                 <button data-scope="thumb">Náhledy</button>
                 <button data-scope="catalog">Katalog</button>
                 <button data-scope="live">Živé</button>
                 <button data-scope="cdn">CDN odkazy</button>
-                <button data-scope="all" class="primary">Vše</button>
+                <button data-scope="all" class="primary">Vyčistit vše</button>
+              </div>
+              <label class="check mt"><input type="checkbox" id="purgeProxies" checked><span>Smazat i cache na PHP proxy serverech<span class="hint">Pouze na proxy s nastaveným <span class="mono">WFLIX_PURGE_TOKEN</span>.</span></span></label>
+              <div id="purgeOut" class="mt"></div>
             </div>
-            <label class="check mt"><input type="checkbox" id="purgeProxies" checked><span>Smazat i cache na PHP proxy serverech<span class="hint">Jen když mají nastavený WFLIX_PURGE_TOKEN; jinak to panel přeskočí a napíše proč.</span></span></label>
-            <div id="purgeOut" class="mt"></div>
+          </div>
         </section>
 
-        <section>
-            <h2>Proxy servery</h2>
-            <div class="sub">Seznam používá server i prohlížeč a změna platí hned. „Uložit + commit“ ji zapíše i do <span class="mono">proxy-servers.txt</span> v repu (potřebuje <span class="mono">WFLIX_GITHUB_TOKEN</span>); bez tokenu jde soubor stáhnout a nahrát ručně.</div>
-            <div id="proxyList"></div>
-            <div class="row">
-                <input id="proxyNew" type="text" placeholder="http://novy-proxy.example/index.php" style="flex:1;min-width:240px">
-                <button id="proxyAdd">Přidat</button>
+        <section id="view-proxies" class="view">
+          <div class="view-head">
+            <h1>Proxy servery</h1>
+            <p>Seznam proxy používaný serverem i prohlížečem. Změny lze uložit do runtime i do repozitáře.</p>
+          </div>
+          <div class="stack">
+            <div class="card pad-0">
+              <div class="card-head">
+                <h2>Seznam proxy</h2>
+                <div class="sub">Změna platí okamžitě. „Uložit + commit“ zapíše také do <span class="mono">proxy-servers.txt</span> (vyžaduje <span class="mono">WFLIX_GITHUB_TOKEN</span>).</div>
+              </div>
+              <div class="card-body">
+                <div id="proxyList"></div>
+                <div class="row">
+                  <input id="proxyNew" type="text" placeholder="http://novy-proxy.example/index.php" style="flex:1;min-width:250px">
+                  <button id="proxyAdd">Přidat</button>
+                </div>
+                <div class="row">
+                  <button id="proxySave" class="primary">Uložit</button>
+                  <button id="proxySaveCommit">Uložit + commit do repa</button>
+                  <button id="proxyTest">Otestovat</button>
+                  <button id="proxyExport" class="ghost">Stáhnout .txt</button>
+                </div>
+                <div id="proxyOut" class="mt"></div>
+              </div>
             </div>
-            <div class="row">
-                <button id="proxySave" class="primary">Uložit</button>
-                <button id="proxySaveCommit">Uložit + commit do repa</button>
-                <button id="proxyTest">Otestovat</button>
-                <button id="proxyExport">Stáhnout .txt</button>
-            </div>
-            <div id="proxyOut" class="mt"></div>
+          </div>
         </section>
 
-        <section>
-            <h2>Kdo je na webu</h2>
-            <div class="sub">IP, čas a přibližná poloha. Polohu odhaduje server podle IP (ip-api.com, bez ptaní prohlížeče) – je to odhad, ne GPS. Data jsou jen v paměti procesu, restart je vymaže.</div>
-            <div class="inline" style="gap:10px">
+        <section id="view-visitors" class="view">
+          <div class="view-head">
+            <h1>Návštěvníci</h1>
+            <p>Nedávní klienti, jejich aktivita a přibližná poloha odvozená z IP adresy.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h2>Kdo je na webu</h2>
+              <div class="sub">Data jsou pouze v paměti procesu. Poloha je odhad (GeoIP), ne přesná GPS pozice.</div>
+              <div class="inline" style="gap:10px">
                 <label class="inline" style="gap:8px"><span class="muted">Okno</span>
-                    <select id="vMinutes"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="30">30 min</option><option value="60">60 min</option></select>
+                  <select id="vMinutes"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="30">30 min</option><option value="60">60 min</option></select>
                 </label>
                 <button id="vRefresh" class="small">Obnovit</button>
                 <span class="muted" id="vInfo"></span>
+              </div>
+              <div id="vCountries" class="kv mt"></div>
+              <div id="vList" class="mt"></div>
             </div>
-            <div id="vCountries" class="cache-mini mt"></div>
-            <div id="vList" class="mt"></div>
+          </div>
         </section>
 
-        <section>
-            <h2>Bany</h2>
-            <div class="sub">Dočasné zablokování IP nebo klienta (cid z localStorage) mimo rate limit. Použij, když někdo scrapuje – limit 6/s ho jen zpomalí.</div>
-            <div class="grid">
-                <label class="inline" style="gap:8px"><span class="muted" style="width:44px">Typ</span>
-                    <select id="bKind"><option value="ip">IP</option><option value="cid">cid</option></select>
+        <section id="view-bans" class="view">
+          <div class="view-head">
+            <h1>Bany a aktivita</h1>
+            <p>Dočasné blokování problematických klientů a přehled nejaktivnějších požadavků.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h2>Nový ban</h2>
+              <div class="sub">Blokování podle IP nebo klientského identifikátoru (cid). Použijte při scrapingu nebo zneužití.</div>
+              <div class="grid two">
+                <label class="inline" style="gap:8px"><span class="muted" style="width:48px">Typ</span>
+                  <select id="bKind"><option value="ip">IP</option><option value="cid">cid</option></select>
                 </label>
-                <label class="inline" style="gap:8px"><span class="muted" style="width:44px">Cíl</span>
-                    <input id="bTarget" type="text" placeholder="1.2.3.4 nebo cid-abc123">
+                <label class="inline" style="gap:8px"><span class="muted" style="width:48px">Cíl</span>
+                  <input id="bTarget" type="text" placeholder="1.2.3.4 nebo cid-abc123">
                 </label>
-                <label class="inline" style="gap:8px"><span class="muted" style="width:60px">Minuty</span>
-                    <input id="bMinutes" type="number" min="1" max="10080" value="60" style="width:90px">
+                <label class="inline" style="gap:8px"><span class="muted" style="width:56px">Minuty</span>
+                  <input id="bMinutes" type="number" min="1" max="10080" value="60" style="width:96px">
                 </label>
-                <label class="inline" style="gap:8px"><span class="muted" style="width:44px">Důvod</span>
-                    <input id="bReason" type="text" maxlength="200" placeholder="nepovinné">
+                <label class="inline" style="gap:8px"><span class="muted" style="width:48px">Důvod</span>
+                  <input id="bReason" type="text" maxlength="200" placeholder="nepovinné">
                 </label>
+              </div>
+              <div class="row"><button id="addBan" class="primary">Zablokovat</button></div>
             </div>
-            <div class="row"><button id="addBan" class="primary">Zablokovat</button></div>
-            <div id="bans" class="mt"></div>
-            <h2 class="mt">Nejaktivnější klienti</h2>
-            <div class="sub">Počty od startu procesu; po restartu se vynulují.</div>
-            <div id="talkers"></div>
+            <div class="card">
+              <h2>Aktivní bany</h2>
+              <div class="sub">Prošlé záznamy se odstraňují při další změně.</div>
+              <div id="bans"></div>
+            </div>
+            <div class="card">
+              <h2>Nejaktivnější klienti</h2>
+              <div class="sub">Počty požadavků od startu procesu.</div>
+              <div id="talkers"></div>
+            </div>
+          </div>
         </section>
 
-        <section>
-            <h2>Audit</h2>
-            <div class="sub">Každá změna z panelu (a nepovedené přihlášení) se zapisuje do <span class="mono">audit.jsonl</span> vedle stavu.</div>
-            <div class="row" style="margin-top:0;margin-bottom:12px"><button id="auditExport" class="small">Stáhnout celý audit</button></div>
-            <div id="audit"></div>
+        <section id="view-audit" class="view">
+          <div class="view-head">
+            <h1>Audit</h1>
+            <p>Historie administrátorských změn a bezpečnostních událostí.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h2>Záznamy</h2>
+              <div class="sub">Každá změna z panelu (i neúspěšné přihlášení) se zapisuje do <span class="mono">audit.jsonl</span> vedle stavu.</div>
+              <div class="row" style="margin-top:0;margin-bottom:12px"><button id="auditExport" class="small">Stáhnout celý audit</button></div>
+              <div id="audit"></div>
+            </div>
+          </div>
         </section>
-    </main>
+      </main>
+    </div>
+  </div>
 </div>
 
 <script>
 (function () {
-    'use strict';
+  'use strict';
 
-    var csrf = null;
-    var state = null;
-    var timer = null;
-    var adminEnabled = true;
+  var csrf = null;
+  var state = null;
+  var timer = null;
+  var adminEnabled = true;
+  var currentView = 'overview';
+  var viewTitles = {
+    overview: 'Stav a diagnostika',
+    flags: 'Vypínače',
+    sources: 'Zdroje',
+    cache: 'Cache',
+    proxies: 'Proxy servery',
+    visitors: 'Návštěvníci',
+    bans: 'Bany a aktivita',
+    audit: 'Audit'
+  };
 
-    function $(id) { return document.getElementById(id); }
-    function el(tag, cls, text) {
-        var n = document.createElement(tag);
-        if (cls) n.className = cls;
-        if (text != null) n.textContent = text;
-        return n;
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function show(id, yes) { $(id).classList.toggle('hidden', !yes); }
+  function fmtTime(v) {
+    if (!v) return '–';
+    var d = new Date(v);
+    return isNaN(d.getTime()) ? String(v) : d.toLocaleString('cs-CZ');
+  }
+  function fmtUptime(s) {
+    s = Math.max(0, s | 0);
+    var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    if (d) return d + ' d ' + h + ' h';
+    if (h) return h + ' h ' + m + ' m';
+    return m + ' m ' + (s % 60) + ' s';
+  }
+  function msg(text, ok) {
+    var m = $('msg');
+    m.textContent = text || '';
+    m.className = 'msg ' + (text ? (ok ? 'ok' : 'err') : '');
+    if (text) setTimeout(function () { if (m.textContent === text) { m.textContent = ''; m.className = 'msg'; } }, 6000);
+  }
+
+  // ------------------------------------------------------------ navigace
+  function setView(view) {
+    if (!viewTitles[view]) view = 'overview';
+    currentView = view;
+    Array.prototype.forEach.call(document.querySelectorAll('.view'), function (v) { v.classList.remove('active'); });
+    var target = $('view-' + view);
+    if (target) target.classList.add('active');
+    Array.prototype.forEach.call(document.querySelectorAll('.nav-btn[data-view]'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-view') === view);
+    });
+    $('topTitle').textContent = viewTitles[view];
+    if (window.location.hash.slice(1) !== view) {
+      try { history.replaceState(null, '', '#' + view); } catch (e) { /* ignore */ }
     }
-    function show(id, yes) { $(id).classList.toggle('hidden', !yes); }
-    function fmtTime(v) {
-        if (!v) return '–';
-        var d = new Date(v);
-        return isNaN(d.getTime()) ? String(v) : d.toLocaleString('cs-CZ');
+    closeSidebar();
+    if (view === 'visitors') refreshVisitors();
+  }
+
+  function openSidebar() {
+    $('sidebar').classList.add('open');
+    $('scrim').classList.add('open');
+    $('menuBtn').setAttribute('aria-expanded', 'true');
+  }
+  function closeSidebar() {
+    $('sidebar').classList.remove('open');
+    $('scrim').classList.remove('open');
+    $('menuBtn').setAttribute('aria-expanded', 'false');
+  }
+  function toggleSidebar() {
+    if (window.matchMedia('(max-width: 1000px)').matches) {
+      if ($('sidebar').classList.contains('open')) closeSidebar(); else openSidebar();
+      return;
     }
-    function fmtUptime(s) {
-        s = Math.max(0, s | 0);
-        var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-        if (d) return d + ' d ' + h + ' h';
-        if (h) return h + ' h ' + m + ' m';
-        return m + ' m ' + (s % 60) + ' s';
+    var shell = document.querySelector('.app-shell');
+    var collapsed = shell.classList.toggle('sidebar-collapsed');
+    $('menuBtn').setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    try { localStorage.setItem('wflix.admin.nav', collapsed ? '0' : '1'); } catch (e) { /* ignore */ }
+  }
+
+  // ------------------------------------------------------------ api
+  function api(path, opts) {
+    opts = opts || {};
+    var init = { method: opts.method || 'GET', credentials: 'same-origin', headers: {} };
+    if (opts.body !== undefined) {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(opts.body);
     }
-    function msg(text, ok) {
-        var m = $('msg');
-        m.textContent = text || '';
-        m.className = 'msg ' + (text ? (ok ? 'ok' : 'err') : '');
-        if (text) setTimeout(function () { if (m.textContent === text) { m.textContent = ''; m.className = 'msg'; } }, 6000);
+    if (init.method !== 'GET' && csrf) init.headers['X-Wflix-CSRF'] = csrf;
+
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (text) {
+        var data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) { /* ne-JSON */ }
+        if (res.status === 401 && path.indexOf('/login') === -1) {
+          showLogin('Přihlášení vypršelo.');
+          throw new Error('Nejsi přihlášený.');
+        }
+        if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+        return data;
+      });
+    });
+  }
+
+  // ------------------------------------------------------------ login
+  function showLogin(reason) {
+    if (timer) { clearInterval(timer); timer = null; }
+    show('panel', false);
+    show('login', true);
+    $('loginMsg').textContent = reason || '';
+    $('loginMsg').className = 'msg ' + (reason ? 'err' : '');
+    $('password').value = '';
+    setTimeout(function () { $('password').focus(); }, 30);
+  }
+
+  function showDisabled() {
+    show('panel', false);
+    show('login', true);
+    $('loginBtn').disabled = true;
+    $('password').disabled = true;
+    $('loginMsg').textContent = 'Admin není nakonfigurovaný. Nastavte na serveru proměnnou ADMIN_PASSWORD a restartujte aplikaci.';
+    $('loginMsg').className = 'msg err';
+  }
+
+  function login() {
+    var password = $('password').value.trim();
+    if (!password) { $('loginMsg').textContent = 'Zadejte heslo.'; $('loginMsg').className = 'msg err'; return; }
+    $('loginBtn').disabled = true;
+    api('/api/admin/login', { method: 'POST', body: { password: password } }).then(function (d) {
+      csrf = d.csrf;
+      show('login', false);
+      show('panel', true);
+      refreshAll();
+      timer = setInterval(function () {
+        if (!document.hidden && $('auto').checked) refreshState();
+      }, 15000);
+    }).catch(function (e) {
+      $('loginMsg').textContent = e.message;
+      $('loginMsg').className = 'msg err';
+    }).then(function () {
+      $('loginBtn').disabled = false;
+    });
+  }
+
+  // ------------------------------------------------------------ stav
+  function refreshState() {
+    return api('/api/admin/state').then(function (d) {
+      state = d;
+      renderRuntime(d.runtime, d.stats);
+      fillForms(d.state);
+      renderCache(d.cache);
+      renderBans(d.state.bans || [], d.stats);
+      renderStatePill(d.state);
+      renderSpark((d.stats && d.stats.requestsPerMinute) || []);
+      if (currentView === 'visitors') refreshVisitors();
+      $('flagsBy').textContent = d.state.updatedBy ? (d.state.updatedBy + ' · ' + fmtTime(d.state.updatedAt)) : '–';
+      $('sourcesBy').textContent = $('flagsBy').textContent;
+    }).catch(function (e) {
+      if (e.message !== 'Nejsi přihlášený.') msg(e.message, false);
+    });
+  }
+
+  function refreshAll() {
+    refreshState();
+    refreshAudit();
+    loadProxies();
+  }
+
+  function renderStatePill(s) {
+    var f = (s && s.flags) || {};
+    var p = $('pillState');
+    p.style.borderColor = '';
+    if (f.frontendShutdown) {
+      p.innerHTML = 'web <b style="color:#f47070">vypnutý</b>';
+      p.style.borderColor = '#4d2226';
+    } else if (f.fullMaintenance) {
+      p.innerHTML = 'web <b style="color:#dfb055">zamčený</b>';
+      p.style.borderColor = '#463a1d';
+    } else if (f.maintenance) {
+      p.innerHTML = 'web <b style="color:#dfb055">v údržbě</b>';
+    } else {
+      p.innerHTML = 'web <b style="color:#3cc47c">běží</b>';
+    }
+  }
+
+  function renderSpark(values) {
+    var box = $('spark');
+    box.innerHTML = '';
+    if (!values || !values.length) return;
+    var max = Math.max.apply(null, values.concat([1]));
+    values.forEach(function (v) {
+      var bar = el('i');
+      bar.style.height = Math.max(2, Math.round(44 * v / max)) + 'px';
+      if (v) bar.className = 'on';
+      bar.title = v + ' požadavků';
+      box.append(bar);
+    });
+  }
+
+  // ------------------------------------------------------------ návštěvníci
+  function ago(seconds) {
+    seconds = seconds | 0;
+    if (seconds < 60) return 'před ' + seconds + ' s';
+    if (seconds < 3600) return 'před ' + Math.floor(seconds / 60) + ' min';
+    return 'před ' + Math.floor(seconds / 3600) + ' h';
+  }
+
+  function refreshVisitors() {
+    var minutes = $('vMinutes') ? $('vMinutes').value : 10;
+    return api('/api/admin/visitors?minutes=' + encodeURIComponent(minutes)).then(function (d) {
+      renderVisitors(d);
+    }).catch(function () { });
+  }
+
+  function renderVisitors(d) {
+    var box = $('vCountries');
+    box.innerHTML = '';
+    var info = $('vInfo');
+    info.textContent = (d.count | 0) + ' klientů' + (d.pending ? ' · doplňuji polohu pro ' + d.pending + '…' : '')
+      + (d.geoLastError ? ' · ' + d.geoLastError : '');
+    $('navVisitors').textContent = d.count ? String(d.count) : '';
+
+    (d.countries || []).forEach(function (c) {
+      var chip = el('span', 'chip');
+      chip.append(document.createTextNode((c.flag || '') + ' ' + (c.country || c.code) + ' '));
+      chip.append(el('b', null, String(c.count)));
+      box.append(chip);
+    });
+
+    var list = d.visitors || [];
+    var wrap = el('div', 'table-wrap');
+    var t = el('table');
+    var head = el('tr');
+    ['IP', 'Poloha', 'ISP', 'Požadavků', 'Naposledy', 'Cesta', 'Akce'].forEach(function (h) { head.append(el('th', null, h)); });
+    t.append(head);
+
+    if (!list.length) {
+      var tr0 = el('tr');
+      var td0 = el('td', 'muted', 'Za poslední okno tu nikdo nebyl.');
+      td0.colSpan = 7;
+      tr0.append(td0);
+      t.append(tr0);
     }
 
-    function api(path, opts) {
-        opts = opts || {};
-        var init = {
-            method: opts.method || 'GET',
-            credentials: 'same-origin',
-            headers: {}
+    list.forEach(function (v) {
+      var tr = el('tr');
+      if (v.banned) tr.className = 'off';
+      tr.append(el('td', 'mono', v.ip));
+      var loc = el('td');
+      if (v.geoKnown) {
+        loc.textContent = [v.country, v.city].filter(Boolean).join(' · ') || '–';
+      } else {
+        loc.className = 'muted';
+        loc.textContent = /^(::1|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(v.ip) ? 'lokální' : '–';
+      }
+      tr.append(loc);
+      tr.append(el('td', 'mono', v.isp || '–'));
+      tr.append(el('td', null, String(v.requests)));
+      tr.append(el('td', null, ago(v.secondsAgo)));
+      var path = el('td', 'mono');
+      var ua = el('span', 'ua', v.path || '/');
+      if (v.ua) ua.title = v.ua;
+      path.append(ua);
+      tr.append(path);
+      var td = el('td');
+      if (!v.banned) {
+        var b = el('button', 'small', 'Ban 60 min');
+        b.onclick = function () {
+          api('/api/admin/bans', { method: 'POST', body: { kind: 'ip', target: v.ip, minutes: 60, reason: 'z panelu' } })
+            .then(function () { msg('IP zablokována.', true); refreshAll(); })
+            .catch(function (e) { msg(e.message, false); });
         };
-        if (opts.body !== undefined) {
-            init.headers['Content-Type'] = 'application/json';
-            init.body = JSON.stringify(opts.body);
-        }
-        if (init.method !== 'GET' && csrf) init.headers['X-Wflix-CSRF'] = csrf;
+        td.append(b);
+      } else {
+        td.append(el('span', 'bad', 'blokováno'));
+      }
+      tr.append(td);
+      t.append(tr);
+    });
 
-        return fetch(path, init).then(function (res) {
-            return res.text().then(function (text) {
-                var data = null;
-                try { data = text ? JSON.parse(text) : null; } catch (e) { /* ne-JSON */ }
-                if (res.status === 401 && path.indexOf('/login') === -1) {
-                    showLogin('Přihlášení vypršelo.');
-                    throw new Error('Nejsi přihlášený.');
-                }
-                if (!res.ok) {
-                    throw new Error((data && data.error) || ('HTTP ' + res.status));
-                }
-                return data;
-            });
-        });
+    wrap.append(t);
+    $('vList').innerHTML = '';
+    $('vList').append(wrap);
+  }
+
+  // ------------------------------------------------------------ proxy
+  var proxyItems = [];
+
+  function loadProxies() {
+    return api('/api/admin/proxies').then(function (d) {
+      proxyItems = (d.items || []).map(function (p) {
+        return { url: p.url, enabled: p.enabled !== false, note: p.note || '' };
+      });
+      renderProxies(d);
+    }).catch(function () { });
+  }
+
+  function renderProxies(meta) {
+    var box = $('proxyList');
+    box.innerHTML = '';
+    if (!proxyItems.length) {
+      box.append(el('div', 'empty', 'Žádné proxy – server i prohlížeč půjdou přímo na zdroj.'));
+    } else {
+      var wrap = el('div', 'table-wrap');
+      var t = el('table');
+      var head = el('tr');
+      ['Zap.', 'URL', 'Poznámka', 'Akce'].forEach(function (h) { head.append(el('th', null, h)); });
+      t.append(head);
+      proxyItems.forEach(function (p, i) {
+        var tr = el('tr');
+        if (!p.enabled) tr.className = 'off';
+        var tdOn = el('td');
+        var cb = el('input');
+        cb.type = 'checkbox';
+        cb.checked = p.enabled;
+        cb.style.accentColor = 'var(--accent)';
+        cb.onchange = function () { proxyItems[i].enabled = cb.checked; tr.className = cb.checked ? '' : 'off'; };
+        tdOn.append(cb);
+        tr.append(tdOn);
+        tr.append(el('td', 'mono', p.url));
+        var tdNote = el('td');
+        var note = el('input');
+        note.type = 'text';
+        note.maxLength = 80;
+        note.value = p.note || '';
+        note.placeholder = 'nepovinné';
+        note.style.maxWidth = '260px';
+        note.oninput = function () { proxyItems[i].note = note.value; };
+        tdNote.append(note);
+        tr.append(tdNote);
+        var td = el('td');
+        var del = el('button', 'small', 'Odebrat');
+        del.onclick = function () { proxyItems.splice(i, 1); renderProxies(meta); };
+        td.append(del);
+        tr.append(td);
+        t.append(tr);
+      });
+      wrap.append(t);
+      box.append(wrap);
     }
 
-    // ------------------------------------------------------------ login
-    function showLogin(reason) {
-        if (timer) { clearInterval(timer); timer = null; }
-        show('panel', false);
-        show('login', true);
-        $('loginMsg').textContent = reason || '';
-        $('loginMsg').className = 'msg err';
-        $('password').value = '';
-        setTimeout(function () { $('password').focus(); }, 30);
+    var out = $('proxyOut');
+    if (meta && meta.commit) {
+      out.innerHTML = '';
+      var line = el('div', 'muted');
+      line.style.fontSize = '12px';
+      line.textContent = meta.commit.configured
+        ? 'Commit do repa: zapnutý (' + meta.commit.repo + ' @ ' + meta.commit.branch + ')'
+        : 'Commit do repa: vypnutý – nastavte WFLIX_GITHUB_TOKEN, nebo stáhněte .txt ručně.';
+      out.append(line);
     }
+  }
 
-    function showDisabled() {
-        show('panel', false);
-        show('login', true);
-        $('loginBtn').disabled = true;
-        $('password').disabled = true;
-        $('loginMsg').textContent = 'Admin není nakonfigurovaný. Nastav na serveru proměnnou ADMIN_PASSWORD a restartuj appku.';
-        $('loginMsg').className = 'msg err';
-    }
+  function saveProxies(commit) {
+    api('/api/admin/proxies', { method: 'POST', body: { items: proxyItems, commit: !!commit } }).then(function (d) {
+      var c = d.commit;
+      if (!commit) msg('Proxy uloženy.', true);
+      else if (c && c.ok) msg('Uloženo a commitnuto do repa.', true);
+      else if (c && c.skipped) msg('Uloženo. ' + (c.hint || ''), true);
+      else msg('Uloženo, ale commit selhal: ' + ((c && (c.error || c.hint)) || '?'), false);
 
-    function login() {
-        var password = $('password').value.trim();
-        if (!password) { $('loginMsg').textContent = 'Zadej heslo.'; return; }
-        $('loginBtn').disabled = true;
-        api('/api/admin/login', { method: 'POST', body: { password: password } }).then(function (d) {
-            csrf = d.csrf;
-            show('login', false);
-            show('panel', true);
-            refreshAll();
-            timer = setInterval(function () {
-                if (!document.hidden && $('auto').checked) refreshState();
-            }, 15000);
-        }).catch(function (e) {
-            $('loginMsg').textContent = e.message;
-            $('loginMsg').className = 'msg err';
-        }).then(function () {
-            $('loginBtn').disabled = false;
-        });
-    }
+      var out = $('proxyOut');
+      out.innerHTML = '';
+      if (c) {
+        var line = el('div', c.ok ? 'ok' : (c.skipped ? 'muted' : 'bad'));
+        line.style.fontSize = '12px';
+        line.textContent = c.ok
+          ? '✓ commit ' + String(c.sha || '').slice(0, 7) + (c.url ? ' – ' + c.url : '')
+          : (c.skipped ? c.hint || '' : 'chyba: ' + (c.error || '?'));
+        out.append(line);
+      }
+      refreshAll();
+    }).catch(function (e) { msg(e.message, false); });
+  }
 
-    // ------------------------------------------------------------ stav
-    function refreshState() {
-        return api('/api/admin/state').then(function (d) {
-            state = d;
-            renderRuntime(d.runtime, d.stats);
-            fillForms(d.state);
-            renderCache(d.cache);
-            renderBans(d.state.bans || [], d.stats);
-            renderStatePill(d.state);
-            renderSpark((d.stats && d.stats.requestsPerMinute) || []);
-            refreshVisitors();
-            $('flagsBy').textContent = d.state.updatedBy ? (d.state.updatedBy + ' · ' + fmtTime(d.state.updatedAt)) : '–';
-            $('sourcesBy').textContent = $('flagsBy').textContent;
-        }).catch(function (e) {
-            if (e.message !== 'Nejsi přihlášený.') msg(e.message, false);
-        });
-    }
-
-    function refreshAll() {
-        refreshState();
-        refreshAudit();
-        loadProxies();
-    }
-
-    // Stav webu v hlavičce: běží / zamčeno / vypnuto.
-    function renderStatePill(s) {
-        var f = (s && s.flags) || {};
-        var p = $('pillState');
-        p.style.color = '';
-        p.style.borderColor = '';
-        if (f.frontendShutdown) {
-            p.innerHTML = 'web <b style="color:#ff6b6b">vypnutý</b>';
-            p.style.borderColor = '#5a1f1f';
-        } else if (f.fullMaintenance) {
-            p.innerHTML = 'web <b style="color:var(--amber)">zamčený</b>';
-            p.style.borderColor = '#4a3f10';
-        } else if (f.maintenance) {
-            p.innerHTML = 'web <b style="color:var(--amber)">v údržbě</b>';
-        } else {
-            p.innerHTML = 'web <b style="color:var(--green)">běží</b>';
-        }
-    }
-
-    function renderSpark(values) {
-        var box = $('spark');
-        box.innerHTML = '';
-        if (!values || !values.length) return;
-        var max = Math.max.apply(null, values.concat([1]));
-        values.forEach(function (v) {
-            var bar = el('i');
-            bar.style.height = Math.max(2, Math.round(44 * v / max)) + 'px';
-            if (v) bar.className = 'on';
-            bar.title = v + ' požadavků';
-            box.append(bar);
-        });
-    }
-
-    // ------------------------------------------------------------ kdo je na webu
-    function ago(seconds) {
-        seconds = seconds | 0;
-        if (seconds < 60) return 'před ' + seconds + ' s';
-        if (seconds < 3600) return 'před ' + Math.floor(seconds / 60) + ' min';
-        return 'před ' + Math.floor(seconds / 3600) + ' h';
-    }
-
-    function refreshVisitors() {
-        var minutes = $('vMinutes') ? $('vMinutes').value : 10;
-        return api('/api/admin/visitors?minutes=' + encodeURIComponent(minutes)).then(function (d) {
-            renderVisitors(d);
-        }).catch(function () { });
-    }
-
-    function renderVisitors(d) {
-        var box = $('vCountries');
-        box.innerHTML = '';
-        var info = $('vInfo');
-        info.textContent = (d.count | 0) + ' klientů' + (d.pending ? ' · doplňuji polohu pro ' + d.pending + '…' : '')
-            + (d.geoLastError ? ' · ' + d.geoLastError : '');
-
-        (d.countries || []).forEach(function (c) {
-            var chip = el('span', 'chip');
-            chip.append(document.createTextNode((c.flag || '') + ' ' + (c.country || c.code) + ' '));
-            chip.append(el('b', null, String(c.count)));
-            box.append(chip);
-        });
-
-        var list = d.visitors || [];
+  function runProxyTest() {
+    var btn = $('proxyTest');
+    btn.disabled = true;
+    var out = $('proxyOut');
+    out.textContent = 'Testuji…';
+    api('/api/admin/proxies/test', { method: 'POST', body: { urls: proxyItems.map(function (p) { return p.url; }) } })
+      .then(function (d) {
+        out.innerHTML = '';
+        var results = d.results || [];
+        if (!results.length) { out.append(el('div', 'empty', 'Není co testovat.')); return; }
+        var wrap = el('div', 'table-wrap');
         var t = el('table');
         var head = el('tr');
-        ['IP', 'poloha', 'ISP', 'požadavků', 'naposledy', 'cesta', ''].forEach(function (h) { head.append(el('th', null, h)); });
+        ['Proxy', 'Stav', 'Kód', 'ms', 'Chyba'].forEach(function (h) { head.append(el('th', null, h)); });
         t.append(head);
-
-        if (!list.length) {
-            var tr0 = el('tr');
-            var td0 = el('td', 'muted', 'Za poslední okno tu nikdo nebyl.');
-            td0.colSpan = 7;
-            tr0.append(td0);
-            t.append(tr0);
-        }
-
-        list.forEach(function (v) {
-            var tr = el('tr');
-            if (v.banned) tr.className = 'off';
-            tr.append(el('td', 'mono', v.ip));
-            var loc = el('td');
-            if (v.geoKnown) {
-                loc.textContent = [v.country, v.city].filter(Boolean).join(' · ') || '–';
-            } else {
-                loc.className = 'muted';
-                loc.textContent = /^(::1|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(v.ip) ? 'lokální' : '–';
-            }
-            tr.append(loc);
-            tr.append(el('td', 'mono', v.isp || '–'));
-            tr.append(el('td', null, String(v.requests)));
-            tr.append(el('td', null, ago(v.secondsAgo)));
-            var path = el('td', 'mono');
-            var ua = el('span', 'ua', v.path || '/');
-            if (v.ua) ua.title = v.ua;
-            path.append(ua);
-            tr.append(path);
-            var td = el('td');
-            if (!v.banned) {
-                var b = el('button', 'small', 'Ban 60 min');
-                b.onclick = function () {
-                    api('/api/admin/bans', { method: 'POST', body: { kind: 'ip', target: v.ip, minutes: 60, reason: 'z panelu' } })
-                        .then(function () { msg('IP zablokována.', true); refreshAll(); })
-                        .catch(function (e) { msg(e.message, false); });
-                };
-                td.append(b);
-            } else {
-                td.append(el('span', 'bad', 'blokováno'));
-            }
-            tr.append(td);
-            t.append(tr);
+        results.forEach(function (r) {
+          var tr = el('tr');
+          tr.append(el('td', 'mono', r.url));
+          tr.append(el('td', r.ok ? 'ok' : 'bad', r.ok ? 'ok' : 'chyba'));
+          tr.append(el('td', null, String(r.status || '')));
+          tr.append(el('td', null, String(r.ms || '')));
+          tr.append(el('td', 'mono', r.error || ''));
+          t.append(tr);
         });
+        wrap.append(t);
+        out.append(wrap);
+      })
+      .catch(function (e) { out.textContent = ''; msg(e.message, false); })
+      .then(function () { btn.disabled = false; });
+  }
 
-        $('vList').innerHTML = '';
-        $('vList').append(t);
+  // ------------------------------------------------------------ render
+  function renderRuntime(rt, stats) {
+    if (!rt) return;
+    $('pillBuild').innerHTML = '';
+    $('pillBuild').append('build ');
+    $('pillBuild').append(el('b', null, rt.commit ? String(rt.commit).slice(0, 7) : String(rt.build || '?').slice(0, 12)));
+    $('pillBuild').title = rt.build || '';
+    $('pillUptime').innerHTML = 'uptime <b>' + fmtUptime(rt.uptimeSeconds) + '</b>';
+    $('pillOnline').innerHTML = 'online <b>' + (rt.onlineUsers | 0) + '</b>';
+
+    var box = $('stats');
+    box.innerHTML = '';
+    [
+      ['Požadavky /api', stats.requests],
+      ['429', stats.rateLimited],
+      ['5xx', stats.serverErrors],
+      ['Aktivní bany', stats.activeBans],
+      ['Proxy', rt.proxies]
+    ].forEach(function (c) {
+      var d = el('div', 'stat');
+      d.append(el('div', 'k', c[0]));
+      d.append(el('div', 'v', String(c[1] != null ? c[1] : '–')));
+      box.append(d);
+    });
+  }
+
+  function fillForms(s) {
+    if (!s) return;
+    var f = s.flags || {};
+    $('fMaintenance').checked = !!f.maintenance;
+    $('fMessage').value = f.maintenanceMessage || '';
+    $('fDownloads').checked = f.downloads !== false;
+    $('fLive').checked = f.live !== false;
+    $('fLiveRelay').checked = f.liveRelay !== false;
+    $('fMerge').checked = f.mergeSources !== false;
+    $('fItunes').checked = f.itunesThumb !== false;
+    $('fFull').checked = !!f.fullMaintenance;
+    $('fShutdown').checked = !!f.frontendShutdown;
+    $('fFull').disabled = !adminEnabled;
+    $('fShutdown').disabled = !adminEnabled;
+
+    var src = s.sources || {};
+    $('sPrehrajto').checked = src.prehrajto !== false;
+    $('sSledujteto').checked = src.sledujteto !== false;
+    $('sBombuj').checked = src.bombuj !== false;
+    $('sFallback').checked = src.fallback !== false;
+    $('sMaxPage').value = src.maxPage || 50;
+  }
+
+  function renderCache(c) {
+    var box = $('cacheInfo');
+    box.innerHTML = '';
+    if (!c) return;
+    var total = (c.hits || 0) + (c.misses || 0);
+    var rate = total ? Math.round(100 * c.hits / total) : 0;
+    [
+      ['Položek v paměti', c.memoryEntries],
+      ['Sledovaných klíčů', c.trackedKeys],
+      ['Hledání', c.scopes.search],
+      ['Náhledy', c.scopes.thumb],
+      ['Katalog', c.scopes.catalog],
+      ['Živé', c.scopes.live],
+      ['CDN', c.scopes.cdn],
+      ['Zásahů', c.hits + ' / ' + total + ' (' + rate + ' %)']
+    ].forEach(function (p) {
+      var s = el('span');
+      s.append(document.createTextNode(p[0] + ' '));
+      s.append(el('b', null, String(p[1])));
+      box.append(s);
+    });
+  }
+
+  function renderBans(bans, stats) {
+    var box = $('bans');
+    box.innerHTML = '';
+    var active = bans.filter(function (b) { return new Date(b.until) > new Date(); });
+    var expired = bans.length - active.length;
+    $('navBans').textContent = active.length ? String(active.length) : '';
+    if (!active.length) {
+      box.append(el('div', 'empty', 'Žádný aktivní ban.' + (expired ? ' (' + expired + ' prošlých se uklidí při další změně)' : '')));
+    } else {
+      var wrap = el('div', 'table-wrap');
+      var t = el('table');
+      var head = el('tr');
+      ['Typ', 'Cíl', 'Do', 'Důvod', 'Akce'].forEach(function (h) { head.append(el('th', null, h)); });
+      t.append(head);
+      active.forEach(function (b) {
+        var tr = el('tr');
+        tr.append(el('td', null, b.kind));
+        tr.append(el('td', 'mono', b.target));
+        tr.append(el('td', null, fmtTime(b.until)));
+        tr.append(el('td', null, b.reason || '–'));
+        var td = el('td');
+        var btn = el('button', 'small', 'Zrušit');
+        btn.onclick = function () {
+          btn.disabled = true;
+          api('/api/admin/bans/remove', { method: 'POST', body: { kind: b.kind, target: b.target } })
+            .then(function () { msg('Ban zrušen.', true); refreshAll(); })
+            .catch(function (e) { msg(e.message, false); btn.disabled = false; });
+        };
+        td.append(btn);
+        tr.append(td);
+        t.append(tr);
+      });
+      wrap.append(t);
+      box.append(wrap);
     }
 
-    // ------------------------------------------------------------ proxy servery
-    var proxyItems = [];
+    var talk = $('talkers');
+    talk.innerHTML = '';
+    var list = (stats && stats.topTalkers) || [];
+    if (!list.length) { talk.append(el('div', 'empty', 'Zatím žádná data.')); return; }
+    var wrap2 = el('div', 'table-wrap');
+    var t2 = el('table');
+    var h2 = el('tr');
+    ['Klient', 'Požadavků', 'Akce'].forEach(function (h) { h2.append(el('th', null, h)); });
+    t2.append(h2);
+    list.forEach(function (x) {
+      var tr = el('tr');
+      tr.append(el('td', 'mono', x.client));
+      tr.append(el('td', null, String(x.requests)));
+      var td = el('td');
+      var b = el('button', 'small', 'Ban 60 min');
+      b.onclick = function () {
+        $('bKind').value = /^\d+\.\d+\.\d+\.\d+$/.test(x.client) ? 'ip' : 'cid';
+        $('bTarget').value = x.client;
+        $('bMinutes').value = 60;
+        setView('bans');
+        $('bTarget').scrollIntoView({ block: 'center' });
+        $('addBan').focus();
+      };
+      td.append(b);
+      tr.append(td);
+      t2.append(tr);
+    });
+    wrap2.append(t2);
+    talk.append(wrap2);
+  }
 
-    function loadProxies() {
-        return api('/api/admin/proxies').then(function (d) {
-            proxyItems = (d.items || []).map(function (p) {
-                return { url: p.url, enabled: p.enabled !== false, note: p.note || '' };
-            });
-            renderProxies(d);
-        }).catch(function () { });
-    }
+  function renderAudit(entries) {
+    var box = $('audit');
+    box.innerHTML = '';
+    if (!entries || !entries.length) { box.append(el('div', 'empty', 'Zatím žádné záznamy.')); return; }
+    var wrap = el('div', 'table-wrap');
+    var t = el('table');
+    var head = el('tr');
+    ['Kdy', 'Akce', 'Kdo', 'Detail'].forEach(function (h) { head.append(el('th', null, h)); });
+    t.append(head);
+    entries.forEach(function (e) {
+      var tr = el('tr');
+      tr.append(el('td', null, fmtTime(e.at)));
+      tr.append(el('td', null, e.action));
+      tr.append(el('td', 'mono', e.actor));
+      tr.append(el('td', 'mono', e.details || ''));
+      t.append(tr);
+    });
+    wrap.append(t);
+    box.append(wrap);
+  }
 
-    function renderProxies(meta) {
-        var box = $('proxyList');
-        box.innerHTML = '';
-        if (!proxyItems.length) {
-            box.append(el('div', 'muted', 'Žádné proxy – server i prohlížeč půjdou přímo na zdroj.'));
-        } else {
-            var t = el('table');
-            var head = el('tr');
-            ['zap.', 'URL', 'poznámka', ''].forEach(function (h) { head.append(el('th', null, h)); });
-            t.append(head);
-            proxyItems.forEach(function (p, i) {
-                var tr = el('tr');
-                if (!p.enabled) tr.className = 'off';
-                var tdOn = el('td');
-                var cb = el('input');
-                cb.type = 'checkbox';
-                cb.checked = p.enabled;
-                cb.style.accentColor = 'var(--red)';
-                cb.onchange = function () { proxyItems[i].enabled = cb.checked; tr.className = cb.checked ? '' : 'off'; };
-                tdOn.append(cb);
-                tr.append(tdOn);
-                tr.append(el('td', 'mono', p.url));
-                var tdNote = el('td');
-                var note = el('input');
-                note.type = 'text';
-                note.maxLength = 80;
-                note.value = p.note || '';
-                note.placeholder = 'nepovinné';
-                note.style.maxWidth = '240px';
-                note.oninput = function () { proxyItems[i].note = note.value; };
-                tdNote.append(note);
-                tr.append(tdNote);
-                var td = el('td');
-                var del = el('button', 'small', 'Odebrat');
-                del.onclick = function () {
-                    proxyItems.splice(i, 1);
-                    renderProxies();
-                };
-                td.append(del);
-                tr.append(td);
-                t.append(tr);
-            });
-            box.append(t);
-        }
+  function refreshAudit() {
+    return api('/api/admin/audit').then(function (d) { renderAudit(d.entries); }).catch(function () { });
+  }
 
-        var out = $('proxyOut');
-        if (meta && meta.commit) {
-            out.innerHTML = '';
-            var line = el('div', 'muted');
-            line.textContent = meta.commit.configured
-                ? 'commit do repa: zapnutý (' + meta.commit.repo + ' @ ' + meta.commit.branch + ')'
-                : 'commit do repa: vypnutý – nastav WFLIX_GITHUB_TOKEN, nebo stahuj .txt ručně';
-            out.append(line);
-        }
-    }
+  // ------------------------------------------------------------ akce
+  function post(path, body, okText) {
+    return api(path, { method: 'POST', body: body }).then(function (d) {
+      msg(okText, true);
+      refreshAll();
+      return d;
+    }).catch(function (e) { msg(e.message, false); throw e; });
+  }
 
-    function saveProxies(commit) {
-        api('/api/admin/proxies', { method: 'POST', body: { items: proxyItems, commit: !!commit } }).then(function (d) {
-            var c = d.commit;
-            if (!commit) { msg('Proxy uloženy.', true); }
-            else if (c && c.ok) { msg('Uloženo a commitnuto do repa.', true); }
-            else if (c && c.skipped) { msg('Uloženo. ' + (c.hint || ''), true); }
-            else { msg('Uloženo, ale commit selhal: ' + ((c && (c.error || c.hint)) || '?'), false); }
+  function flagsBody() {
+    return {
+      maintenance: $('fMaintenance').checked,
+      fullMaintenance: $('fFull').checked,
+      frontendShutdown: $('fShutdown').checked,
+      maintenanceMessage: $('fMessage').value.trim(),
+      downloads: $('fDownloads').checked,
+      live: $('fLive').checked,
+      liveRelay: $('fLiveRelay').checked,
+      mergeSources: $('fMerge').checked,
+      itunesThumb: $('fItunes').checked
+    };
+  }
 
-            var out = $('proxyOut');
-            out.innerHTML = '';
-            if (c) {
-                var line = el('div', c.ok ? 'ok' : (c.skipped ? 'muted' : 'bad'));
-                line.textContent = c.ok
-                    ? '✓ commit ' + String(c.sha || '').slice(0, 7) + (c.url ? ' – ' + c.url : '')
-                    : (c.skipped ? c.hint || '' : 'chyba: ' + (c.error || '?'));
-                out.append(line);
-            }
-            refreshAll();
-        }).catch(function (e) { msg(e.message, false); });
-    }
+  function bind() {
+    $('loginBtn').addEventListener('click', login);
+    $('password').addEventListener('keydown', function (e) { if (e.key === 'Enter') login(); });
 
-    function runProxyTest() {
-        var btn = $('proxyTest');
+    $('logoutBtn').addEventListener('click', function () {
+      api('/api/admin/logout', { method: 'POST' }).catch(function () { }).then(function () {
+        csrf = null;
+        showLogin('');
+      });
+    });
+
+    $('refreshBtn').addEventListener('click', function () { refreshAll(); msg('Obnoveno.', true); });
+    $('menuBtn').addEventListener('click', toggleSidebar);
+    $('scrim').addEventListener('click', closeSidebar);
+
+    Array.prototype.forEach.call(document.querySelectorAll('.nav-btn[data-view]'), function (b) {
+      b.addEventListener('click', function () { setView(b.getAttribute('data-view')); });
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeSidebar();
+    });
+
+    $('saveFlags').addEventListener('click', function () {
+      if ($('fShutdown').checked && !confirm('Vypnout celý frontend? Web i veřejné /api budou vracet 503, dokud to nevypnete. Panel zůstane dostupný.')) return;
+      if ($('fFull').checked && !$('fShutdown').checked && !confirm('Zamknout web? Uživatelé uvidí zamykací stránku a dovnitř se dostane jen ten, kdo zná admin heslo.')) return;
+      if ($('fMaintenance').checked && !$('fFull').checked && !$('fShutdown').checked && !confirm('Zapnout údržbu? Všichni uživatelé uvidí 503, dokud to nevypnete.')) return;
+      post('/api/admin/flags', flagsBody(), 'Vypínače uloženy.');
+    });
+
+    $('vRefresh').addEventListener('click', function () { refreshVisitors(); msg('Seznam obnoven.', true); });
+    $('vMinutes').addEventListener('change', refreshVisitors);
+
+    $('proxyAdd').addEventListener('click', function () {
+      var url = $('proxyNew').value.trim();
+      if (!url) { msg('Zadejte URL proxy.', false); return; }
+      if (!/^https?:\/\/[^\s]+$/i.test(url)) { msg('Proxy musí začínat http:// nebo https://.', false); return; }
+      if (proxyItems.some(function (p) { return p.url.toLowerCase() === url.toLowerCase(); })) { msg('Tato proxy už v seznamu je.', false); return; }
+      proxyItems.push({ url: url, enabled: true, note: '' });
+      $('proxyNew').value = '';
+      renderProxies();
+    });
+
+    $('proxyNew').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('proxyAdd').click(); });
+    $('proxySave').addEventListener('click', function () { saveProxies(false); });
+    $('proxySaveCommit').addEventListener('click', function () { saveProxies(true); });
+    $('proxyTest').addEventListener('click', runProxyTest);
+    $('proxyExport').addEventListener('click', function () { window.open('/api/admin/proxies/export', '_blank'); });
+    $('auditExport').addEventListener('click', function () { window.open('/api/admin/audit/export', '_blank'); });
+
+    $('saveSources').addEventListener('click', function () {
+      var n = parseInt($('sMaxPage').value, 10);
+      if (!(n >= 1 && n <= 50)) { msg('Max. stránka musí být 1–50.', false); return; }
+      if (!$('sPrehrajto').checked && !$('sSledujteto').checked && !$('sBombuj').checked && !confirm('Všechny zdroje jsou vypnuté – hledání přestane fungovat. Pokračovat?')) return;
+      post('/api/admin/sources', {
+        prehrajto: $('sPrehrajto').checked,
+        sledujteto: $('sSledujteto').checked,
+        bombuj: $('sBombuj').checked,
+        fallback: $('sFallback').checked,
+        maxPage: n
+      }, 'Zdroje uloženy.');
+    });
+
+    $('addBan').addEventListener('click', function () {
+      var kind = $('bKind').value;
+      var target = $('bTarget').value.trim();
+      var minutes = parseInt($('bMinutes').value, 10);
+      if (!target) { msg('Zadejte IP nebo cid.', false); return; }
+      if (!(minutes >= 1 && minutes <= 10080)) { msg('Minuty musí být 1–10080.', false); return; }
+      post('/api/admin/bans', { kind: kind, target: target, minutes: minutes, reason: $('bReason').value.trim() }, 'Zablokováno.')
+        .then(function () { $('bTarget').value = ''; $('bReason').value = ''; }).catch(function () { });
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-scope]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var scope = btn.getAttribute('data-scope');
+        if (scope === 'all' && !confirm('Smazat všechny cache? Příští dotazy půjdou znovu na zdroje (a mohou narazit na 429).')) return;
         btn.disabled = true;
-        var out = $('proxyOut');
-        out.textContent = 'testuji…';
-        api('/api/admin/proxies/test', { method: 'POST', body: { urls: proxyItems.map(function (p) { return p.url; }) } })
-            .then(function (d) {
-                out.innerHTML = '';
-                var t = el('table');
-                var head = el('tr');
-                ['proxy', 'stav', 'kód', 'ms', 'chyba'].forEach(function (h) { head.append(el('th', null, h)); });
-                t.append(head);
-                (d.results || []).forEach(function (r) {
-                    var tr = el('tr');
-                    tr.append(el('td', 'mono', r.url));
-                    tr.append(el('td', r.ok ? 'ok' : 'bad', r.ok ? 'ok' : 'chyba'));
-                    tr.append(el('td', null, String(r.status || '')));
-                    tr.append(el('td', null, String(r.ms || '')));
-                    tr.append(el('td', 'mono', r.error || ''));
-                    t.append(tr);
-                });
-                if (!(d.results || []).length) out.append(el('div', 'muted', 'Není co testovat.'));
-                out.append(t);
-            })
-            .catch(function (e) { out.textContent = ''; msg(e.message, false); })
-            .then(function () { btn.disabled = false; });
-    }
+        $('purgeOut').innerHTML = '';
+        api('/api/admin/purge', { method: 'POST', body: { scope: scope, proxies: $('purgeProxies').checked } })
+          .then(function (d) {
+            msg('Smazáno ' + d.removed + ' klíčů (' + d.scope + ').', true);
+            var out = $('purgeOut');
+            if (d.proxies && d.proxies.length) {
+              d.proxies.forEach(function (p) {
+                var line = el('div', 'mono');
+                line.style.color = p.ok ? 'var(--green)' : 'var(--muted)';
+                var label = p.proxy === '*' ? 'všechny proxy' : p.proxy;
+                line.textContent = (p.ok ? '✓ ' : '· ') + label + (p.purged >= 0 ? ' → ' + p.purged + ' klíčů' : '') + (p.error ? ' — ' + p.error : '');
+                out.append(line);
+              });
+            }
+            refreshAll();
+          })
+          .catch(function (e) { msg(e.message, false); })
+          .then(function () { btn.disabled = false; });
+      });
+    });
 
-    function renderRuntime(rt, stats) {
-        if (!rt) return;
-        $('pillBuild').innerHTML = '';
-        $('pillBuild').append('build ');
-        $('pillBuild').append(el('b', null, rt.commit ? String(rt.commit).slice(0, 7) : String(rt.build || '?').slice(0, 12)));
-        $('pillBuild').title = rt.build || '';
-        $('pillUptime').innerHTML = 'uptime <b>' + fmtUptime(rt.uptimeSeconds) + '</b>';
-        $('pillOnline').innerHTML = 'online <b>' + (rt.onlineUsers | 0) + '</b>';
-
-        var box = $('stats');
+    $('testBtn').addEventListener('click', function () {
+      var btn = $('testBtn');
+      btn.disabled = true;
+      $('testInfo').textContent = 'Testuji…';
+      api('/api/admin/ops').then(function (d) {
+        renderRuntime(d.runtime, { requests: d.stats.requests, rateLimited: d.stats.rateLimited, serverErrors: d.stats.serverErrors, activeBans: 0, topTalkers: [] });
+        var checks = d.checks || [];
+        var okCount = checks.filter(function (c) { return c.ok; }).length;
+        $('testInfo').textContent = okCount + ' / ' + checks.length + ' v pořádku';
+        var box = $('checks');
         box.innerHTML = '';
-        var cards = [
-            ['Požadavky /api', stats.requests],
-            ['429', stats.rateLimited],
-            ['5xx', stats.serverErrors],
-            ['Aktivní bany', stats.activeBans],
-            ['Proxy', rt.proxies],
-        ];
-        cards.forEach(function (c) {
-            var d = el('div', 'stat');
-            d.append(el('div', 'k', c[0]));
-            d.append(el('div', 'v', String(c[1])));
-            box.append(d);
-        });
-    }
-
-    function fillForms(s) {
-        if (!s) return;
-        var f = s.flags || {};
-        $('fMaintenance').checked = !!f.maintenance;
-        $('fMessage').value = f.maintenanceMessage || '';
-        $('fDownloads').checked = f.downloads !== false;
-        $('fLive').checked = f.live !== false;
-        $('fLiveRelay').checked = f.liveRelay !== false;
-        $('fMerge').checked = f.mergeSources !== false;
-        $('fItunes').checked = f.itunesThumb !== false;
-        $('fFull').checked = !!f.fullMaintenance;
-        $('fShutdown').checked = !!f.frontendShutdown;
-        // Zamknout/vypnout web jde jen s nastaveným heslem, jinak by to nešlo vrátit.
-        $('fFull').disabled = !adminEnabled;
-        $('fShutdown').disabled = !adminEnabled;
-
-        var src = s.sources || {};
-        $('sPrehrajto').checked = src.prehrajto !== false;
-        $('sSledujteto').checked = src.sledujteto !== false;
-        $('sBombuj').checked = src.bombuj !== false;
-        $('sFallback').checked = src.fallback !== false;
-        $('sMaxPage').value = src.maxPage || 50;
-    }
-
-    function renderCache(c) {
-        var box = $('cacheInfo');
-        box.innerHTML = '';
-        if (!c) return;
-        var total = (c.hits || 0) + (c.misses || 0);
-        var rate = total ? Math.round(100 * c.hits / total) : 0;
-        [
-            ['položek v paměti', c.memoryEntries],
-            ['sledovaných klíčů', c.trackedKeys],
-            ['hledání', c.scopes.search],
-            ['náhledy', c.scopes.thumb],
-            ['katalog', c.scopes.catalog],
-            ['živé', c.scopes.live],
-            ['CDN', c.scopes.cdn],
-            ['zásahů', c.hits + ' / ' + total + ' (' + rate + ' %)']
-        ].forEach(function (p) {
-            var s = el('span');
-            s.append(document.createTextNode(p[0] + ': '));
-            var b = el('b', null, String(p[1]));
-            b.style.color = 'var(--text)';
-            s.append(b);
-            box.append(s);
-        });
-    }
-
-    function renderBans(bans, stats) {
-        var box = $('bans');
-        box.innerHTML = '';
-        var active = bans.filter(function (b) { return new Date(b.until) > new Date(); });
-        var expired = bans.length - active.length;
-        if (!active.length) {
-            box.append(el('div', 'muted', 'Žádný aktivní ban.' + (expired ? ' (' + expired + ' prošlých se uklidí při další změně)' : '')));
-        } else {
-            var t = el('table');
-            var head = el('tr');
-            ['typ', 'cíl', 'do', 'důvod', ''].forEach(function (h) { head.append(el('th', null, h)); });
-            t.append(head);
-            active.forEach(function (b) {
-                var tr = el('tr');
-                tr.append(el('td', null, b.kind));
-                tr.append(el('td', 'mono', b.target));
-                tr.append(el('td', null, fmtTime(b.until)));
-                tr.append(el('td', null, b.reason || '–'));
-                var td = el('td');
-                var btn = el('button', 'small', 'Zrušit');
-                btn.onclick = function () {
-                    btn.disabled = true;
-                    api('/api/admin/bans/remove', { method: 'POST', body: { kind: b.kind, target: b.target } })
-                        .then(function () { msg('Ban zrušen.', true); refreshAll(); })
-                        .catch(function (e) { msg(e.message, false); btn.disabled = false; });
-                };
-                td.append(btn);
-                tr.append(td);
-                t.append(tr);
-            });
-            box.append(t);
-        }
-
-        var talk = $('talkers');
-        talk.innerHTML = '';
-        var list = (stats && stats.topTalkers) || [];
-        if (!list.length) { talk.append(el('div', 'muted', 'Zatím žádná data.')); return; }
-        var t2 = el('table');
-        var h2 = el('tr');
-        ['klient', 'požadavků', ''].forEach(function (h) { h2.append(el('th', null, h)); });
-        t2.append(h2);
-        list.forEach(function (x) {
-            var tr = el('tr');
-            tr.append(el('td', 'mono', x.client));
-            tr.append(el('td', null, String(x.requests)));
-            var td = el('td');
-            var b = el('button', 'small', 'Ban 60 min');
-            b.onclick = function () {
-                $('bKind').value = /^\d+\.\d+\.\d+\.\d+$/.test(x.client) ? 'ip' : 'cid';
-                $('bTarget').value = x.client;
-                $('bMinutes').value = 60;
-                $('bTarget').scrollIntoView({ block: 'center' });
-                $('addBan').focus();
-            };
-            td.append(b);
-            tr.append(td);
-            t2.append(tr);
-        });
-        talk.append(t2);
-    }
-
-    function renderAudit(entries) {
-        var box = $('audit');
-        box.innerHTML = '';
-        if (!entries || !entries.length) { box.append(el('div', 'muted', 'Zatím žádné záznamy.')); return; }
+        var wrap = el('div', 'table-wrap');
         var t = el('table');
         var head = el('tr');
-        ['kdy', 'akce', 'kdo', 'detail'].forEach(function (h) { head.append(el('th', null, h)); });
+        ['Zdroj', 'Stav', 'Kód', 'ms', 'Chyba'].forEach(function (h) { head.append(el('th', null, h)); });
         t.append(head);
-        entries.forEach(function (e) {
-            var tr = el('tr');
-            tr.append(el('td', null, fmtTime(e.at)));
-            tr.append(el('td', null, e.action));
-            tr.append(el('td', 'mono', e.actor));
-            tr.append(el('td', 'mono', e.details || ''));
-            t.append(tr);
+        checks.forEach(function (c) {
+          var tr = el('tr');
+          tr.append(el('td', 'mono', c.endpoint));
+          tr.append(el('td', c.ok ? 'ok' : 'bad', c.ok ? 'ok' : 'chyba'));
+          tr.append(el('td', null, String(c.status || '')));
+          tr.append(el('td', null, String(c.ms || '')));
+          tr.append(el('td', 'mono', c.error || c.note || ''));
+          t.append(tr);
         });
-        box.append(t);
-    }
+        wrap.append(t);
+        box.append(wrap);
+      }).catch(function (e) {
+        $('testInfo').textContent = '';
+        msg(e.message, false);
+      }).then(function () { btn.disabled = false; });
+    });
+  }
 
-    function refreshAudit() {
-        return api('/api/admin/audit').then(function (d) { renderAudit(d.entries); }).catch(function () { });
-    }
-
-    // ------------------------------------------------------------ akce
-    function post(path, body, okText) {
-        return api(path, { method: 'POST', body: body }).then(function (d) {
-            msg(okText, true);
-            refreshAll();
-            return d;
-        }).catch(function (e) { msg(e.message, false); throw e; });
-    }
-
-    function flagsBody() {
-        return {
-            maintenance: $('fMaintenance').checked,
-            fullMaintenance: $('fFull').checked,
-            frontendShutdown: $('fShutdown').checked,
-            maintenanceMessage: $('fMessage').value.trim(),
-            downloads: $('fDownloads').checked,
-            live: $('fLive').checked,
-            liveRelay: $('fLiveRelay').checked,
-            mergeSources: $('fMerge').checked,
-            itunesThumb: $('fItunes').checked
-        };
-    }
-
-    function bind() {
-        $('loginBtn').addEventListener('click', login);
-        $('password').addEventListener('keydown', function (e) { if (e.key === 'Enter') login(); });
-
-        $('logoutBtn').addEventListener('click', function () {
-            api('/api/admin/logout', { method: 'POST' }).catch(function () { }).then(function () {
-                csrf = null;
-                showLogin('');
-            });
-        });
-
-        $('refreshBtn').addEventListener('click', function () { refreshAll(); msg('Obnoveno.', true); });
-
-        $('saveFlags').addEventListener('click', function () {
-            if ($('fShutdown').checked && !confirm('Vypnout celý frontend? Web i veřejné /api budou vracet 503, dokud to nevypneš. Panel zůstane dostupný.')) return;
-            if ($('fFull').checked && !$('fShutdown').checked && !confirm('Zamknout web? Uživatelé uvidí zamykací stránku a dovnitř se dostane jen ten, kdo zná admin heslo.')) return;
-            if ($('fMaintenance').checked && !$('fFull').checked && !$('fShutdown').checked && !confirm('Zapnout údržbu? Všichni uživatelé uvidí 503, dokud to nevypneš.')) return;
-            post('/api/admin/flags', flagsBody(), 'Vypínače uloženy.');
-        });
-
-        $('vRefresh').addEventListener('click', function () { refreshVisitors(); msg('Seznam obnoven.', true); });
-        $('vMinutes').addEventListener('change', refreshVisitors);
-
-        $('proxyAdd').addEventListener('click', function () {
-            var url = $('proxyNew').value.trim();
-            if (!url) { msg('Zadej URL proxy.', false); return; }
-            if (!/^https?:\/\/[^\s]+$/i.test(url)) { msg('Proxy musí začínat http:// nebo https://.', false); return; }
-            if (proxyItems.some(function (p) { return p.url.toLowerCase() === url.toLowerCase(); })) { msg('Tahle proxy už v seznamu je.', false); return; }
-            proxyItems.push({ url: url, enabled: true, note: '' });
-            $('proxyNew').value = '';
-            renderProxies();
-        });
-
-        $('proxyNew').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('proxyAdd').click(); });
-        $('proxySave').addEventListener('click', function () { saveProxies(false); });
-        $('proxySaveCommit').addEventListener('click', function () { saveProxies(true); });
-        $('proxyTest').addEventListener('click', runProxyTest);
-        $('proxyExport').addEventListener('click', function () { window.open('/api/admin/proxies/export', '_blank'); });
-        $('auditExport').addEventListener('click', function () { window.open('/api/admin/audit/export', '_blank'); });
-
-        $('saveSources').addEventListener('click', function () {
-            var n = parseInt($('sMaxPage').value, 10);
-            if (!(n >= 1 && n <= 50)) { msg('Max. stránka musí být 1-50.', false); return; }
-            if (!$('sPrehrajto').checked && !$('sSledujteto').checked && !$('sBombuj').checked && !confirm('Všechny zdroje jsou vypnuté - hledání přestane fungovat. Pokračovat?')) return;
-            post('/api/admin/sources', {
-                prehrajto: $('sPrehrajto').checked,
-                sledujteto: $('sSledujteto').checked,
-                bombuj: $('sBombuj').checked,
-                fallback: $('sFallback').checked,
-                maxPage: n
-            }, 'Zdroje uloženy.');
-        });
-
-        $('addBan').addEventListener('click', function () {
-            var kind = $('bKind').value;
-            var target = $('bTarget').value.trim();
-            var minutes = parseInt($('bMinutes').value, 10);
-            if (!target) { msg('Zadej IP nebo cid.', false); return; }
-            if (!(minutes >= 1 && minutes <= 10080)) { msg('Minuty musí být 1-10080.', false); return; }
-            post('/api/admin/bans', { kind: kind, target: target, minutes: minutes, reason: $('bReason').value.trim() }, 'Zablokováno.')
-                .then(function () { $('bTarget').value = ''; $('bReason').value = ''; }).catch(function () { });
-        });
-
-        document.querySelectorAll('[data-scope]').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var scope = btn.getAttribute('data-scope');
-                if (scope === 'all' && !confirm('Smazat všechny cache? Příští dotazy půjdou znovu na zdroje (a můžou narazit na 429).')) return;
-                btn.disabled = true;
-                $('purgeOut').innerHTML = '';
-                api('/api/admin/purge', { method: 'POST', body: { scope: scope, proxies: $('purgeProxies').checked } })
-                    .then(function (d) {
-                        msg('Smazáno ' + d.removed + ' klíčů (' + d.scope + ').', true);
-                        var out = $('purgeOut');
-                        if (d.proxies && d.proxies.length) {
-                            d.proxies.forEach(function (p) {
-                                var line = el('div', 'mono');
-                                line.style.color = p.ok ? 'var(--green)' : 'var(--muted)';
-                                var label = p.proxy === '*' ? 'všechny proxy' : p.proxy;
-                                line.textContent = (p.ok ? '✓ ' : '· ') + label + (p.purged >= 0 ? ' → ' + p.purged + ' klíčů' : '') + (p.error ? ' — ' + p.error : '');
-                                out.append(line);
-                            });
-                        }
-                        refreshAll();
-                    })
-                    .catch(function (e) { msg(e.message, false); })
-                    .then(function () { btn.disabled = false; });
-            });
-        });
-
-        $('testBtn').addEventListener('click', function () {
-            var btn = $('testBtn');
-            btn.disabled = true;
-            $('testInfo').textContent = 'testuji…';
-            api('/api/admin/ops').then(function (d) {
-                renderRuntime(d.runtime, { requests: d.stats.requests, rateLimited: d.stats.rateLimited, serverErrors: d.stats.serverErrors, activeBans: 0, topTalkers: [] });
-                var okCount = (d.checks || []).filter(function (c) { return c.ok; }).length;
-                $('testInfo').textContent = okCount + ' / ' + (d.checks || []).length + ' v pořádku';
-                var box = $('checks');
-                box.innerHTML = '';
-                var t = el('table');
-                var head = el('tr');
-                ['zdroj', 'stav', 'kód', 'ms', 'chyba'].forEach(function (h) { head.append(el('th', null, h)); });
-                t.append(head);
-                (d.checks || []).forEach(function (c) {
-                    var tr = el('tr');
-                    tr.append(el('td', 'mono', c.endpoint));
-                    tr.append(el('td', c.ok ? 'ok' : 'bad', c.ok ? 'ok' : 'chyba'));
-                    tr.append(el('td', null, String(c.status || '')));
-                    tr.append(el('td', null, String(c.ms || '')));
-                    tr.append(el('td', 'mono', c.error || c.note || ''));
-                    t.append(tr);
-                });
-                box.append(t);
-            }).catch(function (e) {
-                $('testInfo').textContent = '';
-                msg(e.message, false);
-            }).then(function () { btn.disabled = false; });
-        });
-    }
-
-    // ------------------------------------------------------------ start
-    api('/api/admin/session').then(function (s) {
-        adminEnabled = !!s.enabled;
-        if (!s.enabled) { showDisabled(); return; }
-        if (s.authenticated) {
-            csrf = s.csrf;
-            show('panel', true);
-            show('login', false);
-            refreshAll();
-            timer = setInterval(function () {
-                if (!document.hidden && $('auto').checked) refreshState();
-            }, 15000);
-        } else {
-            showLogin('');
+  // ------------------------------------------------------------ start
+  api('/api/admin/session').then(function (s) {
+    adminEnabled = !!s.enabled;
+    if (!s.enabled) { showDisabled(); return; }
+    if (s.authenticated) {
+      csrf = s.csrf;
+      show('panel', true);
+      show('login', false);
+      try {
+        if (localStorage.getItem('wflix.admin.nav') === '0' && !window.matchMedia('(max-width: 1000px)').matches) {
+          document.querySelector('.app-shell').classList.add('sidebar-collapsed');
+          $('menuBtn').setAttribute('aria-expanded', 'false');
         }
-    }).catch(function () { showLogin(''); });
+      } catch (e) { /* ignore */ }
+      var initial = window.location.hash.slice(1);
+      if (viewTitles[initial]) setView(initial);
+      refreshAll();
+      timer = setInterval(function () {
+        if (!document.hidden && $('auto').checked) refreshState();
+      }, 15000);
+    } else {
+      showLogin('');
+    }
+  }).catch(function () { showLogin(''); });
 
-    bind();
+  bind();
 })();
 </script>
 </body>
