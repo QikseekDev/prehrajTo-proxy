@@ -45,7 +45,8 @@ jobs:
       - name: Deploy via FTP (with retry)
         uses: nick-fields/retry@v3
         env:
-          FTP_HOST: ftp5.webzdarma.cz
+          FTP_HOST_PRIMARY: ftp5.webzdarma.cz
+          FTP_HOST_FALLBACK: ftp.webzdarma.cz
           FTP_USER: ${{ matrix.username }}
           # Heslo je uloženo v GitHub jako secret WZ_PASSWORD (stejné pro všechny 3 účty).
           # Pokud ho máte jako Actions variable, změňte na: ${{ vars.WZ_PASSWORD }}
@@ -57,17 +58,23 @@ jobs:
           shell: bash
           command: |
             set -euo pipefail
-            lftp -e "
-              set ftp:ssl-allow no;
-              set net:max-retries 2;
-              set net:reconnect-interval-base 5;
-              set net:timeout 30;
-              set net:idle 30;
-              set xfer:timeout 60;
-              set ftp:passive-mode on;
-              open -u \"$FTP_USER\",\"$FTP_PASS\" \"$FTP_HOST\";
-              lcd deploy;
-              mput -e index.php router.php;
-              ls -l index.php router.php;
-              bye
-            "
+            upload_to_host() {
+              local host="$1"
+              echo "Trying FTP host: $host"
+              lftp -e "
+                set cmd:fail-exit yes;
+                set ftp:ssl-allow no;
+                set net:max-retries 2;
+                set net:reconnect-interval-base 5;
+                set net:timeout 30;
+                set net:idle 30;
+                set xfer:timeout 60;
+                set ftp:passive-mode on;
+                open -u \"$FTP_USER\",\"$FTP_PASS\" \"$host\";
+                lcd deploy;
+                mput -e index.php router.php;
+                ls -l index.php router.php;
+                bye
+              "
+            }
+            upload_to_host "$FTP_HOST_PRIMARY" || upload_to_host "$FTP_HOST_FALLBACK"
