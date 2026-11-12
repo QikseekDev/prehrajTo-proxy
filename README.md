@@ -116,6 +116,66 @@ libovolná URL nenačítá, aby appka nebyla otevřený proxy pro cokoli.
 > část je neoficiální re-stream a může kdykoli přestat fungovat. Když kanál nenaskočí, je to vlastnost
 > zdroje, ne chyba přehrávače.
 
+## Volitelná rozšíření (metadata, EPG, Cloudflare)
+
+Nad základní provoz jde appku doplnit o čtyři volitelné vrstvy. Všechny jsou **vypnuté,
+dokud se nenastaví**, a každá při nedostupnosti zdroje tiše zmizí – UI se chová jako dřív.
+Co se z výzkumu integrovalo a co ne (a proč), je v [docs/EXPANSION.md](docs/EXPANSION.md).
+
+### ČSFD metadata
+
+Hodnocení, žánry a plakát k přehrávanému titulu. Zdroj je samostatná REST služba
+[node-csfd-api](https://github.com/bartholomej/node-csfd-api) (MIT, Docker image
+`bartholomej/node-csfd-api`) – ČSFD nemá veřejné API, takže scraping zůstává v té jedné
+službě a appka jen čte její JSON.
+
+```jsonc
+"Csfd": { "BaseUrl": "http://127.0.0.1:3000", "ApiKey": "", "Language": "cs" }
+```
+
+Na Azure jako `Csfd__BaseUrl`. Prázdné `BaseUrl` = metadata vypnutá.
+
+- `GET /api/meta?q=Matrix&y=1999` → hodnocení, žánry, plakát, odkaz na ČSFD
+- `GET /api/thumb?src=csfd&q=Matrix` → plakát (stejný tvar jako `src=itunes`)
+
+V přehrávači se pod názvem objeví řádek s hodnocením a odkazem na ČSFD; když se nic
+nenajde, řádek zůstane skrytý.
+
+### EPG pro Živě
+
+Programový průvodce („teď vysílá“) na dlaždicích kanálů. Server stáhne XMLTV, rozparsuje
+ho streamovaně a drží v paměti jen aktuální blok; do prohlížeče posílá jen `now`/`next`.
+
+```jsonc
+"Epg": {
+  "Urls": [
+    "https://epgshare01.online/epgshare01/epg_ripper_CZ1.xml.gz",
+    "https://epgshare01.online/epgshare01/epg_ripper_SK1.xml.gz"
+  ],
+  "TtlMinutes": 360
+}
+```
+
+Jde použít i vlastní výstup z [iptv-org/epg](https://github.com/iptv-org/epg). Kanály se
+párují podle `tvg-id` bez varianty (`CT1.cz@SD` → `CT1.cz`), případně podle názvu.
+Endpoint `GET /api/live/epg` vrací `configured: false`, když `Epg:Urls` chybí.
+
+### Náhradní loga kanálů
+
+Kde playlist nemá `tvg-logo`, dopočítá `/api/live` adresu z datové sady
+[tv-logo/tv-logos](https://github.com/tv-logo/tv-logos). Je to odhad: iniciály zůstávají
+pod obrázkem, takže neexistující soubor dlaždici nerozbije.
+
+### FlareSolverr pro PHP proxy
+
+Když zdroj odpoví Cloudflare výzvou (403/503 nebo „Just a moment“), zkusí PHP proxy stejnou
+stránku ještě jednou přes [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr).
+Primární cesta se nemění a limit 429 se neopakuje.
+
+```
+FLARESOLVERR_URL=http://127.0.0.1:8191   # nenastavené = fallback vypnutý
+```
+
 ## Limity a ochrana proti scrapingu
 
 Appka je veřejná a bez přihlášení, takže `/api/*` má dvě vrstvy ochrany (obojí v `Program.cs`):

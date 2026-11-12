@@ -20,6 +20,7 @@
         const liveError = document.getElementById('liveError');
         const liveBtn = document.getElementById('liveBtn');
         const nowPlaying = document.getElementById('nowPlaying');
+        const csfdMeta = document.getElementById('csfdMeta');
         const dlBtn = document.getElementById('dlBtn');
         const proxyBtn = document.getElementById('proxyBtn');
         const subtitleBar = document.getElementById('subtitleBar');
@@ -2204,6 +2205,9 @@
         // stránka nenačítala 400 kB navíc.
         let liveChannels = [];
         let liveShown = 0;
+        // EPG (programový průvodce) k dlaždicím: mapa "id:klíč" / "n:klíč" -> { now, next }.
+        let liveEpg = null;
+        let liveEpgPromise = null;
         let liveHls = null;
         let liveHlsPromise = null;
         let liveChannel = null;   // kanál, který právě hraje
@@ -2243,6 +2247,11 @@
                 liveChannels = Array.isArray(d.channels) ? d.channels : [];
                 if (!liveChannels.length) throw new Error('Seznam je prázdný');
                 renderLive(true);
+                // Průvodce se dotahuje zvlášť: dlaždice se ukážou hned a program se doplní,
+                // až dorazí. Když EPG není nastavené, zůstanou dlaždice bez programu.
+                liveEpg = null;
+                liveEpgPromise = null;
+                loadLiveEpg();
             } catch (e) {
                 liveChannels = [];
                 liveState.className = 'results-state show error';
@@ -2252,6 +2261,58 @@
 
         // Seznamy jako USA mají přes tisíc kanálů - vykreslujeme po dávkách, ať se telefon nezadusí.
         const LIVE_PAGE = 300;
+
+        // Programový průvodce (EPG) k dlaždicím Živě. Server posílá "teď" a "následuje" pro
+        // každý kanál; klíč se počítá stejně jako TextNorm.Key v backendu, aby se kanál
+        // z playlistu ("CT1.cz@SD") spároval s programem ("CT1.cz" i "ČT1").
+        function epgKey(value) {
+            return String(value || '').split('@')[0]
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase().replace(/[^a-z0-9]+/g, '');
+        }
+
+        function epgEntryFor(channel) {
+            if (!liveEpg) return null;
+            const byId = epgKey(channel.id);
+            if (byId && liveEpg['id:' + byId]) return liveEpg['id:' + byId];
+            const byName = epgKey(channel.name);
+            return (byName && liveEpg['n:' + byName]) || null;
+        }
+
+        function epgTime(iso) {
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return '';
+            return d.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        async function loadLiveEpg() {
+            if (liveEpgPromise) return liveEpgPromise;
+            liveEpgPromise = (async () => {
+                try {
+                    const r = await fetch('/api/live/epg');
+                    const d = await r.json();
+                    // Nenastavené EPG není chyba - dlaždice se prostě vykreslí bez programu.
+                    if (!d.success || !Array.isArray(d.channels)) return;
+                    const map = {};
+                    for (const e of d.channels) {
+                        const entry = {
+                            name: e.name || '',
+                            now: e.now ? { title: e.now.title, start: e.now.start, stop: e.now.stop } : null,
+                            next: e.next ? { title: e.next.title, start: e.next.start } : null,
+                        };
+                        const idKey = epgKey(e.id);
+                        if (idKey) map['id:' + idKey] = entry;
+                        const nameKey = epgKey(e.name);
+                        if (nameKey) map['n:' + nameKey] = entry;
+                    }
+                    liveEpg = map;
+                    renderLive(false);
+                } catch (e) {
+                    console.debug('EPG není k dispozici:', e.message);
+                }
+            })();
+            return liveEpgPromise;
+        }
 
         function renderLive(reset) {
             if (reset) liveShown = LIVE_PAGE;
@@ -2271,19 +2332,27 @@
             liveState.innerHTML = items.length ? '' : '<span class="state-text">Takový kanál tu není. Zkus jiný název nebo jiný zdroj.</span>';
 
             const rest = Math.max(0, items.length - liveShown);
-            liveGrid.innerHTML = items.slice(0, liveShown).map(({ c, i }) => `
+            liveGrid.innerHTML = items.slice(0, liveShown).map(({ c, i }) => {
+                const epg = epgEntryFor(c);
+                return `
                 <button class="live-card" data-live="${i}" title="${escapeHtml(c.name)}">
                     <span class="lc-logo">${c.logo
                         ? `<img src="${escapeHtml(c.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
-                        : `<span class="lc-init">${escapeHtml(initials(c.name))}</span>`}</span>
+                        : ''}<span class="lc-init">${escapeHtml(initials(c.name))}</span></span>
                     <span class="lc-name">${escapeHtml(c.name)}</span>
+                    ${epg && epg.now
+                        ? `<span class="lc-now">${epgTime(epg.now.start)} ${escapeHtml(epg.now.title)}</span>`
+                        : epg && epg.next
+                            ? `<span class="lc-now next">od ${epgTime(epg.next.start)} ${escapeHtml(epg.next.title)}</span>`
+                            : ''}
                     ${(c.quality || (c.tags || []).length) ? `<span class="lc-badges">
                         ${c.quality ? `<span class="lc-badge q">${escapeHtml(c.quality)}</span>` : ''}
                         ${(c.tags || []).includes('geo') ? '<span class="lc-badge geo">geo blok</span>' : ''}
                         ${(c.tags || []).includes('not24') ? '<span class="lc-badge not24">ne 24/7</span>' : ''}
                     </span>` : ''}
                     ${c.group ? `<span class="lc-group">${escapeHtml(c.group)}</span>` : ''}
-                </button>`).join('')
+                </button>`;
+            }).join('')
                 + (rest ? `<button class="live-more" id="liveMore">Zobrazit další (${rest})</button>` : '');
         }
 
@@ -2426,6 +2495,39 @@
         function msSetState(state) {
             if (!msSupported) return;
             try { navigator.mediaSession.playbackState = state; } catch (e) {}
+        }
+
+        // Metadata titulu z ČSFD (volitelná integrace node-csfd-api). Když server nic
+        // nevrátí, řádek zůstane skrytý - přehrávač tím netrpí.
+        let metaFor = '';
+        async function loadMeta(title) {
+            if (!csfdMeta) return;
+            const clean = safeDecode(title || '')
+                .replace(/\s*\(\d{4}\)\s*$/, '')
+                .replace(/\s*\|.*$/, '')
+                .trim();
+            metaFor = clean;
+            csfdMeta.hidden = true;
+            csfdMeta.innerHTML = '';
+            if (clean.length < 2) return;
+            try {
+                const r = await fetch('/api/meta?q=' + encodeURIComponent(clean));
+                const d = await r.json();
+                // Odpověď mohla dorazit pozdě, kdy už hraje jiné video.
+                if (!d.success || !d.info || metaFor !== clean) return;
+                const m = d.info;
+                const parts = [];
+                if (m.rating) parts.push(`<span class="cm-rating">${escapeHtml(String(m.rating))} %</span>`);
+                const bits = [m.year, (m.genres || []).slice(0, 2).join(', '),
+                    m.ratingCount ? `${m.ratingCount} hodnocení` : ''].filter(Boolean);
+                if (bits.length) parts.push(`<span class="cm-info">${escapeHtml(bits.join(' · '))}</span>`);
+                if (m.url) parts.push(`<a class="cm-link" href="${escapeHtml(m.url)}" target="_blank" rel="noopener noreferrer">ČSFD ↗</a>`);
+                if (!parts.length) return;
+                csfdMeta.innerHTML = parts.join('');
+                csfdMeta.hidden = false;
+            } catch (e) {
+                console.debug('Metadata ČSFD nejsou k dispozici:', e.message);
+            }
         }
 
         function safeDecode(s) {
@@ -2781,6 +2883,7 @@
             showStatus('🔄 Načítám video...', 'loading');
             showSection('player');
             nowPlaying.textContent = safeDecode(title);
+            loadMeta(nowPlaying.textContent);
 
             try {
                 await loadAndPlay(prehrajtoUrl, nowPlaying.textContent, hideStatus);
@@ -2808,6 +2911,7 @@
                 await loadAndPlay(movie.url, movie.title, () => {
                     hideStatus();
                     nowPlaying.textContent = movie.title;
+                    loadMeta(movie.title);
                     showSection('player');
                 }, movie.thumbnail);
             } catch (error) {
@@ -2824,6 +2928,7 @@
             showStatus('🔄 Načítám video...', 'loading');
             showSection('player');
             nowPlaying.textContent = title;
+            loadMeta(title);
             loadAndPlay(url, title, hideStatus, (h && h.poster) || posterFor(title)).catch(error => {
                 console.error('Play error:', error);
                 showStatus(`❌ ${error.message || 'Video se nepodařilo načíst'}`, 'error');
