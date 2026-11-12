@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -103,6 +104,7 @@ builder.Services.AddMemoryCache();
 // Admin stav (flagy, bany, zdroje) + auth. Vše v Admin/AdminStore.cs; mění se za běhu,
 // zdroj pravdy pro token je ADMIN_TOKEN v prostředí, ne soubor v repu.
 builder.Services.AddSingleton<AdminStore>();
+builder.Services.AddSingleton<AdminTraffic>();
 
 // Proxy servery za běhu: panel je může měnit bez nasazení. Konfigurace (Prehraj:ProxyUrls)
 // je jen výchozí seznam, dokud panel proxy nezačne řídit.
@@ -258,6 +260,7 @@ app.UseForwardedHeaders();
 
 var adminStore = app.Services.GetRequiredService<AdminStore>();
 var proxyPool = app.Services.GetRequiredService<ProxyPool>();
+var traffic = app.Services.GetRequiredService<AdminTraffic>();
 
 // ------------------------------------------------------------------ vrata: údržba / vypnutí webu
 // Běží první, aby se zamčený nebo vypnutý web neprojevil ani statickými soubory. Admin panel
@@ -269,6 +272,28 @@ app.Use(async (ctx, next) =>
 {
     adminStore.TouchVisitor(ClientKey(ctx), ctx.Request.Headers.UserAgent.ToString(), ctx.Request.Path.Value);
     await next();
+});
+
+// Telemetrie provozu pro panel (jen veřejné /api, ne admin volání a statické soubory).
+app.Use(async (ctx, next) =>
+{
+    var path = ctx.Request.Path;
+    if (!path.StartsWithSegments("/api") || path.StartsWithSegments("/api/admin"))
+    {
+        await next();
+        return;
+    }
+
+    var started = Stopwatch.GetTimestamp();
+    try
+    {
+        await next();
+    }
+    finally
+    {
+        var ms = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        traffic.Record(ctx.Request.Method, path.Value ?? "/", ctx.Response.StatusCode, ms, ClientKey(ctx));
+    }
 });
 
 // ------------------------------------------------------------------ admin: bany, údržba, statistiky

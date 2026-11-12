@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -8,6 +10,7 @@ namespace Wflix.Admin;
 public sealed record LoginRequest(string? Password);
 public sealed record BanRequest(string? Kind, string? Target, int? Minutes, string? Reason);
 public sealed record UnbanRequest(string? Kind, string? Target);
+public sealed record BulkBanRequest(string? Text, int? Minutes, string? Reason);
 public sealed record PurgeRequest(string? Scope, bool? Proxies);
 public sealed record ProxyItem(string? Url, bool? Enabled, string? Note);
 public sealed record ProxiesRequest(List<ProxyItem>? Items, bool? Commit);
@@ -280,6 +283,110 @@ public static class AdminEndpoints
             });
         });
 
+        // ------------------------------------------------------------ provoz a nástroje
+        // Telemetrie z AdminTraffic: po minulách, nejpomalejší cesty a poslední požadavky.
+        secured.MapGet("/traffic", (HttpContext ctx, AdminTraffic telemetry) =>
+        {
+            var minutes = int.TryParse(ctx.Request.Query["minutes"], out var m) ? Math.Clamp(m, 5, 120) : 30;
+            return Results.Json(new { success = true, data = telemetry.Snapshot(minutes) });
+        });
+
+        // Co je na serveru špatně nastavené - jednoduché ano/ne kontroly bez volání
+        // do internetu, takže odpoví okamžitě i na pomalé lince.
+        secured.MapGet("/selftest", (ProxyPool pool) =>
+        {
+            var checks = new List<object>();
+            void Add(string name, bool ok, string detail) => checks.Add(new { name, ok, detail });
+
+            Add("Admin heslo", store.Enabled,
+                store.Enabled ? "ADMIN_PASSWORD je nastavené" : "chybí ADMIN_PASSWORD - panel ani zámek webu nefungují");
+
+            var writable = true;
+            var detail = store.StatePath;
+            try
+            {
+                var dir = Path.GetDirectoryName(store.StatePath)!;
+                Directory.CreateDirectory(dir);
+                var probe = Path.Combine(dir, ".write-test");
+                File.WriteAllText(probe, "ok");
+                File.Delete(probe);
+            }
+            catch (Exception ex)
+            {
+                writable = false;
+                detail = ex.GetType().Name + ": " + ex.Message;
+            }
+            Add("Zápis stavu", writable, detail);
+
+            Add("Purge token", store.PurgeToken != null,
+                store.PurgeToken != null ? "WFLIX_PURGE_TOKEN je nastavený" : "chybí WFLIX_PURGE_TOKEN - cache na PHP proxy zůstane");
+
+            var gh = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WFLIX_GITHUB_TOKEN"));
+            Add("Commit do repa", gh,
+                gh ? "WFLIX_GITHUB_TOKEN je nastavený" : "chybí WFLIX_GITHUB_TOKEN - proxy se uloží jen na serveru");
+
+            var proxies = pool.Current;
+            Add("Proxy servery", proxies.Length > 0,
+                proxies.Length > 0 ? proxies.Length + " v seznamu" : "žádná proxy - server volá zdroje přímo");
+
+            var auditSize = 0L;
+            try { if (File.Exists(store.AuditPath)) auditSize = new FileInfo(store.AuditPath).Length; } catch { /* ignore */ }
+            Add("Audit", true, store.AuditPath + " (" + (auditSize / 1024) + " kB)");
+
+            Add("Aktivní bany", true, store.Current.Bans.Count(b => b.Active) + " aktivních");
+
+            return Results.Json(new { success = true, at = DateTimeOffset.UtcNow, checks });
+        });
+
+        // Zkušební hledání přes vlastní /api/search - ukáže, který zdroj zlobí a jak
+        // dlouho trvá, aniž by se musel otevírat web v anonymním okně.
+        secured.MapGet("/search-test", async (HttpContext ctx, IHttpClientFactory f) =>
+        {
+            var query = (ctx.Request.Query["q"].ToString() ?? "").Trim();
+            if (query.Length < 2) return Results.BadRequest(new { success = false, error = "Zadej aspoň 2 znaky." });
+
+            var source = (ctx.Request.Query["source"].ToString() ?? "").Trim().ToLowerInvariant();
+            if (source is not ("prehrajto" or "sledujteto" or "bombuj")) source = "prehrajto";
+
+            var origin = ctx.Request.Scheme + "://" + ctx.Request.Host;
+            var started = Stopwatch.GetTimestamp();
+            using var res = await f.CreateClient("prehraj")
+                .GetAsync(origin + "/api/search?q=" + Uri.EscapeDataString(query) + "&source=" + source);
+            var body = await res.Content.ReadAsStringAsync();
+            var ms = (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+            var count = 0;
+            string? error = null;
+            var titles = new List<string>();
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("count", out var c) && c.ValueKind == JsonValueKind.Number) count = c.GetInt32();
+                if (root.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String) error = e.GetString();
+                if (root.TryGetProperty("movies", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                    foreach (var item in arr.EnumerateArray().Take(5))
+                        if (item.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String)
+                            titles.Add(t.GetString() ?? "");
+            }
+            catch (JsonException)
+            {
+                error = "Odpověď není JSON (HTTP " + (int)res.StatusCode + ").";
+            }
+
+            return Results.Json(new
+            {
+                success = true,
+                source,
+                query,
+                status = (int)res.StatusCode,
+                ms,
+                count,
+                titles,
+                error,
+            });
+        });
+
         secured.MapPost("/flags", (FlagsConfig body, HttpContext ctx) =>
         {
             if (body == null) return Results.BadRequest(new { success = false, error = "Chybí tělo." });
@@ -321,6 +428,75 @@ public static class AdminEndpoints
             var next = store.Ban(kind, target, minutes, reason, Actor(ctx));
             store.RecordAudit("ban", Actor(ctx), $"{kind} {target} na {minutes} min" + (reason.Length > 0 ? " (" + reason + ")" : ""));
             return Results.Json(new { success = true, state = next });
+        });
+
+        // Více banů naráz - vloží se seznam IP/cid (oddělené novým řádkem, čárkou
+        // nebo mezerou). Neplatné položky se vrátí ve skipped, ať je vidět, co se
+        // nepovedlo, místo tichého přeskočení.
+        secured.MapPost("/bans/bulk", (BulkBanRequest body, HttpContext ctx) =>
+        {
+            var minutes = Math.Clamp(body?.Minutes ?? 60, 1, 10080);
+            var reason = (body?.Reason ?? "").Trim();
+            if (reason.Length > 200) reason = reason[..200];
+
+            var parsed = new List<(string Kind, string Target)>();
+            var skipped = new List<object>();
+            var separators = new[] { '\n', '\r', ',', ';', ' ', '\t' };
+            foreach (var raw in (body?.Text ?? "").Split(separators, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var item = raw.Trim();
+                if (item.Length == 0 || item.StartsWith('#')) continue;
+
+                string kind;
+                if (System.Net.IPAddress.TryParse(item, out _)) kind = "ip";
+                else if (item.Length >= 8 && item.Length <= 80
+                         && item.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_')) kind = "cid";
+                else { skipped.Add(new { target = item, why = "není IP ani cid" }); continue; }
+
+                if (parsed.Any(p => p.Kind == kind && string.Equals(p.Target, item, StringComparison.OrdinalIgnoreCase))) continue;
+                parsed.Add((kind, item));
+            }
+
+            if (parsed.Count == 0)
+                return Results.BadRequest(new { success = false, error = "Nenašel jsem žádnou platnou IP ani cid.", skipped });
+            if (parsed.Count > 200)
+                return Results.BadRequest(new { success = false, error = "Najednou jde zablokovat nejvýš 200 položek.", skipped });
+
+            var next = store.BanMany(parsed, minutes, reason, Actor(ctx));
+            store.RecordAudit("ban-bulk", Actor(ctx), $"{parsed.Count} položek na {minutes} min");
+            return Results.Json(new
+            {
+                success = true,
+                added = parsed.Select(p => new { kind = p.Kind, target = p.Target }),
+                skipped,
+                state = next,
+            });
+        });
+
+        // Bany jako CSV - na předání nebo zálohu před hromadným zrušením.
+        secured.MapGet("/bans/export", () =>
+        {
+            var sb = new StringBuilder("kind,target,until,reason,created\n");
+            foreach (var b in store.Current.Bans)
+            {
+                sb.Append(b.Kind).Append(',')
+                  .Append(Csv(b.Target)).Append(',')
+                  .Append(b.Until.ToString("o", CultureInfo.InvariantCulture)).Append(',')
+                  .Append(Csv(b.Reason)).Append(',')
+                  .Append(b.CreatedAt.ToString("o", CultureInfo.InvariantCulture)).Append('\n');
+            }
+            return Results.File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", "wflix-bany.csv");
+        });
+
+        // Celý stav (flagy, zdroje, bany, proxy) jako JSON - záloha před experimenty.
+        secured.MapGet("/export/state", () =>
+        {
+            var json = JsonSerializer.Serialize(store.Current, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            });
+            return Results.File(Encoding.UTF8.GetBytes(json), "application/json", "wflix-state.json");
         });
 
         secured.MapPost("/bans/remove", (UnbanRequest body, HttpContext ctx) =>
@@ -541,6 +717,11 @@ public static class AdminEndpoints
     }
 
     private static string ClientIp(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    private static string Csv(string value) =>
+        value.Contains(',') || value.Contains('"') || value.Contains('\n')
+            ? "\"" + value.Replace("\"", "\"\"") + "\""
+            : value;
 
     private static string Actor(HttpContext ctx) => ClientIp(ctx);
 

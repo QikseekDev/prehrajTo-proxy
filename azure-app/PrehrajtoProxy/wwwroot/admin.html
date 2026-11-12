@@ -285,6 +285,29 @@
   .purge-grid { display: flex; gap: 7px; flex-wrap: wrap; }
   .empty { color: var(--muted-2); font-size: 12.5px; padding: 10px 0; }
 
+  /* ------------------------------------------------ graf, nástroje, paleta */
+  .chart { display: flex; align-items: flex-end; gap: 2px; height: 108px; margin-top: 14px; border-bottom: 1px solid var(--line-soft); padding-bottom: 1px; }
+  .chart i { flex: 1; background: #24303f; border-radius: 1.5px 1.5px 0 0; min-height: 2px; }
+  .chart i.on { background: #5a6a85; }
+  .chart i.err { background: var(--red); }
+  .chart-x { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted-2); margin-top: 5px; font-variant-numeric: tabular-nums; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .toolbar select, .toolbar input { width: auto; }
+  .export-list { display: grid; gap: 8px; }
+  .export-list a { display: flex; justify-content: space-between; gap: 12px; align-items: center; border: 1px solid var(--line-soft); border-radius: 9px; padding: 9px 12px; color: inherit; text-decoration: none; background: #0f141d; font-size: 12.5px; }
+  .export-list a:hover { border-color: #3a4a60; background: #121924; }
+  .export-list .muted { font-size: 11.5px; }
+  .palette { position: fixed; inset: 0; z-index: 60; background: rgba(4,7,11,.62); display: none; padding: 12vh 16px 16px; }
+  .palette.open { display: block; }
+  .palette-box { max-width: 520px; margin: 0 auto; background: #0f141d; border: 1px solid #2b3646; border-radius: 12px; box-shadow: 0 24px 60px rgba(0,0,0,.5); overflow: hidden; }
+  .palette-box input { border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; padding: 13px 15px; font-size: 14px; background: transparent; }
+  .palette-box input:focus { box-shadow: none; }
+  .palette-list { max-height: 46vh; overflow: auto; }
+  .palette-item { display: block; width: 100%; text-align: left; border: 0; border-radius: 0; background: transparent; padding: 10px 15px; font-size: 13px; }
+  .palette-item.sel { background: #182130; }
+  .palette-item small { color: var(--muted-2); font-size: 11px; display: block; margin-top: 2px; }
+  .kbd { border: 1px solid #2b3646; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; font-size: 10.5px; color: var(--muted); }
+
   /* ------------------------------------------------ responsive */
   .scrim { display: none; }
   @media (max-width: 1000px) {
@@ -349,6 +372,7 @@
       <nav class="nav" id="nav">
         <div class="nav-label">Přehled</div>
         <button class="nav-btn active" data-view="overview">Stav a diagnostika</button>
+        <button class="nav-btn" data-view="traffic">Provoz a latence</button>
         <div class="nav-label">Konfigurace</div>
         <button class="nav-btn" data-view="flags">Vypínače</button>
         <button class="nav-btn" data-view="sources">Zdroje</button>
@@ -358,6 +382,8 @@
         <button class="nav-btn" data-view="visitors">Návštěvníci<span class="count" id="navVisitors"></span></button>
         <button class="nav-btn" data-view="bans">Bany a aktivita<span class="count" id="navBans"></span></button>
         <button class="nav-btn" data-view="audit">Audit</button>
+        <div class="nav-label">Nástroje</div>
+        <button class="nav-btn" data-view="tools">Testy a dávkové akce</button>
       </nav>
       <div class="sidebar-foot">Změny se ukládají na server. Kritické akce vyžadují potvrzení.</div>
     </aside>
@@ -376,9 +402,16 @@
         </div>
         <span class="spacer"></span>
         <div class="top-actions">
-          <label class="check" style="padding:0;font-size:12px;gap:6px" title="Obnoví stav každých 15 s">
-            <input type="checkbox" id="auto" checked> <span>auto</span>
+          <label class="check" style="padding:0;font-size:12px;gap:6px" title="Jak často se má stav sám obnovovat">
+            <span>auto</span>
+            <select id="autoSel" style="width:auto;padding:4px 6px;font-size:12px">
+              <option value="0">vyp</option>
+              <option value="15" selected>15 s</option>
+              <option value="60">60 s</option>
+              <option value="300">5 min</option>
+            </select>
           </label>
+          <button id="paletteBtn" class="small ghost" title="Rychlé hledání (Ctrl+K)">Hledat <span class="kbd">Ctrl K</span></button>
           <button id="refreshBtn" class="small">Obnovit</button>
           <button id="logoutBtn" class="small ghost">Odhlásit</button>
         </div>
@@ -408,6 +441,15 @@
                 <span class="muted" id="testInfo"></span>
               </div>
               <div id="checks" class="mt"></div>
+            </div>
+            <div class="card">
+              <h2>Kontrola nastavení serveru</h2>
+              <div class="sub">Ověřuje proměnné prostředí a zápis stavu. Běží lokálně, na internet nechodí.</div>
+              <div class="row" style="margin-top:0">
+                <button id="selfTestBtn">Spustit kontrolu</button>
+                <span class="muted" id="selfTestInfo"></span>
+              </div>
+              <div id="selfTest" class="mt"></div>
             </div>
           </div>
         </section>
@@ -583,8 +625,14 @@
               <div class="row"><button id="addBan" class="primary">Zablokovat</button></div>
             </div>
             <div class="card">
-              <h2>Aktivní bany</h2>
-              <div class="sub">Prošlé záznamy se odstraňují při další změně.</div>
+              <div class="card-head" style="padding:0">
+                <h2>Aktivní bany</h2>
+                <div class="sub">Prošlé záznamy se odstraňují při další změně. Ban platí na celý web, panel zůstává dostupný.</div>
+              </div>
+              <div class="row" style="margin-top:0;margin-bottom:12px">
+                <button id="clearBans" class="small ghost">Zrušit všechny aktivní</button>
+                <span class="muted" id="bansInfo"></span>
+              </div>
               <div id="bans"></div>
             </div>
             <div class="card">
@@ -604,13 +652,118 @@
             <div class="card">
               <h2>Záznamy</h2>
               <div class="sub">Každá změna z panelu (i neúspěšné přihlášení) se zapisuje do <span class="mono">audit.jsonl</span> vedle stavu.</div>
-              <div class="row" style="margin-top:0;margin-bottom:12px"><button id="auditExport" class="small">Stáhnout celý audit</button></div>
+              <div class="toolbar" style="margin-bottom:12px">
+                <input id="auditFilter" type="text" placeholder="Filtrovat podle akce, kdo, detail…" style="max-width:300px">
+                <button id="auditExport" class="small">Stáhnout celý audit</button>
+              </div>
               <div id="audit"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-traffic" class="view">
+          <div class="view-head">
+            <h1>Provoz a latence</h1>
+            <p>Co se děje na veřejném <span class="mono">/api</span>: požadavky po minutách, nejpomalejší cesty a poslední volání. Data jsou v paměti procesu.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h2>Požadavky po minutách</h2>
+              <div class="sub">Šedý sloupec = běžný provoz, červený = v minutě byla chyba 5xx. Jeden sloupec je jedna minuta.</div>
+              <div class="toolbar">
+                <label class="inline" style="gap:8px"><span class="muted">Okno</span>
+                  <select id="trafficWindow">
+                    <option value="15">15 min</option>
+                    <option value="30" selected>30 min</option>
+                    <option value="60">60 min</option>
+                    <option value="120">120 min</option>
+                  </select>
+                </label>
+                <button id="trafficRefresh" class="small">Obnovit</button>
+              </div>
+              <div class="stats mt" id="trafficKpi"></div>
+              <div class="chart" id="trafficChart"></div>
+              <div class="chart-x"><span id="trafficFrom">–</span><span id="trafficTo">–</span></div>
+            </div>
+            <div class="card">
+              <h2>Nejpomalejší endpointy</h2>
+              <div class="sub">Průměrná doba odezvy. Cesty s jediným požadavkem se nepočítají.</div>
+              <div id="trafficSlow"></div>
+            </div>
+            <div class="card">
+              <h2>Nejvytíženější endpointy</h2>
+              <div class="sub">Počet požadavků, chybovost a průměrná odezva.</div>
+              <div id="trafficBusy"></div>
+            </div>
+            <div class="card pad-0">
+              <div class="card-head"><h2>Poslední požadavky</h2><div class="sub">Nejnovější veřejná volání <span class="mono">/api</span>.</div></div>
+              <div class="card-body" id="trafficRecent"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-tools" class="view">
+          <div class="view-head">
+            <h1>Testy a dávkové akce</h1>
+            <p>Zkušební hledání, hromadné bany a exporty. Všechno jde spustit bez otevírání webu v anonymním okně.</p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <h2>Zkušební hledání</h2>
+              <div class="sub">Zavolá skutečné <span class="mono">/api/search</span> zvoleného zdroje a změří, jak dlouho trvá a co vrátí.</div>
+              <div class="toolbar">
+                <input id="testQ" type="text" placeholder="např. matrix" style="max-width:260px">
+                <select id="testSource">
+                  <option value="prehrajto">prehraj.to</option>
+                  <option value="sledujteto">sledujteto.cz</option>
+                  <option value="bombuj">bombuj.si</option>
+                </select>
+                <button id="testRun" class="primary">Otestovat</button>
+              </div>
+              <div id="testOut" class="mt"></div>
+            </div>
+            <div class="card">
+              <h2>Hromadné bany</h2>
+              <div class="sub">Vlož seznam IP adres nebo cid, každou na nový řádek (jde i čárka či mezera). Maximálně 200 položek naráz.</div>
+              <textarea id="bulkText" rows="6" placeholder="203.0.113.9&#10;198.51.100.7&#10;cid-abc123"></textarea>
+              <div class="toolbar mt">
+                <label class="inline" style="gap:8px"><span class="muted">Minuty</span><input id="bulkMinutes" type="number" min="1" max="10080" value="1440" style="width:100px"></label>
+                <input id="bulkReason" type="text" maxlength="200" placeholder="důvod (nepovinné)" style="max-width:240px">
+                <button id="bulkRun" class="primary">Zablokovat vše</button>
+              </div>
+              <div id="bulkOut" class="mt"></div>
+            </div>
+            <div class="card">
+              <h2>Exporty a zálohy</h2>
+              <div class="sub">Aktuální stav jako JSON a přehledy jako CSV/NDJSON. Stahuje se přes přihlášenou session.</div>
+              <div class="export-list">
+                <a href="/api/admin/export/state"><span>Celý stav (flagy, zdroje, bany, proxy)<br><span class="muted">wflix-state.json – záloha před experimenty</span></span><span class="mono">JSON</span></a>
+                <a href="/api/admin/bans/export"><span>Bany<br><span class="muted">wflix-bany.csv – typ, cíl, do, důvod</span></span><span class="mono">CSV</span></a>
+                <a href="/api/admin/audit/export"><span>Audit<br><span class="muted">wflix-audit.jsonl – každá změna i neúspěšné přihlášení</span></span><span class="mono">NDJSON</span></a>
+                <a href="/api/admin/proxies/export"><span>Seznam proxy<br><span class="muted">proxy-servers.txt – to, co jde commitnout do repa</span></span><span class="mono">TXT</span></a>
+              </div>
+            </div>
+            <div class="card">
+              <h2>Rychlé akce</h2>
+              <div class="sub">To samé, co jde udělat jinde v panelu, ale na jednom místě.</div>
+              <div class="toolbar">
+                <button id="quickPurge" class="small">Pročistit cache</button>
+                <button id="quickTest" class="small">Otestovat zdroje a proxy</button>
+                <button id="quickUnlock" class="small">Odemknout si web na 30 min</button>
+                <button id="quickOpen" class="small ghost">Otevřít web</button>
+              </div>
             </div>
           </div>
         </section>
       </main>
     </div>
+  </div>
+</div>
+
+<div id="palette" class="palette">
+  <div class="palette-box">
+    <input id="paletteInput" type="text" placeholder="Skoč na sekci nebo spusť akci…" autocomplete="off">
+    <div id="paletteList" class="palette-list"></div>
   </div>
 </div>
 
@@ -631,7 +784,9 @@
     proxies: 'Proxy servery',
     visitors: 'Návštěvníci',
     bans: 'Bany a aktivita',
-    audit: 'Audit'
+    audit: 'Audit',
+    traffic: 'Provoz a latence',
+    tools: 'Testy a dávkové akce'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -677,6 +832,7 @@
     }
     closeSidebar();
     if (view === 'visitors') refreshVisitors();
+    if (view === 'traffic') refreshTraffic();
   }
 
   function openSidebar() {
@@ -772,9 +928,7 @@
       show('login', false);
       show('panel', true);
       refreshAll();
-      timer = setInterval(function () {
-        if (!document.hidden && $('auto').checked) refreshState();
-      }, 15000);
+      startTimer();
     }).catch(function (e) {
       $('loginMsg').textContent = e.message;
       $('loginMsg').className = 'msg err';
@@ -805,6 +959,19 @@
     refreshState();
     refreshAudit();
     loadProxies();
+    if (currentView === 'traffic') refreshTraffic();
+  }
+
+  // Obnovování podle volby v hlavičce. Vypnuto = jen ruční obnovení.
+  function startTimer() {
+    if (timer) { clearInterval(timer); timer = null; }
+    var seconds = parseInt($('autoSel').value, 10) || 0;
+    if (!seconds) return;
+    timer = setInterval(function () {
+      if (document.hidden) return;
+      refreshState();
+      if (currentView === 'traffic') refreshTraffic();
+    }, seconds * 1000);
   }
 
   function renderStatePill(s) {
@@ -886,8 +1053,18 @@
     list.forEach(function (v) {
       var tr = el('tr');
       if (v.banned) tr.className = 'off';
-      tr.append(el('td', 'mono', v.ip));
-      var loc = el('td');
+              var tdIp = el('td', 'mono');
+        tdIp.append(document.createTextNode(v.ip + ' '));
+        var copy = el('button', 'small ghost', 'Kopírovat');
+        copy.title = 'Zkopírovat IP';
+        copy.onclick = function () {
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v.ip);
+          else { var a = el('textarea'); a.value = v.ip; document.body.append(a); a.select(); document.execCommand('copy'); a.remove(); }
+          msg('IP zkopírována: ' + v.ip, true);
+        };
+        tdIp.append(copy);
+        tr.append(tdIp);
+        var loc = el('td');
       if (v.geoKnown) {
         loc.textContent = [v.country, v.city].filter(Boolean).join(' · ') || '–';
       } else {
@@ -1123,6 +1300,7 @@
     var active = bans.filter(function (b) { return new Date(b.until) > new Date(); });
     var expired = bans.length - active.length;
     $('navBans').textContent = active.length ? String(active.length) : '';
+    if ($('bansInfo')) $('bansInfo').textContent = active.length + ' aktivních' + (expired ? ' · ' + expired + ' prošlých' : '');
     if (!active.length) {
       box.append(el('div', 'empty', 'Žádný aktivní ban.' + (expired ? ' (' + expired + ' prošlých se uklidí při další změně)' : '')));
     } else {
@@ -1184,16 +1362,26 @@
     talk.append(wrap2);
   }
 
+  var auditEntries = [];
   function renderAudit(entries) {
+    auditEntries = entries || [];
     var box = $('audit');
     box.innerHTML = '';
-    if (!entries || !entries.length) { box.append(el('div', 'empty', 'Zatím žádné záznamy.')); return; }
+    var filter = ($('auditFilter') ? $('auditFilter').value : '').toLowerCase().trim();
+    var list = auditEntries.filter(function (e) {
+      if (!filter) return true;
+      return ((e.action || '') + ' ' + (e.actor || '') + ' ' + (e.details || '')).toLowerCase().indexOf(filter) !== -1;
+    });
+    if (!list.length) {
+      box.append(el('div', 'empty', auditEntries.length ? 'Filtru nic neodpovídá.' : 'Zatím žádné záznamy.'));
+      return;
+    }
     var wrap = el('div', 'table-wrap');
     var t = el('table');
     var head = el('tr');
     ['Kdy', 'Akce', 'Kdo', 'Detail'].forEach(function (h) { head.append(el('th', null, h)); });
     t.append(head);
-    entries.forEach(function (e) {
+    list.forEach(function (e) {
       var tr = el('tr');
       tr.append(el('td', null, fmtTime(e.at)));
       tr.append(el('td', null, e.action));
@@ -1246,13 +1434,67 @@
     $('refreshBtn').addEventListener('click', function () { refreshAll(); msg('Obnoveno.', true); });
     $('menuBtn').addEventListener('click', toggleSidebar);
     $('scrim').addEventListener('click', closeSidebar);
+    $('autoSel').addEventListener('change', startTimer);
+
+    $('auditFilter').addEventListener('input', function () { renderAudit(auditEntries); });
+
+    $('clearBans').addEventListener('click', function () {
+      var active = (state && state.state && state.state.bans ? state.state.bans : []).filter(function (b) { return new Date(b.until) > new Date(); });
+      if (!active.length) { msg('Žádný aktivní ban.', false); return; }
+      if (!confirm('Zrušit všechny aktivní bany (' + active.length + ')?')) return;
+      var btn = $('clearBans');
+      btn.disabled = true;
+      var done = 0;
+      active.forEach(function (b) {
+        api('/api/admin/bans/remove', { method: 'POST', body: { kind: b.kind, target: b.target } })
+          .catch(function () { })
+          .then(function () { done++; if (done === active.length) { btn.disabled = false; msg('Zrušeno ' + done + ' banů.', true); refreshAll(); } });
+      });
+    });
+
+    $('paletteBtn').addEventListener('click', openPalette);
+    $('palette').addEventListener('click', function (e) { if (e.target === $('palette')) closePalette(); });
+    $('paletteInput').addEventListener('input', function () { paletteIndex = 0; renderPalette(); });
+    $('paletteInput').addEventListener('keydown', function (e) {
+      var list = $('paletteList').options || [];
+      if (e.key === 'ArrowDown') { e.preventDefault(); paletteIndex = Math.min(paletteIndex + 1, Math.max(0, list.length - 1)); renderPalette(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); paletteIndex = Math.max(0, paletteIndex - 1); renderPalette(); }
+      else if (e.key === 'Enter') { e.preventDefault(); runPaletteSelection(); }
+      else if (e.key === 'Escape') { closePalette(); }
+    });
+
+    $('trafficWindow').addEventListener('change', refreshTraffic);
+    $('trafficRefresh').addEventListener('click', function () { refreshTraffic(); msg('Provoz obnoven.', true); });
+    $('selfTestBtn').addEventListener('click', refreshSelfTest);
+    $('testRun').addEventListener('click', runSearchTest);
+    $('testQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') runSearchTest(); });
+    $('bulkRun').addEventListener('click', runBulkBans);
+    $('quickPurge').addEventListener('click', function () { setView('cache'); });
+    $('quickTest').addEventListener('click', function () { setView('overview'); $('testBtn').click(); });
+    $('quickUnlock').addEventListener('click', function () { $('unlockSite').click(); });
+    $('quickOpen').addEventListener('click', function () { window.open('/', '_blank'); });
 
     Array.prototype.forEach.call(document.querySelectorAll('.nav-btn[data-view]'), function (b) {
       b.addEventListener('click', function () { setView(b.getAttribute('data-view')); });
     });
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeSidebar();
+      var tag = (e.target && e.target.tagName) || '';
+      var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(tag);
+
+      if (e.key === 'Escape') { closeSidebar(); closePalette(); return; }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); openPalette(); return; }
+      if (e.key === '/' && !typing) { e.preventDefault(); openPalette(); return; }
+      if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // Stiskni g a pak písmeno: g d = přehled, g t = provoz, g b = bany…
+      var now = Date.now();
+      if (e.key === 'g') { lastG = now; return; }
+      if (now - lastG < 800) {
+        var jump = { d: 'overview', t: 'traffic', f: 'flags', s: 'sources', c: 'cache', p: 'proxies', v: 'visitors', b: 'bans', a: 'audit', n: 'tools' };
+        var target = jump[e.key.toLowerCase()];
+        if (target) { lastG = 0; setView(target); }
+      }
     });
 
     $('saveFlags').addEventListener('click', function () {
@@ -1371,6 +1613,237 @@
     });
   }
 
+  // ------------------------------------------------------------ provoz a latence
+  function refreshTraffic() {
+    if (!$('trafficChart')) return Promise.resolve();
+    var win = $('trafficWindow').value || 30;
+    return api('/api/admin/traffic?minutes=' + encodeURIComponent(win)).then(function (d) {
+      renderTraffic(d.data);
+    }).catch(function (e) {
+      if (e.message !== 'Nejsi přihlášený.') msg(e.message, false);
+    });
+  }
+
+  function kpiRow(box, cells) {
+    box.innerHTML = '';
+    cells.forEach(function (c) {
+      var d = el('div', 'stat');
+      d.append(el('div', 'k', c[0]));
+      d.append(el('div', 'v', String(c[1] != null ? c[1] : '–')));
+      box.append(d);
+    });
+  }
+
+  function pathTable(box, rows, headers, map) {
+    box.innerHTML = '';
+    if (!rows || !rows.length) { box.append(el('div', 'empty', 'Zatím žádná data.')); return; }
+    var wrap = el('div', 'table-wrap');
+    var t = el('table');
+    var head = el('tr');
+    headers.forEach(function (h) { head.append(el('th', null, h)); });
+    t.append(head);
+    rows.forEach(function (r) {
+      var tr = el('tr');
+      map(r).forEach(function (cell) { tr.append(el('td', cell[1], String(cell[0]))); });
+      t.append(tr);
+    });
+    wrap.append(t);
+    box.append(wrap);
+  }
+
+  function renderTraffic(t) {
+    if (!t) return;
+    kpiRow($('trafficKpi'), [
+      ['Požadavky', t.totals.count],
+      ['Za minutu', t.totals.perMinute],
+      ['4xx', t.totals.clientErrors],
+      ['5xx', t.totals.serverErrors],
+      ['Ø odezva', t.totals.avgMs + ' ms']
+    ]);
+
+    var chart = $('trafficChart');
+    chart.innerHTML = '';
+    var max = 1;
+    t.buckets.forEach(function (b) { if (b.count > max) max = b.count; });
+    t.buckets.forEach(function (b) {
+      var bar = el('i');
+      bar.style.height = Math.max(2, Math.round(104 * b.count / max)) + 'px';
+      if (b.serverErrors) bar.className = 'err';
+      else if (b.count) bar.className = 'on';
+      bar.title = b.time + ' · ' + b.count + ' požadavků · ' + b.avgMs + ' ms'
+        + (b.clientErrors ? ' · 4xx ' + b.clientErrors : '')
+        + (b.serverErrors ? ' · 5xx ' + b.serverErrors : '');
+      chart.append(bar);
+    });
+    $('trafficFrom').textContent = t.buckets.length ? t.buckets[0].time : '–';
+    $('trafficTo').textContent = t.buckets.length ? t.buckets[t.buckets.length - 1].time : '–';
+
+    pathTable($('trafficSlow'), t.slowest, ['Cesta', 'Ø ms', 'Požadavků', 'Chyby'], function (r) {
+      return [[r.path, 'mono'], [r.avgMs, null], [r.count, null], [r.errors, r.errors ? 'bad' : null]];
+    });
+    pathTable($('trafficBusy'), t.busiest, ['Cesta', 'Požadavků', 'Ø ms', 'Chyby'], function (r) {
+      return [[r.path, 'mono'], [r.count, null], [r.avgMs, null], [r.errors, r.errors ? 'bad' : null]];
+    });
+
+    var box = $('trafficRecent');
+    box.innerHTML = '';
+    if (!t.recent.length) { box.append(el('div', 'empty', 'Zatím žádný provoz na veřejném /api.')); return; }
+    var wrap = el('div', 'table-wrap');
+    var tbl = el('table');
+    var head = el('tr');
+    ['Čas', 'Metoda', 'Cesta', 'Stav', 'ms', 'IP'].forEach(function (h) { head.append(el('th', null, h)); });
+    tbl.append(head);
+    t.recent.forEach(function (r) {
+      var tr = el('tr');
+      tr.append(el('td', 'mono', r.at));
+      tr.append(el('td', null, r.method));
+      tr.append(el('td', 'mono', r.path));
+      tr.append(el('td', r.status >= 500 ? 'bad' : (r.status >= 400 ? 'warn' : 'ok'), String(r.status)));
+      tr.append(el('td', null, String(r.ms)));
+      tr.append(el('td', 'mono', r.ip));
+      tbl.append(tr);
+    });
+    wrap.append(tbl);
+    box.append(wrap);
+  }
+
+  // ------------------------------------------------------------ kontrola nastavení
+  function refreshSelfTest() {
+    var btn = $('selfTestBtn');
+    btn.disabled = true;
+    return api('/api/admin/selftest').then(function (d) {
+      var checks = d.checks || [];
+      var ok = checks.filter(function (c) { return c.ok; }).length;
+      $('selfTestInfo').textContent = ok + ' / ' + checks.length + ' v pořádku';
+      var box = $('selfTest');
+      box.innerHTML = '';
+      var wrap = el('div', 'table-wrap');
+      var t = el('table');
+      var head = el('tr');
+      ['Kontrola', 'Stav', 'Detail'].forEach(function (h) { head.append(el('th', null, h)); });
+      t.append(head);
+      checks.forEach(function (c) {
+        var tr = el('tr');
+        tr.append(el('td', null, c.name));
+        tr.append(el('td', c.ok ? 'ok' : 'bad', c.ok ? 'ok' : 'chybí'));
+        tr.append(el('td', 'mono', c.detail || ''));
+        t.append(tr);
+      });
+      wrap.append(t);
+      box.append(wrap);
+    }).catch(function (e) { msg(e.message, false); }).then(function () { btn.disabled = false; });
+  }
+
+  // ------------------------------------------------------------ nástroje
+  function runSearchTest() {
+    var q = $('testQ').value.trim();
+    if (q.length < 2) { msg('Zadej aspoň 2 znaky.', false); return; }
+    var btn = $('testRun');
+    var out = $('testOut');
+    btn.disabled = true;
+    out.textContent = 'Hledám…';
+    api('/api/admin/search-test?q=' + encodeURIComponent(q) + '&source=' + encodeURIComponent($('testSource').value))
+      .then(function (d) {
+        out.innerHTML = '';
+        var kv = el('div', 'kv');
+        [['Zdroj', d.source], ['HTTP', d.status], ['Čas', d.ms + ' ms'], ['Výsledků', d.count]].forEach(function (p) {
+          var s = el('span');
+          s.append(document.createTextNode(p[0] + ' '));
+          s.append(el('b', null, String(p[1])));
+          kv.append(s);
+        });
+        out.append(kv);
+        if (d.error) out.append(el('div', 'bad mt', d.error));
+        if (d.titles && d.titles.length) {
+          var list = el('div', 'mt');
+          d.titles.forEach(function (title) { list.append(el('div', 'mono', title)); });
+          out.append(list);
+        } else if (!d.error) {
+          out.append(el('div', 'muted mt', 'Zdroj nevrátil žádný výsledek.'));
+        }
+      })
+      .catch(function (e) { out.textContent = ''; msg(e.message, false); })
+      .then(function () { btn.disabled = false; });
+  }
+
+  function runBulkBans() {
+    var text = $('bulkText').value.trim();
+    if (!text) { msg('Vlož aspoň jednu IP nebo cid.', false); return; }
+    var minutes = parseInt($('bulkMinutes').value, 10);
+    if (!(minutes >= 1 && minutes <= 10080)) { msg('Minuty musí být 1–10080.', false); return; }
+    var btn = $('bulkRun');
+    var out = $('bulkOut');
+    btn.disabled = true;
+    out.textContent = 'Ukládám…';
+    api('/api/admin/bans/bulk', {
+      method: 'POST',
+      body: { text: text, minutes: minutes, reason: $('bulkReason').value.trim() }
+    }).then(function (d) {
+      out.innerHTML = '';
+      out.append(el('div', 'ok', 'Zablokováno ' + ((d.added || []).length) + ' položek.'));
+      if ((d.skipped || []).length) {
+        out.append(el('div', 'warn mt', 'Přeskočeno ' + d.skipped.length + ':'));
+        d.skipped.forEach(function (s) { out.append(el('div', 'mono', s.target + ' – ' + s.why)); });
+      }
+      $('bulkText').value = '';
+      refreshAll();
+    }).catch(function (e) { out.textContent = ''; msg(e.message, false); })
+      .then(function () { btn.disabled = false; });
+  }
+
+  // ------------------------------------------------------------ paleta příkazů
+  var paletteIndex = 0;
+  var lastG = 0;
+  var paletteItems = [
+    { title: 'Stav a diagnostika', hint: 'přehled a metriky', run: function () { setView('overview'); } },
+    { title: 'Provoz a latence', hint: 'graf, poslední požadavky', run: function () { setView('traffic'); refreshTraffic(); } },
+    { title: 'Vypínače', hint: 'funkce a režimy dostupnosti', run: function () { setView('flags'); } },
+    { title: 'Zdroje', hint: 'prehrajto, sledujteto, bombuj', run: function () { setView('sources'); } },
+    { title: 'Cache', hint: 'pročištění', run: function () { setView('cache'); } },
+    { title: 'Proxy servery', hint: 'seznam a test', run: function () { setView('proxies'); } },
+    { title: 'Návštěvníci', hint: 'kdo je na webu', run: function () { setView('visitors'); } },
+    { title: 'Bany a aktivita', hint: 'blokování', run: function () { setView('bans'); } },
+    { title: 'Audit', hint: 'historie změn', run: function () { setView('audit'); } },
+    { title: 'Testy a dávkové akce', hint: 'hledání, hromadné bany, exporty', run: function () { setView('tools'); } },
+    { title: 'Spustit kontrolu nastavení', hint: 'akce', run: function () { setView('overview'); refreshSelfTest(); } },
+    { title: 'Otestovat zdroje a proxy', hint: 'akce', run: function () { setView('overview'); $('testBtn').click(); } },
+    { title: 'Odemknout si web na 30 min', hint: 'akce', run: function () { $('unlockSite').click(); } },
+    { title: 'Otevřít web', hint: 'akce', run: function () { window.open('/', '_blank'); } }
+  ];
+
+  function renderPalette() {
+    var q = ($('paletteInput').value || '').toLowerCase().trim();
+    var list = paletteItems.filter(function (i) {
+      return !q || (i.title + ' ' + (i.hint || '')).toLowerCase().indexOf(q) !== -1;
+    });
+    var box = $('paletteList');
+    box.innerHTML = '';
+    box.options = list;
+    if (!list.length) { paletteIndex = 0; box.append(el('div', 'empty', 'Nic nenalezeno.')); return; }
+    if (paletteIndex > list.length - 1) paletteIndex = list.length - 1;
+    list.forEach(function (item, i) {
+      var b = el('button', 'palette-item' + (i === paletteIndex ? ' sel' : ''));
+      b.type = 'button';
+      b.append(document.createTextNode(item.title));
+      if (item.hint) b.append(el('small', null, item.hint));
+      b.onclick = function () { closePalette(); item.run(); };
+      box.append(b);
+    });
+  }
+  function openPalette() {
+    $('palette').classList.add('open');
+    $('paletteInput').value = '';
+    paletteIndex = 0;
+    renderPalette();
+    setTimeout(function () { $('paletteInput').focus(); }, 20);
+  }
+  function closePalette() { $('palette').classList.remove('open'); }
+  function runPaletteSelection() {
+    var list = $('paletteList').options || [];
+    var item = list[paletteIndex];
+    if (item) { closePalette(); item.run(); }
+  }
+
   // ------------------------------------------------------------ start
   api('/api/admin/session').then(function (s) {
     adminEnabled = !!s.enabled;
@@ -1388,9 +1861,7 @@
       var initial = window.location.hash.slice(1);
       if (viewTitles[initial]) setView(initial);
       refreshAll();
-      timer = setInterval(function () {
-        if (!document.hidden && $('auto').checked) refreshState();
-      }, 15000);
+      startTimer();
     } else {
       showLogin('');
     }

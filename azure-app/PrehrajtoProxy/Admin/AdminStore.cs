@@ -490,6 +490,18 @@ public sealed class AdminStore
             });
         }, actor);
 
+    /// <summary>Více banů naráz - jeden zápis stavu, ne jeden na položku.</summary>
+    public AdminState BanMany(IEnumerable<(string Kind, string Target)> items, int minutes, string reason, string actor) =>
+        Update(s =>
+        {
+            var until = DateTimeOffset.UtcNow.AddMinutes(minutes);
+            foreach (var (kind, target) in items)
+            {
+                s.Bans.RemoveAll(b => b.Kind == kind && string.Equals(b.Target, target, StringComparison.OrdinalIgnoreCase));
+                s.Bans.Add(new BanEntry { Kind = kind, Target = target, Until = until, Reason = reason });
+            }
+        }, actor);
+
     public AdminState Unban(string kind, string target, string actor) =>
         Update(s => s.Bans.RemoveAll(b => b.Kind == kind && string.Equals(b.Target, target, StringComparison.OrdinalIgnoreCase)), actor);
 
