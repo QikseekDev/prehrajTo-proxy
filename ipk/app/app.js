@@ -657,7 +657,7 @@
     return '<button class="f card" type="button" data-idx="' + idx + '">'
       + '<span class="art">' + art + ph
       + (pct ? '<span class="progress"><i style="width:' + pct + '%"></i></span>' : '')
-      + (!isCont && rec.key ? '<span class="fav-del" role="button" aria-label="Odebrat z oblíbených" data-favdel="' + esc(rec.key) + '">×</span>' : '')
+      + (!isCont && rec.key ? '<span class="fav-del" role="button" aria-label="Odebrat z oblíbených" data-favdel="' + esc(rec.key) + '"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></span>' : '')
       + '</span>'
       + '<span class="cap"><span class="t">' + esc(rec.title || 'Video') + '</span>'
       + (note ? '<span class="y">' + esc(note) + '</span>' : '') + '</span>'
