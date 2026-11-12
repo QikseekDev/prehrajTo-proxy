@@ -372,7 +372,7 @@ app.UseRateLimiter();
 // URL a prohlížeč si nikdy nedrží starý skript. Ruční přepisování ?v= v HTML už není potřeba.
 var webRoot = app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
 var assetVersions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-foreach (var asset in new[] { "script.js", "styles.css", "intro.css" })
+foreach (var asset in new[] { "script.js", "styles.css", "intro.css", "fonts.css" })
 {
     try
     {
@@ -399,7 +399,7 @@ app.Use(async (ctx, next) =>
     try { html = await File.ReadAllTextAsync(Path.Combine(webRoot, "index.html"), ctx.RequestAborted); }
     catch { await next(); return; }
 
-    html = Regex.Replace(html, "(?<attr>href|src)=\"(?<name>script\\.js|styles\\.css|intro\\.css)\\?v=[^\"]*\"",
+    html = Regex.Replace(html, "(?<attr>href|src)=\"(?<name>script\\.js|styles\\.css|intro\\.css|fonts\\.css)\\?v=[^\"]*\"",
         m => m.Groups["attr"].Value + "=\"" + m.Groups["name"].Value + "?v="
              + (assetVersions.TryGetValue(m.Groups["name"].Value, out var v) ? v : "1") + "\"");
 

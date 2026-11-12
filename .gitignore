@@ -39,3 +39,6 @@ logs/
 local.properties
 apk/.gradle/
 apk/**/build/
+
+# Lokální náhledy a jednorázové skripty
+.tmp/

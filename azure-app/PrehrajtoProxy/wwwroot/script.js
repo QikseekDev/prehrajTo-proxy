@@ -875,7 +875,7 @@
                 ${rank ? `<span class="rank">${rank}</span>` : ''}
                 <span class="art" style="background:${posterGradient(m.t)}">
                     <img class="thumb${m.img ? ' portrait' : ''}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
-                    <span class="emoji" aria-hidden="true">${escapeHtml(monogram(m.t))}</span>
+                    <span class="mark" aria-hidden="true">${escapeHtml(monogram(m.t))}</span>
                     <span class="shade"></span>
                     <span class="play">${ICON.play}</span>
                     <span class="p-title">${escapeHtml(m.t)}</span>
@@ -908,7 +908,7 @@
             const m = CATALOG[(day + heroOffset) % CATALOG.length];
             document.getElementById('hero').innerHTML = `
                 <div class="hero" style="--hero-bg:${posterGradient(m.t)}">
-                    <div class="hero-emoji" aria-hidden="true">${escapeHtml(monogram(m.t))}</div>
+                    <div class="hero-mark" aria-hidden="true">${escapeHtml(monogram(m.t))}</div>
                     <div class="hero-content">
                         <div class="hero-tag"><span class="w">W</span> TIP DNE</div>
                         <h2>${escapeHtml(m.t)}</h2>
@@ -1000,6 +1000,16 @@
             if (item) openFromCatalog(item.dataset.q);
         });
 
+
+        // Aktivní položka lišty pro čtečky i pro podtržení (aria-current).
+        document.addEventListener('click', (e) => {
+            const link = e.target && e.target.closest ? e.target.closest('.nav-links .nav-link') : null;
+            if (!link) return;
+            document.querySelectorAll('.nav-links .nav-link').forEach(el => {
+                if (el === link) el.setAttribute('aria-current', 'page');
+                else el.removeAttribute('aria-current');
+            });
+        }, true);
         // Záložka je <span role="button"> (karta je <button>/<a>), takže Enter a mezerník
         // musí obsluhovat sama - prohlížeč je u ne-tlačítek sám neaktivuje.
         document.addEventListener('keydown', (e) => {
@@ -3362,7 +3372,7 @@
             const img = it.poster || '';
             const art = img
                 ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(img)}" onerror="this.remove()">`
-                : '<span class="emoji" aria-hidden="true">' + escapeHtml(monogram(it.title)) + '</span>';
+                : '<span class="mark" aria-hidden="true">' + escapeHtml(monogram(it.title)) + '</span>';
             const pct = (isCont && it._d > 0) ? Math.max(0, Math.min(100, (it._t / it._d) * 100)) : 0;
             const prog = pct ? `<span class="progress"><i style="width:${pct}%"></i></span>` : '';
             const meta = isCont
