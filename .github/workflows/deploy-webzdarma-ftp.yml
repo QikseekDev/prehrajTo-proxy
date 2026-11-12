@@ -20,9 +20,10 @@ jobs:
   deploy:
     name: Upload to ${{ matrix.username }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - username: vokounvojta03-3385.wz.cz
@@ -32,23 +33,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+
       - name: Prepare deploy payload
         run: |
           mkdir -p deploy
           cp index.php router.php deploy/
           ls -la deploy
 
-      - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ftp5.webzdarma.cz
-          port: 21
-          username: ${{ matrix.username }}
+      - name: Deploy via FTP (with retry)
+        uses: nick-fields/retry@v3
+        env:
+          FTP_HOST: ftp5.webzdarma.cz
+          FTP_USER: ${{ matrix.username }}
           # Heslo je uloženo v GitHub jako secret WZ_PASSWORD (stejné pro všechny 3 účty).
           # Pokud ho máte jako Actions variable, změňte na: ${{ vars.WZ_PASSWORD }}
-          password: ${{ secrets.WZ_PASSWORD }}
-          protocol: ftp
-          local-dir: ./deploy/
-          server-dir: ./
-          dangerous-clean-slate: false
-          log-level: minimal
+          FTP_PASS: ${{ secrets.WZ_PASSWORD }}
+        with:
+          timeout_minutes: 8
+          max_attempts: 4
+          retry_wait_seconds: 25
+          shell: bash
+          command: |
+            set -euo pipefail
+            lftp -e "
+              set ftp:ssl-allow no;
+              set net:max-retries 2;
+              set net:reconnect-interval-base 5;
+              set net:timeout 30;
+              set net:idle 30;
+              set xfer:timeout 60;
+              set ftp:passive-mode on;
+              open -u \"$FTP_USER\",\"$FTP_PASS\" \"$FTP_HOST\";
+              lcd deploy;
+              mput -e index.php router.php;
+              ls -l index.php router.php;
+              bye
+            "
