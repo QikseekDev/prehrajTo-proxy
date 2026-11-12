@@ -144,7 +144,7 @@ body.touch .f:focus:not(.search-input):not(.p-bar){outline:none}
    ========================================================================== */
 .hero{position:relative;min-height:50vh;padding:3.4rem var(--gutter) 2.4rem;margin-bottom:1.4rem;border-bottom:1px solid var(--line);overflow:hidden;isolation:isolate}
 .hero-art{position:absolute;inset:0;background-size:cover;background-position:center 25%;opacity:.28;filter:blur(26px) saturate(1.1) brightness(.55);transform:scale(1.08)}
-.hero-scrim{display:block;position:absolute;inset:0;background:linear-gradient(90deg,rgba(11,12,15,.94) 0%,rgba(11,12,15,.72) 46%,rgba(11,12,15,.35) 100%),linear-gradient(180deg,rgba(11,12,15,.15) 0%,rgba(11,12,15,.55) 100%)}
+.hero-scrim{display:block;position:absolute;inset:0;background:linear-gradient(90deg,rgba(14,14,16,.94) 0%,rgba(14,14,16,.72) 46%,rgba(14,14,16,.35) 100%),linear-gradient(180deg,rgba(14,14,16,.15) 0%,rgba(14,14,16,.55) 100%)}
 .hero-poster{
   position:absolute;right:var(--gutter);top:50%;transform:translateY(-50%);
   width:14rem;aspect-ratio:2/3;border-radius:var(--radius);overflow:hidden;background:var(--surface);
@@ -199,9 +199,9 @@ body.touch .card:active .art{transform:scale(.985)}
 .card .y{display:block;margin-top:.18rem;font-size:.76rem;color:var(--muted)}
 .card .badge{
   position:absolute;top:.45rem;left:.45rem;padding:.12rem .45rem;border-radius:3px;
-  background:rgba(11,12,15,.82);font-size:.68rem;font-weight:700;letter-spacing:.02em;
+  background:rgba(14,14,16,.82);font-size:.68rem;font-weight:700;letter-spacing:.02em;
 }
-.card .badge.done{background:#fff;color:#0b0c0f}
+.card .badge.done{background:#fff;color:#0e0e10}
 .card .progress{position:absolute;left:0;right:0;bottom:0;height:.2rem;background:rgba(255,255,255,.28)}
 .card .progress i{display:block;height:100%;background:var(--accent)}
 .card.wide{width:15rem}
@@ -284,7 +284,7 @@ body.touch .ch:active{transform:scale(.985)}
   position:absolute;top:0;right:0;bottom:0;left:0;background-size:cover;background-position:center 25%;
   opacity:.35;filter:blur(40px) brightness(.5) saturate(.7);transform:scale(1.2);
 }
-.detail-bg::after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:linear-gradient(0deg,var(--bg) 8%,rgba(11,12,15,.5) 70%,rgba(11,12,15,.7))}
+.detail-bg::after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:linear-gradient(0deg,var(--bg) 8%,rgba(14,14,16,.5) 70%,rgba(14,14,16,.7))}
 .detail-body{position:relative;display:flex;gap:2rem;align-items:flex-end;padding:2.4rem var(--gutter) 3rem;max-width:78rem;width:100%}
 .detail-poster{width:12rem;aspect-ratio:2/3;object-fit:cover;border-radius:var(--radius);flex:0 0 auto;background:var(--surface)}
 .detail-info{flex:1;min-width:0}
@@ -303,7 +303,7 @@ body.touch .ch:active{transform:scale(.985)}
   position:absolute;top:0;right:0;bottom:0;left:0;background-size:cover;background-position:center 25%;
   opacity:.28;filter:blur(40px) brightness(.5) saturate(.7);transform:scale(1.2);
 }
-.series-bg::after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:linear-gradient(0deg,var(--bg) 10%,rgba(11,12,15,.6) 75%)}
+.series-bg::after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:linear-gradient(0deg,var(--bg) 10%,rgba(14,14,16,.6) 75%)}
 .series-panel{
   position:relative;display:flex;flex-direction:column;min-height:0;
   width:min(80rem,100%);max-height:100%;padding:2.2rem var(--gutter) 2rem;
@@ -406,7 +406,7 @@ body.touch .ep-src{font-size:.78rem;max-width:100%}
 }
 .key:hover{background:var(--surface-3)}
 .key.wide{min-width:6.5rem}
-.key.gold{background:#fff;color:#0b0c0f}
+.key.gold{background:#fff;color:#0e0e10}
 
 /* ==========================================================================
    Toast + načítání
@@ -447,7 +447,7 @@ body.touch .navbtn .ico{font-size:1.15rem}
 body.touch .main{padding-bottom:0;padding-top:env(safe-area-inset-top);scroll-behavior:auto}
 body.touch .hero{min-height:auto;padding:1.8rem var(--gutter) 1.5rem;margin-bottom:1rem;border-bottom-color:rgba(255,255,255,.05)}
 body.touch .hero-art{opacity:.42;filter:blur(18px) saturate(1.15) brightness(.5)}
-body.touch .hero-scrim{background:linear-gradient(180deg,rgba(11,12,15,.18) 0%,rgba(11,12,15,.62) 55%,rgba(11,12,15,.96) 100%)}
+body.touch .hero-scrim{background:linear-gradient(180deg,rgba(14,14,16,.18) 0%,rgba(14,14,16,.62) 55%,rgba(14,14,16,.96) 100%)}
 body.touch .hero-inner{padding-top:4.2rem;max-width:none}
 body.touch .hero h1{font-size:1.85rem}
 body.touch .hero-meta{margin-bottom:1.1rem}
@@ -517,7 +517,7 @@ body:not(.touch) .search-side{position:sticky;top:1.6rem;flex:0 0 24rem;margin-l
 .skey{height:3.2rem;border-radius:8px;background:var(--surface-2);font-size:1.2rem;font-weight:700;text-transform:uppercase}
 .skey:hover{background:var(--surface-3)}
 .skey.wide{grid-column:span 2;font-size:.95rem;text-transform:none}
-.skey.full{grid-column:span 6;background:#fff;color:#0b0c0f;font-size:1.05rem;text-transform:none}
+.skey.full{grid-column:span 6;background:#fff;color:#0e0e10;font-size:1.05rem;text-transform:none}
 .search-main{flex:1;min-width:0}
 body:not(.touch) .search-main #searchGrid{grid-template-columns:repeat(auto-fill,minmax(12rem,1fr));padding:.2rem var(--gutter) 2rem 0}
 body:not(.touch) .search-main .state{padding-left:0}
@@ -567,7 +567,7 @@ body:not(.touch) .search-main .state{padding-left:0}
 .p-next[hidden]{display:none !important}
 .p-next-head{font-size:1.9rem;font-weight:800;letter-spacing:-.02em;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.75);margin-bottom:.15rem}
 .p-next-media{position:relative;display:block;width:100%;aspect-ratio:16/9;border-radius:6px;overflow:hidden;background:rgba(255,255,255,.1);border:0;padding:0;cursor:pointer;outline:none}
-.p-next-media:focus-visible{box-shadow:0 0 0 3px #fff}
+.p-next-media:focus,.p-next-media:focus-visible{box-shadow:0 0 0 3px #fff}
 .p-next-img{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;object-fit:cover;display:block}
 .p-next-img[hidden]{display:none !important}
 .p-next-ph{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.85)}
@@ -609,3 +609,64 @@ body.intro-lock { overflow: hidden; }
 .webos .series-bg,.webos .player-bg{filter:blur(16px) brightness(.5) saturate(.7) !important;opacity:.18 !important}
 .webos .card,.webos .row-card,.webos .tile{transition:none}
 .webos .toast{backdrop-filter:none}
+
+
+/* ==========================================================================
+   Kompatibilita se starším Chromiem (webOS TV 6.x = Chromium 79)
+   Flex gap přišel v 84, aspect-ratio v 88, inset v 87. Kde to jde, je
+   náhrada v @supports; flex gap se pozná až v JS (třída no-flex-gap),
+   protože @supports (gap) je pravdivé i pro mřížku.
+   ========================================================================== */
+@supports not (aspect-ratio: 1 / 1){
+  .hero-poster{height:21rem}
+  .detail-poster{height:18rem}
+  .series-poster{height:12.6rem}
+  .p-next-media{height:0;padding-top:56.25%}
+}
+@supports not (inset: 0){
+  .hero-art,.hero-scrim{top:0;right:0;bottom:0;left:0}
+}
+
+html.no-flex-gap .btn > * + *{margin-left:.55rem}
+html.no-flex-gap .setup-row > * + *{margin-left:.7rem}
+html.no-flex-gap .rail > * + *{margin-top:.25rem}
+html.no-flex-gap body:not(.touch) .rail > * + *{margin-top:.3rem}
+html.no-flex-gap .navbtn .lbl{margin-left:.8rem}
+html.no-flex-gap body:not(.touch) .navbtn .lbl{margin-left:1rem}
+html.no-flex-gap body.touch .navbtn .lbl{margin-left:0;margin-top:.18rem}
+html.no-flex-gap .hero-actions > * + *{margin-left:.7rem}
+html.no-flex-gap .row-head > * + *{margin-left:.8rem}
+html.no-flex-gap .row-scroll > * + *{margin-left:1rem}
+html.no-flex-gap .page-head > * + *{margin-left:1.4rem}
+html.no-flex-gap body.touch .page-head > * + *{margin-left:.8rem}
+html.no-flex-gap .searchbar > * + *{margin-left:.6rem}
+html.no-flex-gap .chips > * + *{margin-left:.45rem}
+html.no-flex-gap .ch .logo + .name{margin-top:.6rem}
+html.no-flex-gap .ch .badges > * + *{margin-left:.3rem}
+html.no-flex-gap .set-row > * + *{margin-left:1rem}
+html.no-flex-gap .set-actions > * + *{margin-left:.5rem}
+html.no-flex-gap .detail-body > * + *{margin-left:2rem}
+html.no-flex-gap body.touch .detail-body > * + *{margin-left:1rem}
+html.no-flex-gap .detail-actions > * + *{margin-left:.6rem}
+html.no-flex-gap .series-head > * + *{margin-left:1.6rem}
+html.no-flex-gap body.touch .series-head > * + *{margin-left:1rem}
+html.no-flex-gap .season-head > * + *{margin-left:.7rem}
+html.no-flex-gap .ep-row > * + *{margin-left:.9rem}
+html.no-flex-gap .ep-srcs > * + *{margin-left:.4rem}
+html.no-flex-gap .p-top > * + *{margin-left:1rem}
+html.no-flex-gap .p-live-badge > * + *{margin-left:.45rem}
+html.no-flex-gap .p-btn > * + *{margin-left:.4rem}
+html.no-flex-gap .p-row > * + *{margin-left:.7rem}
+html.no-flex-gap .kbd-keys > * + *{margin-top:.4rem}
+html.no-flex-gap .kbd-row > * + *{margin-left:.4rem}
+html.no-flex-gap .loading > * + *{margin-left:.8rem}
+html.no-flex-gap body:not(.touch) .search-layout > * + *{margin-left:2.2rem}
+html.no-flex-gap .search-field > * + *{margin-left:.8rem}
+html.no-flex-gap .hint-list > * + *{margin-top:.2rem}
+html.no-flex-gap .hint > * + *{margin-left:.9rem}
+html.no-flex-gap .health-summary > * + *{margin-left:.6rem}
+html.no-flex-gap .health-actions > * + *{margin-left:.5rem}
+html.no-flex-gap .state .health-inline > * + *{margin-left:.5rem}
+html.no-flex-gap .p-next > * + *{margin-top:.55rem}
+html.no-flex-gap .p-next-bar > * + *{margin-left:1rem}
+html.no-flex-gap .p-next-actions > * + *{margin-left:.45rem}

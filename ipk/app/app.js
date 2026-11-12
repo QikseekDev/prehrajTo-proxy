@@ -7,6 +7,20 @@
 (function () {
   'use strict';
 
+  // webOS TV 6.x má Chromium 79, kde flex gap ještě nefunguje (přišel v 84).
+  // Ověříme to měřením, ne podle verze prohlížeče, a případně dopočítáme
+  // mezery okraji v CSS (třída no-flex-gap); mřížky mají gap už od 66.
+  (function () {
+    var p = document.createElement('div');
+    p.style.cssText = 'position:absolute;top:-99px;left:-99px;display:flex;gap:1px;visibility:hidden';
+    p.appendChild(document.createElement('div'));
+    p.appendChild(document.createElement('div'));
+    document.documentElement.appendChild(p);
+    var ok = p.scrollWidth === 1;
+    document.documentElement.removeChild(p);
+    if (!ok) document.documentElement.className += ' no-flex-gap';
+  })();
+
   var VERSION = '1.1.0';
   var LS_SERVER = 'wflix.server';
   // Pevný server – adresa se v aplikaci nezadává ani nemění.
