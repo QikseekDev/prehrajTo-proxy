@@ -707,10 +707,12 @@
             document.querySelectorAll('#catalogRows .poster[data-q]').forEach(el => thumbObserver.observe(el));
         }
 
+        // Jemné ztmavené pozadí odvozené z názvu. Záměrně nízká sytost - syté duhové
+        // přechody vypadají genericky a perou se s akcentem i s plakáty.
         function posterGradient(title) {
             let h = 0;
             for (const c of title) h = (h * 31 + c.charCodeAt(0)) % 360;
-            return `linear-gradient(150deg, hsl(${h},60%,38%), hsl(${(h + 45) % 360},65%,16%))`;
+            return `linear-gradient(155deg, hsl(${h}, 15%, 17%), hsl(${(h + 26) % 360}, 11%, 8%))`;
         }
 
         // "Procenta doporučení" a věkový rating po vzoru Netflixu - stabilně odvozené
@@ -730,6 +732,47 @@
 
         function escapeHtml(str) {
             return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        // Ikony jsou inline SVG: emoji se na každém systému kreslí jinak, nedají se obarvit
+        // ani sjednotit tloušťku tahu - v UI proto žádné emoji není.
+        const ICON = {
+            play: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5.4v13.2L19 12z" fill="currentColor"/></svg>',
+            replay: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5V9h-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            prev: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            next: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 5.5 16 12l-6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            chevron: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" width="13" height="13"><path d="M9.5 5.5 16 12l-6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            star: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4.7l2.32 4.7 5.18.76-3.75 3.66.89 5.16L12 16.54l-4.64 2.44.89-5.16L4.5 10.16l5.18-.76z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+            starOn: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4.7l2.32 4.7 5.18.76-3.75 3.66.89 5.16L12 16.54l-4.64 2.44.89-5.16L4.5 10.16l5.18-.76z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+        };
+
+        // Dvousloupcové iniciály titulu - plakát je čitelný i bez náhledu a bez emoji.
+        function monogram(title) {
+            const words = String(title || '').trim().split(/\s+/).filter(Boolean);
+            if (!words.length) return '?';
+            return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
+        }
+
+        // Přepíše jen textový štítek tlačítka, ikona zůstane zachovaná.
+        function setBtnText(btn, text) {
+            if (!btn) return;
+            const label = btn.querySelector('.btn-label');
+            if (label) label.textContent = text;
+            else btn.textContent = text;
+        }
+
+        // Fokus nesmí z otevřeného dialogu utéct na stránku pod ním.
+        function trapTab(e, root) {
+            if (e.key !== 'Tab' || !root) return;
+            const items = Array.from(root.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+                .filter(el => el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+            if (!items.length) return;
+            const first = items[0], last = items[items.length - 1];
+            if (e.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) {
+                e.preventDefault(); last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault(); first.focus();
+            }
         }
 
         // ===== Knihovna diváka: oblíbené =====
@@ -793,7 +836,7 @@
             renderCatalog();
             updateFavBtn();
             syncFavButtons();
-            notice(had ? 'Odebráno z oblíbených' : '★ Přidáno do oblíbených');
+            notice(had ? 'Odebráno z oblíbených' : 'Přidáno do oblíbených');
         }
 
         // Sjednotí vzhled a popisky všech záložek na stránce (karty ve výsledcích se
@@ -802,7 +845,7 @@
             document.querySelectorAll('[data-fav-key]').forEach(el => {
                 const on = isFav(el.dataset.favKey);
                 el.classList.toggle('on', on);
-                el.textContent = on ? '★' : '☆';
+                el.innerHTML = on ? ICON.starOn : ICON.star;
                 el.setAttribute('aria-pressed', String(on));
                 el.setAttribute('aria-label', on ? 'Odebrat z oblíbených' : 'Přidat do oblíbených');
                 el.setAttribute('title', on ? 'Odebrat z oblíbených' : 'Přidat do oblíbených');
@@ -818,7 +861,7 @@
                 data-fav-url="${escapeHtml(it.url || '')}" data-fav-q="${escapeHtml(it.q || '')}"
                 data-fav-title="${escapeHtml(it.title || '')}" data-fav-poster="${escapeHtml(it.poster || '')}"
                 data-fav-skey="${escapeHtml(it.skey || '')}" data-fav-type="${escapeHtml(it.type || '')}"
-                aria-pressed="${on}" aria-label="${label}" title="${label}">${on ? '★' : '☆'}</span>`;
+                aria-pressed="${on}" aria-label="${label}" title="${label}">${on ? ICON.starOn : ICON.star}</span>`;
         }
 
         function openFromCatalog(q) {
@@ -831,10 +874,10 @@
             return `<button class="poster ${rank ? 'ranked' : ''}" data-q="${escapeHtml(m.q)}" aria-label="${escapeHtml(m.t)}">
                 ${rank ? `<span class="rank">${rank}</span>` : ''}
                 <span class="art" style="background:${posterGradient(m.t)}">
-                    <img class="thumb${m.img ? ' portrait' : ''}" alt="" loading="lazy" referrerpolicy="no-referrer">
-                    <span class="emoji">${m.e || '🎬'}</span>
+                    <img class="thumb${m.img ? ' portrait' : ''}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                    <span class="emoji" aria-hidden="true">${escapeHtml(monogram(m.t))}</span>
                     <span class="shade"></span>
-                    <span class="play">▶</span>
+                    <span class="play">${ICON.play}</span>
                     <span class="p-title">${escapeHtml(m.t)}</span>
                     <span class="p-meta"><b>${matchPct(m.t)} % Doporučeno</b> · ${m.y} · ${ageRating(m.t)}</span>
                 </span>
@@ -846,9 +889,9 @@
             return `<section class="cat-row${cls ? ' ' + cls : ''}">
                 <h3>${title}${headExtra || ''}</h3>
                 <div class="row-wrap">
-                    <button class="arrow left" data-scroll="-1" aria-label="Doleva">‹</button>
+                    <button class="arrow left" data-scroll="-1" aria-label="Posunout doleva">${ICON.prev}</button>
                     <div class="row-scroll">${cards}</div>
-                    <button class="arrow right" data-scroll="1" aria-label="Doprava">›</button>
+                    <button class="arrow right" data-scroll="1" aria-label="Posunout doprava">${ICON.next}</button>
                 </div>
             </section>`;
         }
@@ -857,7 +900,7 @@
             return carouselHtml(
                 title,
                 items.map((m, i) => posterHtml(m, ranked ? i + 1 : 0)).join(''),
-                chip ? `<button class="row-more" data-chip="${escapeHtml(chip)}">Prozkoumat vše ›</button>` : '');
+                chip ? `<button class="row-more" data-chip="${escapeHtml(chip)}">Prozkoumat vše ${ICON.chevron}</button>` : '');
         }
 
         function renderHero() {
@@ -865,7 +908,7 @@
             const m = CATALOG[(day + heroOffset) % CATALOG.length];
             document.getElementById('hero').innerHTML = `
                 <div class="hero" style="--hero-bg:${posterGradient(m.t)}">
-                    <div class="hero-emoji">${m.e || '🎬'}</div>
+                    <div class="hero-emoji" aria-hidden="true">${escapeHtml(monogram(m.t))}</div>
                     <div class="hero-content">
                         <div class="hero-tag"><span class="w">W</span> TIP DNE</div>
                         <h2>${escapeHtml(m.t)}</h2>
@@ -877,8 +920,8 @@
                         </div>
                         <p class="hero-desc">${escapeHtml(heroDesc(m))}</p>
                         <div class="hero-actions">
-                            <button class="btn-play" data-q="${escapeHtml(m.q)}">▶ Přehrát</button>
-                            <button class="btn-info" data-next="1">↻ Jiný tip</button>
+                            <button class="btn-play" data-q="${escapeHtml(m.q)}">${ICON.play}Přehrát</button>
+                            <button class="btn-info" data-next="1">${ICON.replay}Jiný tip</button>
                         </div>
                     </div>
                     <div class="hero-rating">${ageRating(m.t)}</div>
@@ -1210,7 +1253,7 @@
                     <h2>Titulky</h2>
                     <p>Když má soubor titulky, objeví se pod přehrávačem nabídka „Titulky“ s volbami Vypnuto a jazyky. Načítá je server, takže fungují i u zdrojů, které je prohlížeči přímo nedovolí. Ne každý soubor titulky má – český dabing bývá bez nich.</p>
                     <h2>Přehrávač a klávesy</h2>
-                    <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>⧉ Obraz v obraze</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa). Tlačítko <b>📺 Přehrát na TV</b> otevře možnosti: Chromecast (Chrome, Edge), AirPlay (Safari, iPhone, LG webOS) nebo odkaz, který otevřeš v prohlížeči na jakékoli TV. Video se do TV posílá přes Wi-Fi, Bluetooth na to nestačí.</p>
+                    <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>Obraz v obraze</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa). Tlačítko <b>Přehrát na TV</b> otevře možnosti: Chromecast (Chrome, Edge), AirPlay (Safari, iPhone, LG webOS) nebo odkaz, který otevřeš v prohlížeči na jakékoli TV. Video se do TV posílá přes Wi-Fi, Bluetooth na to nestačí.</p>
                     <p>Velikost a pozadí titulků se nastavují v Nastavení (avatar vpravo nahoře).</p>
                     <h2>Knihovna: historie a oblíbené</h2>
                     <p>Odkaz <b>Knihovna</b> v liště ukazuje dvě sekce: <b>Pokračovat ve sledování</b> (rozkoukané filmy a díly, odkud se naváže tam, kde jsi skončil) a <b>Oblíbené</b>. Hvězdička na kartě nebo u přehrávače titul přidá či odebere z oblíbených. Rozkoukaný záznam se sám smaže, když je do konce méně než 2 minuty. Vše se ukládá jen v tvém prohlížeči.</p>
@@ -1256,7 +1299,7 @@
                         <li>Čisté HTML, CSS a JavaScript – frontend bez frameworku a bez externích fontů.</li>
                         <li>PHP proxy skripty – vlastní, běží na běžném CZ hostingu.</li>
                     </ul>
-                    <p>Logo a ikony jsou textové/emoji, žádné cizí assety se nenačítají.</p>
+                    <p>Logo a ikony jsou vektorové (inline SVG), žádné cizí assety se nenačítají.</p>
                 `,
             },
             terms: {
@@ -1442,10 +1485,10 @@
             };
 
             card.innerHTML = `
-                    <div class="card-play"><i>▶</i></div>
-                    <img src="${movie.thumbnail || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 9%22><rect fill=%22%23333%22 width=%2216%22 height=%229%22/><text x=%228%22 y=%225%22 fill=%22%23666%22 text-anchor=%22middle%22 font-size=%222%22>🎬</text></svg>'}"
-                         alt="${movie.title}"
-                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 9%22><rect fill=%22%23333%22 width=%2216%22 height=%229%22/><text x=%228%22 y=%225%22 fill=%22%23666%22 text-anchor=%22middle%22 font-size=%222%22>🎬</text></svg>'">
+                    <div class="card-play"><i>${ICON.play}</i></div>
+                    <img src="${movie.thumbnail || THUMB_PLACEHOLDER}" alt=""
+                         width="640" height="360" loading="lazy" decoding="async"
+                         onerror="this.onerror=null;this.src='${THUMB_PLACEHOLDER}'">
                     ${favBtnHtml({ url: movie.url, title: movie.title, poster: movie.thumbnail || '' })}
                     <div class="info">
                         <div class="title">${movie.title}</div>
@@ -1456,7 +1499,11 @@
         }
 
         // ===== Seriály: karta a stránka seriálu =====
-        const THUMB_PLACEHOLDER = 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 9%22><rect fill=%22%23333%22 width=%2216%22 height=%229%22/><text x=%228%22 y=%225%22 fill=%22%23666%22 text-anchor=%22middle%22 font-size=%222%22>🎬</text></svg>';
+        // Zástupný plakát: tmavý rámeček s obrysem kamery, žádné emoji ani externí soubor.
+        const THUMB_PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><rect width="160" height="90" fill="#1a1a1c"/>' +
+            '<g fill="none" stroke="#4a4a4e" stroke-width="2.6" stroke-linejoin="round"><rect x="57" y="31" width="46" height="28" rx="4"/>' +
+            '<path d="M57 41h46M57 49h46M68 31v28M92 31v28"/></g></svg>');
 
         function seriesUrl(key) {
             const p = new URLSearchParams();
@@ -1483,7 +1530,7 @@
                 openSeriesByKey(series.key, true);
             };
             card.innerHTML = `
-                    <div class="card-play"><i>▶</i></div>
+                    <div class="card-play"><i>${ICON.play}</i></div>
                     <div class="series-badge">${series.kind === 'collection' ? 'SÉRIE' : 'SERIÁL'}</div>
                     <img src="${series.poster || THUMB_PLACEHOLDER}" alt="${escapeHtml(series.title)}">
                     <div class="info">
@@ -2512,7 +2559,8 @@
             favBtn.hidden = false;
             if (pipBtn && pipSupported) pipBtn.hidden = false;
             if (castBtn) castBtn.hidden = false;   // okno s možnostmi se hodí v každém prohlížeči
-            favBtn.textContent = on ? '★ V oblíbených' : '☆ Do oblíbených';
+            favBtn.innerHTML = (on ? ICON.starOn : ICON.star) + '<span class="btn-label">' + (on ? 'V oblíbených' : 'Do oblíbených') + '</span>';
+            favBtn.setAttribute('aria-pressed', String(on));
             favBtn.classList.toggle('on', on);
             favBtn.title = on ? 'Odebrat z oblíbených' : 'Přidat do oblíbených';
         }
@@ -2565,8 +2613,8 @@
                 notice('Obraz v obraze se nepodařilo zapnout.', 'error', 4000);
             }
         });
-        videoPlayer.addEventListener('enterpictureinpicture', () => { pipBtn.textContent = '⧉ Zavřít obraz v obraze'; });
-        videoPlayer.addEventListener('leavepictureinpicture', () => { pipBtn.textContent = '⧉ Obraz v obraze'; });
+        videoPlayer.addEventListener('enterpictureinpicture', () => { setBtnText(pipBtn, 'Zavřít obraz v obraze'); });
+        videoPlayer.addEventListener('leavepictureinpicture', () => { setBtnText(pipBtn, 'Obraz v obraze'); });
 
         // ===== Přehrát na TV =====
         // Žádný jediný způsob nefunguje všude, proto tlačítko otevře okno s možnostmi:
@@ -2583,7 +2631,7 @@
             const castLink = document.getElementById('castLink');
             const castMsg = document.getElementById('castMsg');
             const castClose = document.getElementById('castClose');
-            const castLabel = (on) => { castBtn.textContent = on ? '📺 Přehrává se na TV' : '📺 Přehrát na TV'; castBtn.classList.toggle('on', !!on); };
+            const castLabel = (on) => { setBtnText(castBtn, on ? 'Přehrává se na TV' : 'Přehrát na TV'); castBtn.classList.toggle('on', !!on); };
 
             const tvLink = () => `${location.origin}${location.pathname}?watch=${encodeURIComponent(player.page)}&title=${encodeURIComponent(player.title || 'Video')}`;
             const setMsg = (text) => { castMsg.textContent = text || ''; };
@@ -2597,9 +2645,9 @@
                 castLink.value = tvLink();
                 setMsg('');
                 castNative.disabled = !castSupported;
-                castNative.textContent = castSupported
-                    ? '📡 Najít zařízení v síti (Chromecast, AirPlay)'
-                    : '📡 Zařízení v síti (tenhle prohlížeč to neumí)';
+                setBtnText(castNative, castSupported
+                    ? 'Najít zařízení v síti (Chromecast, AirPlay)'
+                    : 'Zařízení v síti (tenhle prohlížeč to neumí)');
                 castShare.hidden = typeof navigator.share !== 'function';
                 castDlg.hidden = false;
                 (castSupported ? castNative : castCopy).focus();
@@ -2651,7 +2699,8 @@
             // Klávesy v okně nesmí ovládat přehrávač (mezerník, šipky).
             castDlg.addEventListener('keydown', (e) => {
                 e.stopPropagation();
-                if (e.key === 'Escape') closeCast();
+                if (e.key === 'Escape') { e.preventDefault(); closeCast(); return; }
+                trapTab(e, castDlg);
             });
 
             if (videoPlayer.remote && typeof videoPlayer.remote.addEventListener === 'function') {
@@ -2671,14 +2720,14 @@
             try { if (player && player.page) videoPlayer.pause(); } catch(_){}
             const t = Math.min(videoPlayer.duration - 1, Math.max(0, videoPlayer.currentTime + delta));
             videoPlayer.currentTime = t;
-            notice((delta > 0 ? '⏩ ' : '⏪ ') + fmtClock(t), 'success', 1500);
+            notice((delta > 0 ? 'Posun vpřed na ' : 'Posun zpět na ') + fmtClock(t), 'success', 1500);
         }
 
         function volumeBy(delta) {
             const v = Math.min(1, Math.max(0, videoPlayer.volume + delta));
             videoPlayer.volume = v;
             videoPlayer.muted = v === 0;
-            notice('🔊 Hlasitost ' + Math.round(v * 100) + ' %', 'success', 1500);
+            notice('Hlasitost ' + Math.round(v * 100) + ' %', 'success', 1500);
         }
 
         function toggleFullscreen() {
@@ -3079,7 +3128,8 @@
             if (rf && typeof rf.focus === 'function') try { rf.focus(); } catch (e) {}
         }
         function onHealthKeydown(e) {
-            if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); }
+            if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); closeHealthOverlay(); return; }
+            trapTab(e, document.getElementById('healthDlg'));
         }
         async function openHealthOverlay() {
             var dlg = document.getElementById('healthDlg');
@@ -3312,7 +3362,7 @@
             const img = it.poster || '';
             const art = img
                 ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(img)}" onerror="this.remove()">`
-                : '<span class="emoji">🎬</span>';
+                : '<span class="emoji" aria-hidden="true">' + escapeHtml(monogram(it.title)) + '</span>';
             const pct = (isCont && it._d > 0) ? Math.max(0, Math.min(100, (it._t / it._d) * 100)) : 0;
             const prog = pct ? `<span class="progress"><i style="width:${pct}%"></i></span>` : '';
             const meta = isCont
@@ -3320,7 +3370,7 @@
                 : (it.type === 'series' ? 'Seriál' : 'Oblíbené');
             const del = isCont
                 ? ''
-                : `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">★</button>`;
+                : `<button class="lib-del star" type="button" onclick="libDelFav(${i})" aria-label="Odebrat z oblíbených" title="Odebrat z oblíbených">${ICON.starOn}</button>`;
             return `<div class="lib-item" data-name="${escapeHtml(norm(it.title))}">
                 <button class="lib-open" type="button" onclick="libPlay(${i})" aria-label="Přehrát ${title}">
                     <span class="lib-art" style="background:${posterGradient(it.title || '')}">
