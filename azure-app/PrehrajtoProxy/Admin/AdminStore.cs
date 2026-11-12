@@ -79,11 +79,31 @@ public sealed class BanEntry
     public bool Active => Until > DateTimeOffset.UtcNow;
 }
 
+/// <summary>
+/// Naplánovaná odstávka: v oknu od-do se web sám přepne do zvoleného režimu a po
+/// konci se vrátí. Mimo okno se nic nemění, takže plán nikdy nezůstane viset.
+/// </summary>
+public sealed class ScheduleConfig
+{
+    public bool Enabled { get; set; }
+    /// <summary>"maintenance" (mimo provoz), "lock" (zámek s heslem) nebo "shutdown".</summary>
+    public string Mode { get; set; } = "maintenance";
+    public DateTimeOffset? From { get; set; }
+    public DateTimeOffset? Until { get; set; }
+    /// <summary>Vlastní hláška pro dobu odstávky; prázdná = vezme se hláška z vypínačů.</summary>
+    public string Message { get; set; } = "";
+
+    [JsonIgnore]
+    public bool Active => Enabled && From.HasValue && Until.HasValue
+        && DateTimeOffset.UtcNow >= From.Value && DateTimeOffset.UtcNow < Until.Value;
+}
+
 public sealed class AdminState
 {
     public int Version { get; set; } = 2;
     public FlagsConfig Flags { get; set; } = new();
     public SourcesConfig Sources { get; set; } = new();
+    public ScheduleConfig Schedule { get; set; } = new();
     public List<BanEntry> Bans { get; set; } = new();
     /// <summary>
     /// Proxy servery spravované z panelu. null = panel je ještě neřídí a platí seznam
@@ -274,7 +294,9 @@ public sealed class AdminStore
             if (parsed == null) return;
             parsed.Flags ??= new FlagsConfig();
             parsed.Sources ??= new SourcesConfig();
+            parsed.Schedule ??= new ScheduleConfig();
             parsed.Bans ??= new List<BanEntry>();
+            NormalizeSchedule(parsed);
             parsed.Proxies = NormalizeProxies(parsed.Proxies);
             parsed.Sources.MaxPage = Math.Clamp(parsed.Sources.MaxPage, 1, 50);
             lock (gate)
@@ -312,6 +334,8 @@ public sealed class AdminStore
             mutate(clone);
             clone.Flags ??= new FlagsConfig();
             clone.Sources ??= new SourcesConfig();
+            clone.Schedule ??= new ScheduleConfig();
+            NormalizeSchedule(clone);
             clone.Bans ??= new List<BanEntry>();
             clone.Proxies = NormalizeProxies(clone.Proxies);
             clone.Sources.MaxPage = Math.Clamp(clone.Sources.MaxPage, 1, 50);
@@ -489,6 +513,22 @@ public sealed class AdminStore
                 Reason = reason,
             });
         }, actor);
+
+    // Plán se normalizuje při každém čtení i zápisu: neplatný režim spadne na
+    // "maintenance" a vypnutý plán nemá časy (aby v datech nezůstaly napůl
+    // nastavené hodnoty, které by po zapnutí překvapily).
+    private static void NormalizeSchedule(AdminState s)
+    {
+        var mode = (s.Schedule.Mode ?? "maintenance").Trim().ToLowerInvariant();
+        s.Schedule.Mode = mode is "maintenance" or "lock" or "shutdown" ? mode : "maintenance";
+        s.Schedule.Message = (s.Schedule.Message ?? "").Trim();
+        if (s.Schedule.Message.Length > 300) s.Schedule.Message = s.Schedule.Message[..300];
+        if (!s.Schedule.Enabled)
+        {
+            s.Schedule.From = null;
+            s.Schedule.Until = null;
+        }
+    }
 
     /// <summary>Více banů naráz - jeden zápis stavu, ne jeden na položku.</summary>
     public AdminState BanMany(IEnumerable<(string Kind, string Target)> items, int minutes, string reason, string actor) =>

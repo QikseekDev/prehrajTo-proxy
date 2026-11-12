@@ -54,10 +54,16 @@ public static class SiteGate
             return;
         }
 
-        var flags = store.Current.Flags;
-        var shutdown = flags.FrontendShutdown;
-        var locked = flags.FullMaintenance;
-        var maintenance = flags.Maintenance;
+        var state = store.Current;
+        var flags = state.Flags;
+
+        // Naplánovaná odstávka platí jen ve svém oknu - mimo něj se chová, jako by
+        // neexistovala, takže se web po konci sám vrátí do provozu.
+        var schedule = state.Schedule;
+        var scheduled = schedule is { Active: true };
+        var shutdown = flags.FrontendShutdown || (scheduled && schedule!.Mode == "shutdown");
+        var locked = flags.FullMaintenance || (scheduled && schedule!.Mode == "lock");
+        var maintenance = flags.Maintenance || (scheduled && schedule!.Mode == "maintenance");
         if (!shutdown && !locked && !maintenance) { await next(); return; }
 
         if (IsAdminArea(path) || IsMeta(path)) { await next(); return; }
@@ -75,7 +81,9 @@ public static class SiteGate
             return;
         }
 
-        var message = string.IsNullOrWhiteSpace(flags.MaintenanceMessage) ? DefaultMessage : flags.MaintenanceMessage;
+        var message = scheduled && !string.IsNullOrWhiteSpace(schedule!.Message)
+            ? schedule.Message
+            : (string.IsNullOrWhiteSpace(flags.MaintenanceMessage) ? DefaultMessage : flags.MaintenanceMessage);
 
         ctx.Response.Headers.CacheControl = "no-store, max-age=0";
         ctx.Response.Headers.Pragma = "no-cache";

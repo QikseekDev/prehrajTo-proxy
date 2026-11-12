@@ -56,13 +56,24 @@ public static class AdminEndpoints
         {
             var s = store.Current;
             ctx.Response.Headers.CacheControl = "no-store, max-age=0";
+
+            // Stejné vyhodnocení jako v SiteGate: ruční vypínač nebo naplánovaná odstávka.
+            var schedule = s.Schedule;
+            var scheduled = schedule is { Active: true };
+            var message = scheduled && !string.IsNullOrWhiteSpace(schedule!.Message)
+                ? schedule.Message
+                : s.Flags.MaintenanceMessage;
+
             return Results.Json(new
             {
                 success = true,
-                maintenance = s.Flags.Maintenance,
-                fullMaintenance = s.Flags.FullMaintenance,
-                shutdown = s.Flags.FrontendShutdown,
-                message = s.Flags.MaintenanceMessage,
+                maintenance = s.Flags.Maintenance || (scheduled && schedule!.Mode == "maintenance"),
+                fullMaintenance = s.Flags.FullMaintenance || (scheduled && schedule!.Mode == "lock"),
+                shutdown = s.Flags.FrontendShutdown || (scheduled && schedule!.Mode == "shutdown"),
+                message,
+                scheduled = scheduled
+                    ? new { mode = schedule!.Mode, from = schedule.From, until = schedule.Until, message = schedule.Message }
+                    : null,
                 proxies = app.Services.GetRequiredService<ProxyPool>().Current,
                 flags = new
                 {
@@ -398,6 +409,51 @@ public static class AdminEndpoints
                 });
             var next = store.Update(s => s.Flags = body, Actor(ctx));
             store.RecordAudit("flags", Actor(ctx), Describe(next.Flags));
+            return Results.Json(new { success = true, state = next });
+        });
+
+        // Naplánovaná odstávka. Panel pošle časy v ISO (datetime-local se převede v JS)
+        // a režim; prázdný/vypnutý plán znamená "žádná odstávka".
+        secured.MapPost("/schedule", (ScheduleConfig body, HttpContext ctx) =>
+        {
+            if (body == null) return Results.BadRequest(new { success = false, error = "Chybí tělo." });
+
+            if (!body.Enabled)
+            {
+                var cleared = store.Update(s => s.Schedule = new ScheduleConfig(), Actor(ctx));
+                store.RecordAudit("schedule", Actor(ctx), "plán zrušen");
+                return Results.Json(new { success = true, state = cleared });
+            }
+
+            if (!store.Enabled)
+                return Results.BadRequest(new
+                {
+                    success = false,
+                    error = "Plánovat odstávku jde jen tehdy, když je nastavené admin heslo - jinak by nešla odemknout.",
+                });
+
+            var mode = (body.Mode ?? "maintenance").Trim().ToLowerInvariant();
+            if (mode is not ("maintenance" or "lock" or "shutdown"))
+                return Results.BadRequest(new { success = false, error = "Režim musí být maintenance, lock nebo shutdown." });
+            if (body.From == null || body.Until == null)
+                return Results.BadRequest(new { success = false, error = "Chybí čas začátku nebo konce." });
+            if (body.Until <= body.From)
+                return Results.BadRequest(new { success = false, error = "Konec musí být až po začátku." });
+            if (body.Until < DateTimeOffset.UtcNow)
+                return Results.BadRequest(new { success = false, error = "Konec je v minulosti." });
+            if (body.Until - body.From > TimeSpan.FromDays(30))
+                return Results.BadRequest(new { success = false, error = "Plán může být nejvýš 30 dní dlouhý." });
+
+            var plan = new ScheduleConfig
+            {
+                Enabled = true,
+                Mode = mode,
+                From = body.From,
+                Until = body.Until,
+                Message = (body.Message ?? "").Trim(),
+            };
+            var next = store.Update(s => s.Schedule = plan, Actor(ctx));
+            store.RecordAudit("schedule", Actor(ctx), Describe(next.Schedule));
             return Results.Json(new { success = true, state = next });
         });
 
@@ -753,6 +809,12 @@ public static class AdminEndpoints
         f.MergeSources ? null : "no-merge",
         f.ItunesThumb ? null : "no-itunes-thumb",
     }.Where(x => x != null));
+
+    private static string Describe(ScheduleConfig s) =>
+        !s.Enabled || s.From == null || s.Until == null
+            ? "plán zrušen"
+            : s.Mode + " " + s.From.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+              + " → " + s.Until.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 
     private static string Describe(SourcesConfig s) =>
         $"enabled={string.Join("+", s.Enabled())}, fallback={s.Fallback}, maxPage={s.MaxPage}";

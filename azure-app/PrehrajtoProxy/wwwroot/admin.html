@@ -490,6 +490,36 @@
               </div>
               <div class="sub" style="margin-top:8px">Zamčený nebo odstavený web vidí i správce - odemčení je proto samostatné tlačítko a platí 30 minut pro tenhle prohlížeč.</div>
             </div>
+            <div class="card">
+              <h2>Plánovaná odstávka</h2>
+              <div class="sub">Ve zvoleném okně se web sám přepne do režimu a po konci se vrátí do provozu. Časy jsou v pásmu tvého prohlížeče.</div>
+              <div class="grid two">
+                <label class="check" style="cursor:default"><input type="checkbox" id="schOn"><span><b>Plán zapnutý</b><span class="hint">Vypnutý plán se nevyhodnocuje a web běží podle vypínačů výše.</span></span></label>
+                <label class="inline" style="gap:8px"><span class="muted">Režim</span>
+                  <select id="schMode">
+                    <option value="maintenance">Mimo provoz (hláška)</option>
+                    <option value="lock">Zamknout web (odemčení heslem)</option>
+                    <option value="shutdown">Vypnout frontend (bez dveří)</option>
+                  </select>
+                </label>
+                <label class="inline" style="gap:8px"><span class="muted" style="width:24px">Od</span>
+                  <input id="schFrom" type="datetime-local">
+                </label>
+                <label class="inline" style="gap:8px"><span class="muted" style="width:28px">Do</span>
+                  <input id="schUntil" type="datetime-local">
+                </label>
+              </div>
+              <div class="mt">
+                <label for="schMessage" class="muted" style="display:block;font-size:12px;margin-bottom:6px">Hláška při odstávce (nepovinné – jinak se použije hláška výše)</label>
+                <input id="schMessage" type="text" maxlength="300" placeholder="Např. Dnes od 22:00 probíhá údržba serveru.">
+              </div>
+              <div class="row">
+                <button id="schSave" class="primary">Uložit plán</button>
+                <button id="schClear" class="ghost">Zrušit plán</button>
+                <button id="schIn15" class="small ghost">Za 15 min na 30 min</button>
+                <span class="muted" id="schInfo"></span>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -809,6 +839,48 @@
     if (h) return h + ' h ' + m + ' m';
     return m + ' m ' + (s % 60) + ' s';
   }
+  // datetime-local chce "YYYY-MM-DDTHH:mm" v místním čase, server posílá ISO s pásmem.
+  function toLocalInput(value) {
+    if (!value) return '';
+    var d = value instanceof Date ? value : new Date(value);
+    if (isNaN(d.getTime())) return '';
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+      + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function inputToIso(value) {
+    if (!value) return null;
+    var d = new Date(value);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  function scheduleLabel(mode) {
+    return { maintenance: 'mimo provoz', lock: 'zámek webu', shutdown: 'vypnutý frontend' }[mode] || mode || 'mimo provoz';
+  }
+  function scheduleState(s) {
+    var sc = (s && s.schedule) || {};
+    if (!sc.enabled || !sc.from || !sc.until) return { on: false, info: null };
+    var now = new Date(), from = new Date(sc.from), until = new Date(sc.until);
+    if (isNaN(from.getTime()) || isNaN(until.getTime())) return { on: false, info: null };
+    return { on: true, running: now >= from && now < until, past: now >= until, from: from, until: until, mode: sc.mode };
+  }
+
+  function renderScheduleInfo(s) {
+    var box = $('schInfo');
+    if (!box) return;
+    var st = scheduleState(s);
+    box.className = 'muted';
+    if (!st.on) { box.textContent = 'Žádný plán.'; return; }
+    if (st.running) {
+      box.className = 'warn';
+      box.textContent = 'Běží teď: ' + scheduleLabel(st.mode) + ' do ' + st.until.toLocaleString('cs-CZ') + '.';
+    } else if (st.past) {
+      box.textContent = 'Plán už proběhl (' + st.until.toLocaleString('cs-CZ') + ').';
+    } else {
+      box.textContent = 'Naplánováno: ' + scheduleLabel(st.mode) + ' od ' + st.from.toLocaleString('cs-CZ')
+        + ' do ' + st.until.toLocaleString('cs-CZ') + '.';
+    }
+  }
+
   function msg(text, ok) {
     var m = $('msg');
     m.textContent = text || '';
@@ -978,6 +1050,12 @@
     var f = (s && s.flags) || {};
     var p = $('pillState');
     p.style.borderColor = '';
+    var plan = scheduleState(s);
+    if (plan.on && plan.running) {
+      p.innerHTML = 'plán: <b style="color:#dfb055">' + scheduleLabel(plan.mode) + '</b>';
+      p.style.borderColor = '#463a1d';
+      return;
+    }
     if (f.frontendShutdown) {
       p.innerHTML = 'web <b style="color:#f47070">vypnutý</b>';
       p.style.borderColor = '#4d2226';
@@ -1269,6 +1347,14 @@
     $('sBombuj').checked = src.bombuj !== false;
     $('sFallback').checked = src.fallback !== false;
     $('sMaxPage').value = src.maxPage || 50;
+
+    var sch = s.schedule || {};
+    $('schOn').checked = !!sch.enabled;
+    $('schMode').value = sch.mode || 'maintenance';
+    $('schFrom').value = toLocalInput(sch.from);
+    $('schUntil').value = toLocalInput(sch.until);
+    $('schMessage').value = sch.message || '';
+    renderScheduleInfo(s);
   }
 
   function renderCache(c) {
@@ -1437,6 +1523,41 @@
     $('autoSel').addEventListener('change', startTimer);
 
     $('auditFilter').addEventListener('input', function () { renderAudit(auditEntries); });
+
+    $('schSave').addEventListener('click', function () {
+      var enabled = $('schOn').checked;
+      var body = {
+        enabled: enabled,
+        mode: $('schMode').value,
+        from: inputToIso($('schFrom').value),
+        until: inputToIso($('schUntil').value),
+        message: $('schMessage').value.trim()
+      };
+      if (enabled && (!body.from || !body.until)) { msg('Vyplň čas začátku i konce.', false); return; }
+      if (enabled && new Date(body.until) <= new Date(body.from)) { msg('Konec musí být až po začátku.', false); return; }
+      if (enabled && new Date(body.until) < new Date() && !confirm('Konec plánu je v minulosti – web se hned nezmění. Uložit přesto?')) return;
+      $('schSave').disabled = true;
+      api('/api/admin/schedule', { method: 'POST', body: body })
+        .then(function () { msg(enabled ? 'Plán uložen.' : 'Plán zrušen.', true); refreshAll(); })
+        .catch(function (e) { msg(e.message, false); })
+        .then(function () { $('schSave').disabled = false; });
+    });
+
+    $('schClear').addEventListener('click', function () {
+      if (!confirm('Zrušit naplánovanou odstávku?')) return;
+      api('/api/admin/schedule', { method: 'POST', body: { enabled: false } })
+        .then(function () { msg('Plán zrušen.', true); refreshAll(); })
+        .catch(function (e) { msg(e.message, false); });
+    });
+
+    $('schIn15').addEventListener('click', function () {
+      var from = new Date(Date.now() + 15 * 60000);
+      var until = new Date(from.getTime() + 30 * 60000);
+      $('schOn').checked = true;
+      $('schFrom').value = toLocalInput(from);
+      $('schUntil').value = toLocalInput(until);
+      msg('Předvyplněno: za 15 minut na 30 minut. Ulož tlačítkem „Uložit plán“.', true);
+    });
 
     $('clearBans').addEventListener('click', function () {
       var active = (state && state.state && state.state.bans ? state.state.bans : []).filter(function (b) { return new Date(b.until) > new Date(); });
@@ -1808,6 +1929,7 @@
     { title: 'Spustit kontrolu nastavení', hint: 'akce', run: function () { setView('overview'); refreshSelfTest(); } },
     { title: 'Otestovat zdroje a proxy', hint: 'akce', run: function () { setView('overview'); $('testBtn').click(); } },
     { title: 'Odemknout si web na 30 min', hint: 'akce', run: function () { $('unlockSite').click(); } },
+    { title: 'Naplánovat odstávku', hint: 'vypínače', run: function () { setView('flags'); $('schFrom').focus(); } },
     { title: 'Otevřít web', hint: 'akce', run: function () { window.open('/', '_blank'); } }
   ];
 
