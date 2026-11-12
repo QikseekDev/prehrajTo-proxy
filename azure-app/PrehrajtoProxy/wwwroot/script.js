@@ -1454,24 +1454,27 @@
             resultsLoading(`Hledám „${query}" …`);
 
             try {
-                const searchSourceQS = settings.searchMerge ? '&source=all' : '';
-                const { response, data, rateLimited } = await apiJson(
-                    `/api/search?q=${encodeURIComponent(query)}${proxyQS()}${searchSourceQS}`,
-                    { onWait: resultsRateLimited, onRetry: () => resultsLoading(`Hledám „${query}" …`) });
-
-                if (rateLimited) {
-                    resultsError('Server pořád hlásí příliš mnoho dotazů. Zkus to prosím za chvilku znovu.');
-                } else if (!data) {
-                    resultsError(`Server nevrátil platnou odpověď (HTTP ${response.status}).`);
-                } else if (data.success && data.movies && data.movies.length > 0) {
-                    const catItem = CATALOG.find(m => m.q === query);
-                    if (catItem) data.movies = rankMovies(catItem, data.movies);
-                    currentResults = data.movies;
-                    displayResults(data.movies, query);
-                } else if (data.success) {
-                    resultsEmpty(`Nic jsme nenašli pro „${query}". Zkus jiný název nebo jiný pravopis.`, query);
+                if (settings.searchMerge) {
+                    await searchMerged(query);
                 } else {
-                    resultsError(data.error || 'Chyba při vyhledávání.');
+                    const { response, data, rateLimited } = await apiJson(
+                        `/api/search?q=${encodeURIComponent(query)}${proxyQS()}`,
+                        { onWait: resultsRateLimited, onRetry: () => resultsLoading(`Hledám „${query}" …`) });
+
+                    if (rateLimited) {
+                        resultsError('Server pořád hlásí příliš mnoho dotazů. Zkus to prosím za chvilku znovu.');
+                    } else if (!data) {
+                        resultsError(`Server nevrátil platnou odpověď (HTTP ${response.status}).`);
+                    } else if (data.success && data.movies && data.movies.length > 0) {
+                        const catItem = CATALOG.find(m => m.q === query);
+                        if (catItem) data.movies = rankMovies(catItem, data.movies);
+                        currentResults = data.movies;
+                        displayResults(data.movies, query);
+                    } else if (data.success) {
+                        resultsEmpty(`Nic jsme nenašli pro „${query}". Zkus jiný název nebo jiný pravopis.`, query);
+                    } else {
+                        resultsError(data.error || 'Chyba při vyhledávání.');
+                    }
                 }
             } catch (error) {
                 console.error('Search error:', error);
@@ -1755,6 +1758,80 @@
             e.stopPropagation();
             toggleFavorite(favItemFromEl(fav));
         }, true);
+
+        // Vrstva jedna: všech šest zdrojů se ptá souběžně a karty se dokreslují, jak odpovědi
+        // přicházejí. Když zdroj selže (429, výpadek, vypnutý v adminu), jeho odpověď se zahodí
+        // a ostatní pokračují - hledání kvůli jednomu zdroji nespadne.
+        const MERGE_SOURCES = ['prehrajto', 'sledujteto', 'bombuj', 'hellspy', 'fastshare', 'sdilej'];
+
+        function movieDedupeKey(m) {
+            const url = String((m && m.url) || '');
+            if (url) return 'u:' + url.replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase();
+            return 't:' + movieDedupeTitle(m);
+        }
+
+        function movieDedupeTitle(m) {
+            return String((m && m.title) || '')
+                .replace(/\(\d{4}\)\s*$/, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .toLowerCase();
+        }
+
+        async function searchMerged(query) {
+            const catItem = CATALOG.find(m => m.q === query);
+            const seen = new Set();
+            const seenTitles = new Set();
+            let answered = 0;
+            let okCount = 0;
+            let paintQueued = false;
+
+            const paint = () => {
+                paintQueued = false;
+                if (!currentResults.length) return;
+                const movies = catItem ? rankMovies(catItem, currentResults.slice()) : currentResults.slice();
+                displayResults(movies, query);
+                const left = MERGE_SOURCES.length - answered;
+                if (left > 0) resultsInfo.textContent += ` · načítám další zdroje (${left})…`;
+            };
+
+            const queuePaint = () => {
+                if (paintQueued) return;
+                paintQueued = true;
+                requestAnimationFrame(paint);
+            };
+
+            await Promise.all(MERGE_SOURCES.map(async (src) => {
+                try {
+                    const { data } = await apiJson(
+                        `/api/search?q=${encodeURIComponent(query)}&source=${encodeURIComponent(src)}${proxyQS()}`,
+                        { retries: 0 });
+                    if (data && data.success && Array.isArray(data.movies)) {
+                        okCount++;
+                        data.movies.forEach(movie => {
+                            const key = movieDedupeKey(movie);
+                            const title = movieDedupeTitle(movie);
+                            if (seen.has(key) || (title && seenTitles.has(title))) return;
+                            seen.add(key);
+                            if (title) seenTitles.add(title);
+                            currentResults.push(movie);
+                        });
+                        queuePaint();
+                    }
+                } catch (e) {
+                    // zdroj selhal - ignorujeme, ostatní dobíhají
+                } finally {
+                    answered++;
+                    queuePaint();
+                }
+            }));
+
+            paint();
+            if (!currentResults.length) {
+                if (!okCount) resultsError('Zdroje teď nevydaly žádnou odpověď (pravděpodobně 429). Zkus to za chvíli.');
+                else resultsEmpty(`Nic jsme nenašli pro „${query}". Zkus jiný název nebo jiný pravopis.`, query);
+            }
+        }
 
         function displayResults(movies, query) {
             resultsClear();

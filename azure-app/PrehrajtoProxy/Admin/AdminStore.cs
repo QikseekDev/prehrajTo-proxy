@@ -68,6 +68,9 @@ public sealed class SourcesConfig
 
     public bool IsEnabled(string source) => source switch
     {
+        // "all" není zdroj, ale režim: povoluje ho až kontrola, že je merge zapnutý
+        // a aspoň jeden zdroj běží (viz /api/search), takže tady nesmí spadnout na false.
+        "all" => true,
         "prehrajto" => Prehrajto,
         "sledujteto" => Sledujteto,
         "bombuj" => Bombuj,
