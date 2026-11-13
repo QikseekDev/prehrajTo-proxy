@@ -728,6 +728,10 @@ html.no-flex-gap .p-next > * + *{margin-top:.55rem}
 html.no-flex-gap .p-next-bar > * + *{margin-left:1rem}
 html.no-flex-gap .p-next-actions > * + *{margin-left:.45rem}
 
+/* TV (IPK/webOS): větší text pro čitelnost na dálku; vyjímky: levý panel, hero/banner, klávesnice a návrhy */
+.webos .main{font-size:1.12em}
+.webos .main .hero,.webos .main .skeys,.webos .main .search-hint{font-size:.893em}
+
 /* Číslo kanálu z ovladače (OSD) a čísla u kanálů v mřížce živého vysílání */
 .ch-osd{
   position:fixed;top:calc(2rem + env(safe-area-inset-top));right:calc(2.4rem + env(safe-area-inset-right));z-index:95;
