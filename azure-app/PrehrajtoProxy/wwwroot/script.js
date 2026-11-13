@@ -44,6 +44,7 @@
         let activeSeries = null;      // otevřený seriál (pro návrat z přehrávače)
         let seriesReturn = false;     // do přehrávače se šlo z epizody seriálu
         let lastQuery = '';
+        let searchToken = 0;
         // Dotahování dalších stránek hledání pro otevřený seriál (klíč = series.key):
         // pages = poslední načtená stránka, done = víc už není, busy = právě běží.
         const seriesLoad = new Map();
@@ -1451,11 +1452,12 @@
             seriesReturn = false;
             searchEntries = [];
             seriesLoad.clear();
+            const token = ++searchToken;
             resultsLoading(`Hledám „${query}" …`);
 
             try {
                 const sources = settings.searchMerge ? MERGE_SOURCES_ALL : MERGE_SOURCES_LINE1;
-                await searchMerged(query, sources);
+                await searchMerged(query, sources, token);
             } catch (error) {
                 console.error('Search error:', error);
                 resultsError(`Chyba připojení: ${error.message}`);
@@ -1757,16 +1759,18 @@
                 .toLowerCase();
         }
 
-        async function searchMerged(query, sources) {
+        async function searchMerged(query, sources, token) {
             const list = Array.isArray(sources) && sources.length ? sources : MERGE_SOURCES_LINE1;
             const catItem = CATALOG.find(m => m.q === query);
             const seen = new Set();
             let answered = 0;
             let okCount = 0;
             let paintQueued = false;
+            const stale = () => token != null && token !== searchToken;
 
             const paint = () => {
                 paintQueued = false;
+                if (stale()) return;
                 if (!currentResults.length) return;
                 const movies = catItem ? rankMovies(catItem, currentResults.slice()) : currentResults.slice();
                 displayResults(movies, query);
@@ -1775,7 +1779,7 @@
             };
 
             const queuePaint = () => {
-                if (paintQueued) return;
+                if (paintQueued || stale()) return;
                 paintQueued = true;
                 requestAnimationFrame(paint);
             };
@@ -1785,7 +1789,7 @@
                     const { data } = await apiJson(
                         `/api/search?q=${encodeURIComponent(query)}&source=${encodeURIComponent(src)}${proxyQS()}`,
                         { retries: 0 });
-                    if (data && data.success && Array.isArray(data.movies)) {
+                    if (!stale() && data && data.success && Array.isArray(data.movies)) {
                         okCount++;
                         data.movies.forEach(movie => {
                             const key = movieDedupeKey(movie);
@@ -1799,10 +1803,11 @@
                     // zdroj selhal - ignorujeme, ostatní dobíhají
                 } finally {
                     answered++;
-                    queuePaint();
+                    if (!stale()) queuePaint();
                 }
             }));
 
+            if (stale()) return;
             paint();
             if (!currentResults.length) {
                 if (!okCount) resultsError('Zdroje teď nevydaly žádnou odpověď (pravděpodobně 429). Zkus to za chvíli.');
