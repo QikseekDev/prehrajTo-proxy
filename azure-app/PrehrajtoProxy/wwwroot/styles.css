@@ -758,7 +758,7 @@
         }
         .lg-pg.empty b { color: var(--muted); font-weight: 500; }
         .lg-prog { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); }
-        .lg-now { position: absolute; top: 30px; bottom: 0; width: 2px; background: var(--accent); z-index: 5; pointer-events: none; }
+        .lg-now { position: absolute; top: 30px; bottom: 0; width: 2px; background: var(--accent); z-index: 2; pointer-events: none; }
         .live-guide .live-more { display: block; margin: 10px auto 0; }
         .live-error {
             margin-top: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-sm);

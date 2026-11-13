@@ -273,7 +273,7 @@ body.touch .card:active .art{transform:scale(.985)}
 .lg-pg.empty{background:rgba(255,255,255,.02);border-style:dashed}
 .lg-pg.empty b{color:var(--muted);font-weight:500}
 .lg-prog{position:absolute;left:0;bottom:0;height:2px;background:var(--accent)}
-.lg-now{position:absolute;top:2.1rem;bottom:0;width:2px;background:var(--accent);z-index:5;pointer-events:none}
+.lg-now{position:absolute;top:2.1rem;bottom:0;width:2px;background:var(--accent);z-index:2;pointer-events:none}
 @media (max-width:900px){
   .live-guide{--lg-cw:8.5rem;--lg-rh:3.6rem}
   .lg-name{font-size:.72rem}
