@@ -958,8 +958,22 @@
         // Upoutávka se pustí až po 4 s, kdy je banner opravdu na obrazovce, a jen když ji
         // k titulu server poslal (iTunes "Preview"). Do té doby se nic nestahuje.
         // Video leží přesně tam, kde je teď plakát, a plakát zůstává pod ním jako záloha.
+        // Bez tlačítka: prohlížeč zvuk bez gesta většinou blokuje, takže se zkusí pustit
+        // se zvukem a při blokaci se tiše spadne na ztlumené přehrání; po prvním kliknutí/
+        // dotyku/klávese uživatele se běžící trailer odtlumí.
         const HERO_TRAILER_AFTER = 4000;
-        const heroTrailer = { io: null, timer: 0, video: null };
+        const heroTrailer = { io: null, timer: 0, video: null, sound: false };
+
+        function unmuteHeroTrailer() {
+            heroTrailer.sound = true;
+            const v = heroTrailer.video;
+            if (!v) return;
+            v.muted = false;
+            v.removeAttribute('muted');
+            v.volume = 1;
+        }
+        ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+            document.addEventListener(ev, unmuteHeroTrailer, { passive: true }));
 
         function stopHeroTrailer() {
             clearTimeout(heroTrailer.timer);
@@ -976,25 +990,35 @@
             if (!url || !heroEl.isConnected || heroTrailer.video) return;
             const v = document.createElement('video');
             v.className = 'hero-video';
-            v.muted = true;
-            v.defaultMuted = true;
             v.loop = true;
             v.playsInline = true;
             v.preload = 'auto';
             v.tabIndex = -1;
-            v.setAttribute('muted', '');
             v.setAttribute('playsinline', '');
             v.setAttribute('disablepictureinpicture', '');
             v.setAttribute('aria-hidden', 'true');
             v.src = url;
             heroTrailer.video = v;
             heroEl.appendChild(v);
+            const tryPlay = () => {
+                if (!v.isConnected) return;
+                // zkusit se zvukem (nebo odtlumeně po gestu), při blokaci spadnout na mute
+                v.muted = !heroTrailer.sound;
+                if (v.muted) v.setAttribute('muted', ''); else v.removeAttribute('muted');
+                const p = v.play();
+                if (p && p.catch) p.catch(() => {
+                    if (v.muted || !v.isConnected) return;
+                    v.muted = true;
+                    v.setAttribute('muted', '');
+                    const q = v.play();
+                    if (q && q.catch) q.catch(() => {});
+                });
+            };
             v.addEventListener('loadeddata', () => {
                 if (!v.isConnected) return;
                 v.classList.add('on');
                 heroEl.classList.add('trailer');
-                const p = v.play();
-                if (p && p.catch) p.catch(() => {});
+                tryPlay();
             }, { once: true });
             // Když se trailer nepovede (403, timeout), zůstane jen plakát.
             v.addEventListener('error', () => { if (heroTrailer.video === v) stopHeroTrailer(); }, { once: true });
@@ -1009,7 +1033,8 @@
                 const e = entries[entries.length - 1];
                 if (e.isIntersecting && e.intersectionRatio >= 0.35) {
                     const v = heroTrailer.video;
-                    if (v) {   // už načtený: po návratu nahoru jen pokračovat
+                    if (v) {   // už načtený: po návratu nahoru jen pokračovat (případně se zvukem)
+                        if (heroTrailer.sound && v.muted) { v.muted = false; v.removeAttribute('muted'); }
                         if (v.paused && v.readyState > 2) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
                         return;
                     }
