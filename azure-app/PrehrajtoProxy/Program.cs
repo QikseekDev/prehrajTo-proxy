@@ -1343,6 +1343,35 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? 
         .Select(ch => iptv.Alts(ch.Id, ch.Url) is { Count: > 0 } alts ? ch with { Alts = alts.ToArray() } : ch)
         .ToList();
 
+    // Pořadí podle popularity v zemi (LivePopularity): známé stanice nahoru, ostatní
+    // zůstanou v pořadí playlistu. pop = 1..N je pořadí, 0 znamená "v žebříčku není".
+    // Řadí se stabilně, takže stejně neznámé kanály si drží původní pořadí.
+    var popKey = countryCode ?? lang?.Trim().ToLowerInvariant();
+    if (LivePopularity.Has(popKey))
+    {
+        // Nejdřív jedna varianta od každé stanice (BBC One, ne 17 regionálních feedů
+        // za sebou), pak ostatní varianty a nakonec kanály, které v žebříčku nejsou -
+        // ty si drží pořadí playlistu.
+        var ordered = channels
+            .Select(ch => (ch, rank: LivePopularity.Rank(popKey, ch.Id)))
+            .OrderBy(x => x.rank < 0 ? int.MaxValue : x.rank)
+            .ThenBy(x => TextNorm.StripVariant(x.ch.Id).Length)
+            .ToList();
+
+        var main = new List<LiveChannel>();
+        var variants = new List<LiveChannel>();
+        var rest = new List<LiveChannel>();
+        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (ch, rank) in ordered)
+        {
+            if (rank < 0) { rest.Add(ch); continue; }
+            var feedKey = TextNorm.StripVariant(ch.Id).ToLowerInvariant();
+            if (seenIds.Add(feedKey)) main.Add(ch with { Pop = rank + 1 });
+            else variants.Add(ch with { Pop = rank + 1 });
+        }
+        channels = main.Concat(variants).Concat(rest).ToList();
+    }
+
     // epg=1 přidá ke kanálům program pro časovou osu. Párování playlistu s guide dělá
     // server (EpgService), takže prohlížeč nemusí znát žádná pravidla - jen vykreslí,
     // co dostane. Kanály bez programu v odpovědi chybí a osa jim ukáže "data nejsou".
@@ -1367,10 +1396,10 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? 
                 .ToArray();
             if (programmes.Length > 0 && !guide.ContainsKey(ch.Name)) guide[ch.Name] = programmes;
         }
-        return Results.Json(new { success = true, source = url, count = channels.Count, channels, guide });
+        return Results.Json(new { success = true, source = url, count = channels.Count, popular = channels.Count(c => c.Pop > 0), channels, guide });
     }
 
-    return Results.Json(new { success = true, source = url, count = channels.Count, channels });
+    return Results.Json(new { success = true, source = url, count = channels.Count, popular = channels.Count(c => c.Pop > 0), channels });
 }).RequireRateLimiting("api");
 
 // ------------------------------------------------------------------ /api/live/countries  (výběr zdroje)
@@ -2021,5 +2050,5 @@ record ThumbResult(string Thumbnail, string Title, string Url);
 record CatalogItem(string T, string Y, string Img, string Q, string[] G);
 
 // Alts = záložní streamy z iptv-org API (když playlist URL nefunguje, klient zkusí další).
-record LiveChannel(string Name, string Group, string Logo, string Url, string Id, string Ua, string Referrer, string Quality, string[] Tags, IptvAlt[] Alts);
+record LiveChannel(string Name, string Group, string Logo, string Url, string Id, string Ua, string Referrer, string Quality, string[] Tags, IptvAlt[] Alts, int Pop = 0);
 record LiveCountry(string Code, string Name, string Flag);

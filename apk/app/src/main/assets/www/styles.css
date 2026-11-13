@@ -258,6 +258,7 @@ body.touch .card:active .art{transform:scale(.985)}
 .lg-tick.hour{color:var(--text-2);border-left-color:var(--line-strong)}
 .lg-rows{position:relative}
 .lg-row{display:flex;height:var(--lg-rh);border-bottom:1px solid var(--line)}
+.lg-group{position:sticky;left:0;z-index:6;padding:.3rem .8rem;font-size:.78rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);border-bottom:1px solid var(--line)}
 .lg-row:hover .lg-ch{background:var(--surface-2)}
 .lg-ch{position:sticky;left:0;z-index:4;width:var(--lg-cw);flex:none;display:flex;align-items:center;background:var(--surface);border-right:1px solid var(--line)}
 .lg-ch-btn{display:flex;align-items:center;gap:.55rem;width:100%;min-width:0;padding:0 .7rem;text-align:left}

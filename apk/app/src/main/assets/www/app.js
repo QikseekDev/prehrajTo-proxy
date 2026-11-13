@@ -2314,8 +2314,18 @@
     if (reset || !liveShown) liveShown = Math.min(items.length, LIVE_PAGE);
     var shown = items.length > liveShown ? items.slice(0, liveShown) : items;
     var rows = '';
+    // Server posílá u známých stanic pořadí v popularitě země (pop > 0) a řadí je
+    // dopředu. Tady se z toho udělají dvě skupiny s popiskem, ať je vidět, kde
+    // "nejznámější" končí - jinak by to vypadalo jako náhodné pořadí.
+    var lastPop = items.length && items[0].pop ? 1 : 0;
+    if (lastPop) rows += '<div class="lg-group">Nejpopulárnější v zemi</div>';
     for (var i = 0; i < shown.length; i++) {
       var c = shown[i];
+      var isPop = c.pop ? 1 : 0;
+      if (isPop !== lastPop) {
+        rows += '<div class="lg-group">' + (isPop ? 'Nejpopulárnější v zemi' : 'Další kanály') + '</div>';
+        lastPop = isPop;
+      }
       var idx = state.channels.indexOf(c);
       var initials = lgInitials(c.name);
       var progs = lgProgrammes(c, base);
