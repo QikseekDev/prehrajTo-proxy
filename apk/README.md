@@ -66,8 +66,11 @@ Stejná adresa se používá pro všechno: katalog, hledání, přehrávání, t
   a tlačítko Teď. Kanál bez programu má blok „Data o programu nejsou k dispozici“ a pořád
   jde přehrát. Filtry 1080p / bez geo bloku / jen 24-7. HLS hraje `hls.js`, kanály s vlastním
   User-Agentem nebo Refererem jdou vždy přes relay `/api/live/hls`.
-- **Stahování** – přes systémový DownloadManager (`/api/stream?download=1`), soubor skončí ve
-  složce *Stažené*.
+- **Stahování offline** – v detailu filmu tlačítko *Stáhnout offline* (vedle *Přehrát* a
+  *Do oblíbených*). Video se stáhne přes `/api/stream?download=1` do soukromého úložiště
+  aplikace (`files/offline`, přes most `WflixNative.offlineStart`) a přehraje se z `file://`,
+  takže funguje i bez internetu. Stažená videa jsou v Knihovně v řadě *Stažené offline*
+  (velikost, mazání křížkem). Bez připojení appka při startu otevře rovnou Knihovnu.
 - **Ovladač** – šipky = navigace s prostorovým fokusem, Enter = potvrzení, Zpět = zavře překryv,
   na úvodní obrazovce appku přesune do pozadí, mediální tlačítka = play/pauza/seek.
 - **Celoobrazovka** – při přehrávání se schovají systémové lišty a displej nezhasne.
@@ -173,7 +176,7 @@ cp ../ipk/app/{index.html,styles.css,app.js,hls.min.js} app/src/main/assets/www/
 - [ ] **Katalog a hledání:** načtení domů, vyhledávání, otevření detailu, prázdné výsledky a chybový stav (včetně „Zkusit znovu“ tam, kde je dostupné).
 - [ ] **Přehrávání:** přímé/CDN i přes server (fallback), pauza/seek, návrat na pozici (pokračování), titulky, chování při chybě/obnovení streamu, rotace/displej/immersive během přehrávání.
 - [ ] **Živé vysílání:** načtení kanálů, filtry, přehrávání HLS, chybový stav a opakování pokusu.
-- [ ] **Knihovna/uživatelská data:** oblíbené, historie/pokračování, stahování (DownloadManager, oprávnění dle verze Androidu), nastavení titulků.
+- [ ] **Knihovna/uživatelská data:** oblíbené, historie/pokračování, stažená videa offline (stažení, přehrání z Knihovny, smazání, start bez internetu), nastavení titulků.
 - [ ] **Síť a bezpečnost:** HTTPS backend (doporučeno), chování na HTTP/LAN podle potřeby, žádné načítání cizích stránek ve WebView (externí odkazy jen ven).
 - [ ] **Výkon/stabilita:** delší přehrávání bez pádu WebView, reakce na ztrátu/obnovení sítě, rozumná odezva UI.
 - [ ] **Release artefakty:** správný `versionName`/`versionCode`, podepsaný release keystore (ne debug), ověřený podpis (`apksigner verify`) a kontrolní součet.

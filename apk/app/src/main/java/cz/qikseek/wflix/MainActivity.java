@@ -2,15 +2,12 @@ package cz.qikseek.wflix;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.DownloadManager;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.KeyEvent;
@@ -29,14 +26,18 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -49,12 +50,15 @@ import java.util.concurrent.Executors;
  *    varianta {@code httpGetAsync}, která neblokuje vykreslování stránky,
  *  - tlačítko Zpět zavírá překryvy v aplikaci, na úvodní obrazovce ukončí appku,
  *  - displej zůstává zapnutý jen při přehrávání (řídí klient přes setKeepScreenOn),
+ *  - offline knihovna: {@code offlineStart} stáhne video do soukromého úložiště
+ *    aplikace, takže se přehraje i bez internetu (Klient ho pak pustí z file://),
  *  - pád renderovacího procesu WebView se zotaví (WebView se znovu vytvoří).
  */
 public class MainActivity extends Activity {
 
     private static final String START_URL = "file:///android_asset/www/index.html";
     private static final String ASSET_PREFIX = "file:///android_asset/";
+    private static final String OFFLINE_DIR = "offline";      // podsložka soukromého úložiště appky
     private static final int BG = 0xFF0B0C0F;
     private static final long MAX_BODY_BYTES = 32L * 1024 * 1024;   // ochrana proti obrovské odpovědi
     private static final int MAX_REDIRECTS = 5;
@@ -67,6 +71,7 @@ public class MainActivity extends Activity {
     private volatile boolean backHandled = false;
     private boolean immersive = true;
     private volatile boolean insecureWarned = false;
+    private final ConcurrentHashMap<String, OfflineJob> offlineJobs = new ConcurrentHashMap<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,6 +89,7 @@ public class MainActivity extends Activity {
             WebView.setWebContentsDebuggingEnabled(true);
         }
 
+        cleanupOfflineParts();
         createWebView(savedInstanceState);
         enterImmersive(true);
     }
@@ -102,9 +108,10 @@ public class MainActivity extends Activity {
         s.setDatabaseEnabled(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
-        // Soubory appky jsou v assets (file:///android_asset/ je dostupné vždy). Přístup k ostatním
-        // souborům a content:// URI klient nepotřebuje, takže je vypínáme.
-        s.setAllowFileAccess(false);
+        // Klient je v assets, ale stažená videa jsou v soukromém úložišti appky
+        // (files/offline) a přehrávají se z file:// – proto je file access potřeba.
+        // content:// (galerie, cizí soubory) appka nepotřebuje, ten zůstává vypnutý.
+        s.setAllowFileAccess(true);
         s.setAllowContentAccess(false);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setJavaScriptCanOpenWindowsAutomatically(false);
@@ -364,6 +371,161 @@ public class MainActivity extends Activity {
         return "WflixAndroid/" + v;
     }
 
+    /* ------------------------------------------------------------------ *
+     *  Offline knihovna – videa stažená do aplikace
+     * ------------------------------------------------------------------ */
+
+    /** Běžící stahování. Drží se jen v paměti; po pádu appky se .part uklidí. */
+    private static final class OfflineJob {
+        volatile boolean cancelled;
+        volatile HttpURLConnection conn;
+    }
+
+    private static boolean isSafeOfflineId(String id) {
+        return id != null && id.matches("[A-Za-z0-9_-]{1,60}");
+    }
+
+    private static String cleanDownloadName(String name) {
+        String n = (name == null) ? "" : name.trim();
+        n = n.replaceAll("[\\\\/:*?\"<>|]+", "_").trim();
+        return n.isEmpty() ? "video" : n;
+    }
+
+    private static long parseLength(String v) {
+        if (v == null) return 0;
+        try { return Long.parseLong(v.trim()); } catch (Exception e) { return 0; }
+    }
+
+    /** Soukromé úložiště appky (na TV bývá víc místa na externí části, když existuje). */
+    private File offlineDir() {
+        File base = null;
+        try { base = getExternalFilesDir(null); } catch (Exception ignored) { base = null; }
+        if (base == null) base = getFilesDir();
+        if (base == null) return null;
+        File dir = new File(base, OFFLINE_DIR);
+        try {
+            if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) return null;
+        } catch (Exception e) {
+            return null;
+        }
+        return dir;
+    }
+
+    /** Nedokončená stahování z předchozího běhu appky (appka byla zabita) uklidit. */
+    private void cleanupOfflineParts() {
+        File dir = offlineDir();
+        if (dir == null) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        long now = System.currentTimeMillis();
+        for (File f : files) {
+            if (!f.getName().endsWith(".part")) continue;
+            if (now - f.lastModified() < 10 * 60 * 1000) continue;   // čerstvé nechat
+            try { f.delete(); } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void offlineProgress(String id, long bytes, long total) {
+        offlineEvent(id, "progress", "{\"bytes\":" + bytes + ",\"total\":" + total + "}");
+    }
+
+    /** Doručí stav stahování do window.__wflixOfflineEvent(id, typ, json). */
+    private void offlineEvent(final String id, final String type, final String payload) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (web == null) return;
+                web.evaluateJavascript("window.__wflixOfflineEvent&&window.__wflixOfflineEvent("
+                        + jsQuote(id) + "," + jsQuote(type) + "," + jsQuote(payload) + ")", null);
+            }
+        });
+    }
+
+    /** Stáhne video do úložiště aplikace (běží na síťovém vlákně, ne v UI). */
+    private void runOfflineDownload(String id, String urlStr, String title) {
+        OfflineJob job = offlineJobs.get(id);
+        if (job == null) return;
+        File dir = offlineDir();
+        if (dir == null) {
+            offlineJobs.remove(id);
+            offlineEvent(id, "error", "{\"message\":\"Úložiště aplikace není dostupné\"}");
+            return;
+        }
+        File part = new File(dir, id + ".part");
+        File target = new File(dir, id + ".mp4");
+        HttpURLConnection conn = null;
+        long total = 0, done = 0, lastReport = 0;
+        try {
+            URL url = parseHttpUrl(urlStr);
+            if (url == null) throw new IllegalStateException("Neplatná adresa videa");
+            warnIfInsecure(url);
+            boolean finished = false;
+            for (int hop = 0; hop <= MAX_REDIRECTS && !finished; hop++) {
+                conn = (HttpURLConnection) url.openConnection();
+                job.conn = conn;
+                conn.setConnectTimeout(20000);
+                conn.setReadTimeout(60000);
+                conn.setInstanceFollowRedirects(false);
+                conn.setRequestProperty("Accept", "*/*");
+                conn.setRequestProperty("User-Agent", userAgent());
+                int code = conn.getResponseCode();
+                if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                    String loc = conn.getHeaderField("Location");
+                    conn.disconnect();
+                    conn = null;
+                    job.conn = null;
+                    if (loc == null) throw new IllegalStateException("HTTP " + code);
+                    url = parseHttpUrl(new URL(url, loc).toString());
+                    if (url == null) throw new IllegalStateException("Neplatné přesměrování");
+                    continue;
+                }
+                if (code >= 400) throw new IllegalStateException("Server vrátil HTTP " + code);
+                total = parseLength(conn.getHeaderField("Content-Length"));
+                long free = dir.getUsableSpace();
+                if (total > 0 && free > 0 && total > free) {
+                    throw new IllegalStateException("V aplikaci není dost místa (volno "
+                            + (free / (1024 * 1024)) + " MB)");
+                }
+                try (InputStream in = conn.getInputStream();
+                     FileOutputStream out = new FileOutputStream(part)) {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        if (job.cancelled) throw new IllegalStateException("cancelled");
+                        out.write(buf, 0, n);
+                        done += n;
+                        long now = System.currentTimeMillis();
+                        if (now - lastReport >= 400) {
+                            lastReport = now;
+                            offlineProgress(id, done, total);
+                        }
+                    }
+                    out.flush();
+                }
+                finished = true;
+            }
+            if (!finished) throw new IllegalStateException("Příliš mnoho přesměrování");
+            if (done <= 0) throw new IllegalStateException("Server neposlal žádná data");
+            if (target.exists() && !target.delete()) throw new IllegalStateException("Starý soubor se nepodařilo nahradit");
+            if (!part.renameTo(target)) throw new IllegalStateException("Soubor se nepodařilo uložit");
+            offlineEvent(id, "done", "{\"bytes\":" + done
+                    + ",\"path\":" + jsQuote(Uri.fromFile(target).toString())
+                    + ",\"title\":" + jsQuote(title) + "}");
+        } catch (Exception e) {
+            boolean cancelled = job.cancelled;
+            try { if (part.exists()) part.delete(); } catch (Exception ignored) {
+            }
+            String msg = (e.getMessage() == null) ? e.getClass().getSimpleName() : e.getMessage();
+            if (!cancelled && !"cancelled".equals(msg)) {
+                offlineEvent(id, "error", "{\"message\":" + jsQuote(msg) + "}");
+            }
+        } finally {
+            offlineJobs.remove(id);
+            if (conn != null) conn.disconnect();
+        }
+    }
+
     private static final class Result {
         final boolean ok;
         final String data;      // tělo odpovědi, nebo popis chyby
@@ -517,36 +679,100 @@ public class MainActivity extends Activity {
             });
         }
 
-        /** Stahování přes systémový DownloadManager (jde vždy přes /api/stream?download=1). */
+        /**
+         * Stáhne video do soukromého úložiště aplikace, aby šlo přehrát offline
+         * z Knihovny. Průběh a výsledek jde do window.__wflixOfflineEvent.
+         */
         @JavascriptInterface
-        public void download(String url, String name) {
+        public boolean offlineStart(final String id, final String url, final String name) {
+            if (!isSafeOfflineId(id)) return false;
+            if (offlineJobs.containsKey(id)) return true;
+            if (parseHttpUrl(url) == null) return false;
+            offlineJobs.put(id, new OfflineJob());
             try {
-                URL u = parseHttpUrl(url);
-                if (u == null) {
-                    toast("Neplatná adresa ke stažení");
-                    return;
-                }
-                warnIfInsecure(u);
-                String safe = (name == null || name.trim().isEmpty()) ? "wflix-video.mp4" : name.trim();
-                safe = safe.replaceAll("[\\\\/:*?\"<>|]+", "_");
-                if (!safe.toLowerCase(Locale.ROOT).endsWith(".mp4")) safe += ".mp4";
-                DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-                if (dm == null) {
-                    toast("Stahování není dostupné");
-                    return;
-                }
-                DownloadManager.Request req = new DownloadManager.Request(Uri.parse(u.toString()));
-                req.setTitle(safe);
-                req.setDescription("Wflix");
-                req.setMimeType("video/mp4");
-                req.addRequestHeader("User-Agent", userAgent());
-                req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safe);
-                dm.enqueue(req);
-                toast("Stahuji: " + safe);
+                net.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        runOfflineDownload(id, url, cleanDownloadName(name));
+                    }
+                });
             } catch (Exception e) {
-                toast("Stahování selhalo: " + e.getMessage());
+                offlineJobs.remove(id);
+                return false;
             }
+            return true;
+        }
+
+        @JavascriptInterface
+        public void offlineCancel(String id) {
+            if (!isSafeOfflineId(id)) return;
+            OfflineJob job = offlineJobs.get(id);
+            if (job == null) return;
+            job.cancelled = true;
+            HttpURLConnection c = job.conn;
+            if (c != null) {
+                try { c.disconnect(); } catch (Exception ignored) {
+                }
+            }
+        }
+
+        @JavascriptInterface
+        public boolean offlineDelete(String id) {
+            if (!isSafeOfflineId(id)) return false;
+            File dir = offlineDir();
+            if (dir == null) return false;
+            boolean ok = true;
+            File[] files = new File[] { new File(dir, id + ".mp4"), new File(dir, id + ".part") };
+            for (File f : files) {
+                try {
+                    if (f.exists() && !f.delete()) ok = false;
+                } catch (Exception e) {
+                    ok = false;
+                }
+            }
+            return ok;
+        }
+
+        /** file:// cesta staženého videa, kterou WebView přehraje ("" = není). */
+        @JavascriptInterface
+        public String offlinePath(String id) {
+            if (!isSafeOfflineId(id)) return "";
+            File dir = offlineDir();
+            if (dir == null) return "";
+            File f = new File(dir, id + ".mp4");
+            if (!f.isFile() || f.length() <= 0) return "";
+            return Uri.fromFile(f).toString();
+        }
+
+        /** Seznam skutečně stažených souborů – klient podle něj uklidí knihovnu. */
+        @JavascriptInterface
+        public String offlineFiles() {
+            JSONArray arr = new JSONArray();
+            File dir = offlineDir();
+            if (dir == null) return "[]";
+            File[] files = dir.listFiles();
+            if (files == null) return "[]";
+            for (File f : files) {
+                String n = f.getName();
+                if (!n.endsWith(".mp4")) continue;
+                String id = n.substring(0, n.length() - 4);
+                if (!isSafeOfflineId(id)) continue;
+                try {
+                    JSONObject o = new JSONObject();
+                    o.put("id", id);
+                    o.put("bytes", f.length());
+                    arr.put(o);
+                } catch (Exception ignored) {
+                }
+            }
+            return arr.toString();
+        }
+
+        /** Volné místo v úložišti aplikace (bajty) – klient podle něj varuje před stažením. */
+        @JavascriptInterface
+        public String offlineFree() {
+            File dir = offlineDir();
+            return String.valueOf(dir == null ? 0 : dir.getUsableSpace());
         }
 
         @JavascriptInterface

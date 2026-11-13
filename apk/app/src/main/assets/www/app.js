@@ -714,18 +714,21 @@
     } catch (_) {}
   }
 
-  function libCardHtml(rec, kind, idx) {
+  function libCardHtml(rec, kind, idx, opts) {
+    opts = opts || {};
     var img = rec.poster || rec.img || rec.thumb || '';
     var art = img ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer">' : '';
     var ph = '<div class="ph"' + (img ? ' style="display:none"' : '') + '>' + icon('film') + '</div>';
     var isCont = (kind === 'continue') || !!rec._continue;
     var pct = 0;
     if (isCont && rec._t && rec._d) { pct = Math.max(0, Math.min(100, (rec._t / rec._d) * 100)); }
-    var note = isCont ? (rec.y || 'Rozkoukané') : (rec.type === 'series' ? 'Seriál' : 'Oblíbené');
+    var note = opts.note || (isCont ? (rec.y || 'Rozkoukané') : (rec.type === 'series' ? 'Seriál' : 'Oblíbené'));
+    var delAttr = opts.del || 'data-favdel';
+    var delLabel = opts.delLabel || 'Odebrat z oblíbených';
     return '<button class="f card" type="button" data-idx="' + idx + '">'
       + '<span class="art">' + art + ph
       + (pct ? '<span class="progress"><i style="width:' + pct + '%"></i></span>' : '')
-      + (!isCont && rec.key ? '<span class="fav-del" role="button" aria-label="Odebrat z oblíbených" data-favdel="' + esc(rec.key) + '"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></span>' : '')
+      + (!isCont && rec.key ? '<span class="fav-del" role="button" aria-label="' + esc(delLabel) + '" ' + delAttr + '="' + esc(rec.key) + '"><svg class="i" aria-hidden="true" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></span>' : '')
       + '</span>'
       + '<span class="cap"><span class="t">' + esc(rec.title || 'Video') + '</span>'
       + (note ? '<span class="y">' + esc(note) + '</span>' : '') + '</span>'
@@ -1323,9 +1326,25 @@
     }
   }
 
+  /* Bez připojení se nemá smysl zaseknout na načítání katalogu: appka rovnou
+     otevře Knihovnu, kde jsou stažená videa a oblíbené. */
+  function isOffline() {
+    try { return navigator.onLine === false; } catch (_) { return false; }
+  }
+
+  function openLibraryView(msg) {
+    try { loading(null); } catch (_) {}
+    setView('library');
+    try { renderLibraryView(); } catch (_) {}
+    var first = $('libRows') ? $('libRows').querySelector('.f') : null;
+    if (first) focusEl(first);
+    if (msg) toast(msg, 3800);
+  }
+
   function loadHome() {
     loading('Načítám katalog…');
-    return apiJson('/api/catalog?lang=' + settings.lang).then(function (d) {
+    var catalogFailed = false;
+    return apiJson('/api/catalog?lang=' + settings.lang, 7000).then(function (d) {
       if (d && d.success && d.items && d.items.length) {
         state.catalog = d.items.concat(FALLBACK.filter(function (m) {
           return itemGenres(m).indexOf('České') !== -1;
@@ -1334,6 +1353,7 @@
         state.catalog = FALLBACK.slice();
       }
     }).catch(function () {
+      catalogFailed = true;
       state.catalog = FALLBACK.slice();
     }).then(function () {
       loading(null);
@@ -1341,6 +1361,13 @@
       renderHero();
       renderRows();
       renderSearchHint();
+      // Katalog se nepodařilo načíst (typicky žádný internet) – knihovna je jistota.
+      if (catalogFailed && state.view === 'home') {
+        openLibraryView(isOffline()
+          ? 'Bez připojení – otevírám knihovnu'
+          : 'Katalog se nenačetl – otevírám knihovnu');
+        return;
+      }
       if (state.view === 'home' && !currentFocus()) {
         var b = $('hero').querySelector('.btn.primary');
         if (b) focusEl(b);
@@ -1924,13 +1951,9 @@
     $('detailTitle').textContent = m.title || 'Video';
     $('detailMeta').textContent = m.year ? String(m.year) : '';
     $('detailNote').textContent = '';
-    if (Native && typeof Native.download === 'function') {
-      show($('detailDl'));
-    } else {
-      hide($('detailDl'));
-    }
     updateDetailFav();
     bindDetailActions((opts && opts.play) || function () { playMovie(m); });
+    updateDetailDl();
     // Otevřeno nad seznamem dílů seriálu? Pak musí být detail opravdu navrchu.
     $('detail').classList.toggle('on-top', !!($('series') && !$('series').hidden));
     show($('detail'));
@@ -1947,16 +1970,75 @@
     close.parentNode.replaceChild(freshClose, close);
     freshClose.addEventListener('click', function () { closeDetail(); focusAfterOverlay(); });
     freshClose.id = 'detailClose';
-    if (Native && typeof Native.download === 'function' && state.detail && state.detail.kind === 'movie') {
+    if (state.detail && state.detail.kind === 'movie') {
       var freshDl = dl.cloneNode(true);
       dl.parentNode.replaceChild(freshDl, dl);
       freshDl.id = 'detailDl';
-      freshDl.addEventListener('click', function () {
-        if (!state.detail || state.detail.kind !== 'movie') return;
-        var m = state.detail.movie;
-        Native.download(streamUrl(m.url, true, m.title), (m.title || 'video') + '.mp4');
-      });
+      freshDl.addEventListener('click', function () { downloadOffline(); });
     }
+  }
+
+  /* ------------------------------------------------------------------ *
+   *  Stahování do aplikace (offline knihovna)
+   *  APK: nativní část ukládá soubor do svého úložiště.
+   *  IPK: prohlížeč ukládá video do IndexedDB (offline.js).
+   * ------------------------------------------------------------------ */
+  var offline = window.WflixOffline || null;
+
+  function detailDlMovie() {
+    return (state.detail && state.detail.kind === 'movie') ? state.detail.movie : null;
+  }
+
+  /* Popisek tlačítka v detailu: Stáhnout offline / Stahuji 42 % / Staženo offline. */
+  function updateDetailDl() {
+    var btn = $('detailDl');
+    if (!btn) return;
+    var m = detailDlMovie();
+    if (!m || !m.url || !offline || !offline.available()) { hide(btn); return; }
+    show(btn);
+    var txt = btn.querySelector('span') || btn;
+    var job = offline.progress(m.url);
+    var rec = offline.find(m.url);
+    if (job) {
+      var pct = job.total > 0 ? Math.min(99, Math.floor(job.bytes / job.total * 100)) : 0;
+      txt.textContent = 'Stahuji ' + (pct > 0 ? pct + ' %' : offline.sizeText(job.bytes));
+      btn.classList.add('on');
+      btn.setAttribute('aria-busy', 'true');
+    } else if (rec) {
+      txt.textContent = 'Staženo offline';
+      btn.classList.add('on');
+      btn.removeAttribute('aria-busy');
+    } else {
+      txt.textContent = 'Stáhnout offline';
+      btn.classList.remove('on');
+      btn.removeAttribute('aria-busy');
+    }
+    btn.setAttribute('aria-label', txt.textContent);
+  }
+
+  function downloadOffline() {
+    var m = detailDlMovie();
+    if (!m || !m.url) return;
+    if (!offline || !offline.available()) { toast('Stahování offline tady nejde.', 3500); return; }
+    if (offline.find(m.url)) { toast('Tohle už je stažené v knihovně'); return; }
+    if (offline.progress(m.url)) { toast('Stahuje se…'); return; }
+    var title = m.title || 'Video';
+    toast('Stahuji offline: ' + title, 3000);
+    offline.start({
+      url: m.url,
+      src: streamUrl(m.url, true, title),
+      title: title,
+      poster: m.thumbnail || ''
+    }, function (ev) {
+      updateDetailDl();
+      if (ev.type === 'done') {
+        toast('Staženo offline: ' + title + ' – najdeš to v Knihovně', 4200);
+        if (state.view === 'library') { try { renderLibraryView(); } catch (_) {} }
+      } else if (ev.type === 'error') {
+        toast('Stažení selhalo: ' + ev.message, 4500);
+      }
+    });
+    updateDetailDl();
   }
 
   function focusAfterOverlay() {
@@ -2123,6 +2205,7 @@
   }
 
   function scheduleLiveWarm() {
+    if (isOffline()) return;                 // bez internetu nemá cenu nic stahovat
     // Když si uživatel kartu stihl otevřít sám, stahuje se jen jednou.
     function start() { if (!state.channels.length && !liveBusy) warmLive(); }
     // Až se appka usadí (intro, řady na Domů), ať se start nepere o první obrazovku.
@@ -3025,6 +3108,9 @@
 
   /* --- filmy --- */
   function playMovie(m) {
+    // Stažená kopie má přednost: přehraje se i bez internetu a nečerpá data.
+    var localCopy = (offline && offline.available() && m && m.url) ? offline.find(m.url) : null;
+    if (localCopy) { playOffline(localCopy); return; }
     closeDetail();
     // Při přechodu na jiný díl/film smaž rozkoukanost předchozího (ať po přechodu na další díl nezůstává).
     try {
@@ -3061,6 +3147,43 @@
     }).catch(function (e) {
       setPlayerState('Chyba: ' + e.message);
       toast('Video se nepodařilo načíst: ' + e.message, 4000);
+    });
+  }
+
+  /* Přehrání videa staženého do aplikace – bez serveru i bez internetu. */
+  function playOffline(entry) {
+    if (!entry || !entry.url) return;
+    if (!offline || !offline.available()) { toast('Stažená videa tady nejdou přehrát.', 3500); return; }
+    closeDetail();
+    try {
+      var prevKey = player && (player.resumeKey || player.page || '');
+      if (prevKey && String(prevKey) !== String(entry.url)) clearVideoProgress(prevKey);
+    } catch (_) {}
+    player.page = '';
+    player.cdn = '';
+    player.triedRelay = true;                 // ze souboru není kam přepnout
+    player.poster = entry.poster || '';
+    player.title = entry.title || 'Video';
+    player.resumeKey = entry.url;
+    player.subIndex = -1; player.subs = [];
+    try { player.resumeAt = getSavedProgress(entry.url); } catch (_) { player.resumeAt = 0; }
+    player._resumeApplied = false;
+    player.nextEpInfo = null;
+    player._keepNextEp = false;
+    openPlayer('movie', player.title);
+    setPlayerState('Načítám stažené video…');
+    $('pSub').disabled = true;
+    offline.playUrl(entry).then(function (src) {
+      attachSource(src, false, {
+        onFatal: function () {
+          setPlayerState('Stažené video se nepodařilo přehrát.');
+          toast('Stažené video se nepodařilo přehrát.', 4000);
+        }
+      });
+    }).catch(function (e) {
+      var msg = (e && e.message) ? e.message : 'soubor chybí';
+      setPlayerState('Chyba: ' + msg);
+      toast('Stažené video nejde otevřít: ' + msg, 4500);
     });
   }
 
@@ -3510,6 +3633,27 @@
     }
   })();
 
+  /* Křížek na kartě staženého videa – smaže soubor z úložiště aplikace. */
+  function onOfflineDelClick(e) {
+    var del = e.target && e.target.closest ? e.target.closest('[data-offdel]') : null;
+    if (!del) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var key = del.getAttribute('data-offdel');
+    var rec = null, all = (offline && offline.available()) ? offline.list() : [];
+    for (var i = 0; i < all.length; i++) if (all[i].key === key) rec = all[i];
+    if (!rec) { try { renderLibraryView(); } catch (_) {} return; }
+    offline.remove(rec, function () {
+      toast('Stažené video smazáno');
+      try { renderLibraryView(); } catch (_) {}
+      try { updateDetailDl(); } catch (_) {}
+    });
+  }
+  (function () {
+    var lib = $('libRows');
+    if (lib) lib.addEventListener('click', onOfflineDelClick, true);
+  })();
+
   /* Záložka v detailu – přidá nebo odebere titul z oblíbených. */
   var detailFavBtn = $('detailFav');
   if (detailFavBtn) {
@@ -3558,7 +3702,26 @@
   /* Knihovna: historie (rozkoukané) + oblíbené, mimo běžné řady domů. */
   function renderLibraryView() {
     var cont = (typeof getContinueItems === 'function') ? getContinueItems() : [];
+    var offs = (offline && offline.available()) ? offline.list() : [];
     var html = '';
+
+    html += '<section class="row"><div class="row-head"><h2 class="row-title">Stažené offline</h2>'
+      + '<span class="row-sub">' + offs.length + '</span></div>';
+    if (offs.length) {
+      html += '<div class="row-scroll" data-row="off">';
+      for (var o = 0; o < offs.length; o++) {
+        var size = offline.sizeText(offs[o].bytes);
+        html += libCardHtml(offs[o], 'offline', 'off:' + o, {
+          note: (size ? size + ' · ' : '') + 'Přehraje i bez internetu',
+          del: 'data-offdel',
+          delLabel: 'Smazat stažené video'
+        });
+      }
+      html += '</div>';
+    } else {
+      html += '<div class="state show">Zatím nic staženého. V detailu filmu dej „Stáhnout offline“ a video se uloží sem – přehraje se i bez internetu.</div>';
+    }
+    html += '</section>';
 
     html += '<section class="row"><div class="row-head"><h2 class="row-title">Pokračovat ve sledování</h2>'
       + '<span class="row-sub">' + cont.length + '</span></div>';
@@ -3601,6 +3764,10 @@
             playMovie({ url: it.url, title: it.title, thumbnail: it.img || it.thumb || it.poster || '' });
             return;
           }
+          if (parts[0] === 'off') {
+            playOffline(offs[idx]);
+            return;
+          }
           var fav = favorites[idx];
           if (!fav) return;
           openLibEntry('fav', fav);
@@ -3638,11 +3805,15 @@
 
   function startApp() {
     show($('shell'));
-    setView('home');
-    loadHome();
     renderLiveChips();
     renderSettings();
     if (settings.live) state.liveFilter = settings.live;
+    if (isOffline()) {
+      openLibraryView('Bez připojení – otevírám knihovnu');
+      return;
+    }
+    setView('home');
+    loadHome();
   }
 
 
@@ -3910,6 +4081,13 @@
     var _hd=$('health'); if(_hd){_hd.hidden=true; try{_hd.style.display='none';}catch(_){}} 
 
     try{initDragScroll();}catch(_){}
+    try {
+      if (offline && offline.reconcile) {
+        offline.reconcile().then(function (changed) {
+          if (changed && state.view === 'library') { try { renderLibraryView(); } catch (_) {} }
+        });
+      }
+    } catch (_) {}
     startApp();
     scheduleLiveWarm();
   }
