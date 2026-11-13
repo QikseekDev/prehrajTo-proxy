@@ -61,9 +61,11 @@ Stejná adresa se používá pro všechno: katalog, hledání, přehrávání, t
   tam, kde jsi skončil (řady *Pokračovat ve sledování* a *Nedávno sledované* na úvodní stránce).
 - **Oblíbené** – záložka ★ v detailu titulu a řada *Moje oblíbené* (`wflix-favs`).
 - **Titulky na míru** – velikost a pozadí titulků v Nastavení (CSS proměnné, stopa se nenačítá znovu).
-- **Živé vysílání** – `/api/live` (iptv-org: Česko, Čeština, Slovensko, USA, VB) s filtry
-  1080p / bez geo bloku / jen 24-7. HLS hraje `hls.js`, kanály s vlastním User-Agentem nebo
-  Refererem jdou vždy přes relay `/api/live/hls`.
+- **Živé vysílání** – `/api/live?epg=1` (iptv-org: Česko, Čeština, Slovensko, USA, VB) jako
+  časová osa 00:00–24:00: řádek na kanál, pořady z EPG jako bloky, červená linka „teď“
+  a tlačítko Teď. Kanál bez programu má blok „Data o programu nejsou k dispozici“ a pořád
+  jde přehrát. Filtry 1080p / bez geo bloku / jen 24-7. HLS hraje `hls.js`, kanály s vlastním
+  User-Agentem nebo Refererem jdou vždy přes relay `/api/live/hls`.
 - **Stahování** – přes systémový DownloadManager (`/api/stream?download=1`), soubor skončí ve
   složce *Stažené*.
 - **Ovladač** – šipky = navigace s prostorovým fokusem, Enter = potvrzení, Zpět = zavře překryv,

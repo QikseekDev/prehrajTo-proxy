@@ -1961,6 +1961,10 @@
   /* ------------------------------------------------------------------ *
    *  Živé vysílání
    * ------------------------------------------------------------------ */
+  // Program kanálů pro časovou osu: mapa "název kanálu" -> [{ t, s, e }].
+  // Párování s EPG dělá server (/api/live?...&epg=1), takže se tu jen kreslí.
+  var liveGuide = {};
+
   var LIVE_SOURCES = [
     { id: 'cz', label: 'Česko', q: 'country=cz' },
     { id: 'ces', label: 'Čeština', q: 'lang=ces' },
@@ -2019,21 +2023,63 @@
     st.className = 'state show';
     st.textContent = 'Načítám kanály…';
     loading('Načítám kanály…');
-    return apiJson('/api/live?' + sourceQuery(state.liveFilter), 35000).then(function (d) {
+    return apiJson('/api/live?' + sourceQuery(state.liveFilter) + '&epg=1', 35000).then(function (d) {
       loading(null);
       if (!d || !d.success) throw new Error((d && d.error) || 'Seznam kanálů se nepodařilo načíst');
       state.channels = d.channels || [];
+      liveGuide = (d.guide && typeof d.guide === 'object') ? d.guide : {};
       if (!state.channels.length) throw new Error('Seznam je prázdný');
-      renderChannels();
+      renderChannels(true);
     }).catch(function (e) {
       loading(null);
       state.channels = [];
+      liveGuide = {};
       showStateError(st, e.message + ' – zkontroluj adresu serveru a jestli backend /api/live povoluje CORS.', function () { loadLive(); });
       $('liveGrid').innerHTML = '';
+      $('liveGrid').hidden = true;
     });
   }
 
-  function renderChannels() {
+  /* Časová osa programu: kanály jako řádky, pořady jako bloky na ose 00:00-24:00.
+     Když kanál program nemá, dostane blok "Data o programu nejsou k dispozici" -
+     neztratí se a pořád se na něj dá kliknout. */
+  function lgPpm() {
+    var root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    return root * 0.15;                                  // px na minutu, den má ~3456 px při 16 px
+  }
+  function lgTime(min) {
+    var m = Math.max(0, Math.round(min));
+    return ('0' + (Math.floor(m / 60) % 24)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2);
+  }
+  function lgMidnight() {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  function lgOffset(iso, base) {
+    var t = new Date(iso).getTime();
+    return isNaN(t) ? null : (t - base) / 60000;
+  }
+  function lgInitials(name) {
+    return String(name || '?').split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0); }).join('').toUpperCase();
+  }
+  // Pořady kanálu oříznuté na dnešní den (přes půlnoc jde blok jen po okraj osy).
+  function lgProgrammes(ch, base) {
+    var list = liveGuide[ch.name];
+    if (!list || !list.length) return [];
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      var from = lgOffset(p.s, base), to = lgOffset(p.e, base);
+      if (from === null || to === null || to <= from) continue;
+      var a = Math.max(0, from), b = Math.min(1440, to);
+      if (b - a < 1) continue;
+      out.push({ title: p.t || 'Bez názvu', from: from, to: to, a: a, b: b });
+    }
+    return out;
+  }
+
+  function renderChannels(reset) {
     var st = $('liveState');
     var items = state.channels.filter(function (c) {
       var tags = c.tags || [];
@@ -2044,35 +2090,100 @@
     });
     st.className = 'state' + (items.length ? '' : ' show');
     st.textContent = items.length ? '' : 'Takový kanál tu není. Zkus jiný zdroj nebo jiné filtry.';
-    var html = '';
+    var grid = $('liveGrid');
+    if (!items.length) { grid.innerHTML = ''; grid.hidden = true; return; }
+    grid.hidden = false;
+
+    var base = lgMidnight();
+    var ppm = lgPpm();
+    var width = Math.round(1440 * ppm);
+    var now = new Date();
+    var nowMin = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+
+    var ticks = '';
+    for (var m = 0; m < 1440; m += 30) {
+      ticks += '<span class="lg-tick' + (m % 60 === 0 ? ' hour' : '') + '" style="left:' + Math.round(m * ppm) + 'px">' + lgTime(m) + '</span>';
+    }
+
+    var rows = '';
     for (var i = 0; i < items.length; i++) {
       var c = items[i];
       var idx = state.channels.indexOf(c);
-      var tags = c.tags || [];
-      var initials = String(c.name || '?').split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0); }).join('').toUpperCase();
-      html += '<button class="f ch" type="button" data-ch="' + idx + '">'
-        + '<span class="logo">' + (c.logo
-          ? '<img src="' + esc(c.logo) + '" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML=\'<span class=&quot;init&quot;>' + esc(initials) + '</span>\'">'
-          : '<span class="init">' + esc(initials) + '</span>') + '</span>'
-        + '<span class="name">' + esc(c.name) + '</span>'
-        + '<span class="badges">'
-        + (c.quality ? '<span class="b q">' + esc(c.quality) + '</span>' : '')
-        + (tags.indexOf('geo') !== -1 ? '<span class="b geo">geo blok</span>' : '')
-        + (tags.indexOf('not24') !== -1 ? '<span class="b">ne 24/7</span>' : '')
-        + '</span>'
-        + '</button>';
+      var initials = lgInitials(c.name);
+      var progs = lgProgrammes(c, base);
+      var blocks = '';
+      if (progs.length) {
+        for (var p = 0; p < progs.length; p++) {
+          var pr = progs[p];
+          var running = pr.from <= nowMin && nowMin < pr.to;
+          var cls = running ? ' run' : (pr.to <= nowMin ? ' past' : ' fut');
+          var w = Math.max(16, Math.round((pr.b - pr.a) * ppm) - 2);
+          var done = running ? Math.min(100, Math.round((nowMin - pr.from) / (pr.to - pr.from) * 100)) : 0;
+          blocks += '<button class="f lg-pg' + cls + '" type="button" data-ch="' + idx + '"'
+            + ' title="' + esc(pr.title) + ' · ' + lgTime(pr.from) + '–' + lgTime(pr.to) + '"'
+            + ' style="left:' + Math.round(pr.a * ppm) + 'px;width:' + w + 'px">'
+            + '<b>' + esc(pr.title) + '</b><small>' + lgTime(pr.from) + '–' + lgTime(pr.to) + '</small>'
+            + (done ? '<i class="lg-prog" style="width:' + done + '%"></i>' : '')
+            + '</button>';
+        }
+      } else {
+        blocks = '<button class="f lg-pg empty" type="button" data-ch="' + idx + '"'
+          + ' title="' + esc(c.name) + ' – program neznáme" style="left:0;width:100%">'
+          + '<b>Data o programu nejsou k dispozici</b><small>klikni a hraj živě</small></button>';
+      }
+      rows += '<div class="lg-row">'
+        + '<div class="lg-ch"><button class="f lg-ch-btn" type="button" data-ch="' + idx + '" title="' + esc(c.name) + '">'
+        + '<span class="lg-logo">'
+        + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '')
+        + '<span class="lg-init">' + esc(initials) + '</span></span>'
+        + '<span class="lg-name">' + esc(c.name) + '</span>'
+        + '</button></div>'
+        + '<div class="lg-track">' + blocks + '</div></div>';
     }
-    var grid = $('liveGrid');
-    grid.innerHTML = html;
-    var cards = grid.querySelectorAll('.ch');
-    for (var k = 0; k < cards.length; k++) {
+
+    var keepLeft = 0, keepTop = 0;
+    var old = grid.querySelector('.lg-scroll');
+    if (old) { keepLeft = old.scrollLeft; keepTop = old.scrollTop; }
+
+    grid.innerHTML = '<div class="lg-scroll"><div class="lg-canvas" style="width:calc(var(--lg-cw) + ' + width + 'px)">'
+      + '<div class="lg-head"><div class="lg-corner">Kanál</div><div class="lg-ticks" style="width:' + width + 'px">' + ticks + '</div></div>'
+      + '<div class="lg-rows">' + rows + '</div>'
+      + '<div class="lg-now" style="left:calc(var(--lg-cw) + ' + Math.round(nowMin * ppm) + 'px)"></div>'
+      + '</div></div>';
+
+    var box = grid.querySelector('.lg-scroll');
+    if (reset) {
+      // Až po layoutu - při prvním vykreslení ještě .lg-scroll nezná svou šířku.
+      var toNow = function () { liveScrollToNow(false); };
+      if (window.requestAnimationFrame) requestAnimationFrame(toNow); else setTimeout(toNow, 0);
+      setTimeout(toNow, 150);
+    } else if (box) {
+      box.scrollLeft = keepLeft;
+      box.scrollTop = keepTop;
+    }
+
+    var btns = grid.querySelectorAll('[data-ch]');
+    for (var k = 0; k < btns.length; k++) {
       (function (el) {
         el.addEventListener('click', function () {
           var ch = state.channels[parseInt(el.getAttribute('data-ch'), 10)];
           if (ch) playLive(ch);
         });
-      })(cards[k]);
+      })(btns[k]);
     }
+  }
+
+  function liveScrollToNow(smooth) {
+    var box = $('liveGrid').querySelector('.lg-scroll');
+    if (!box) return;
+    var d = new Date();
+    var nowMin = d.getHours() * 60 + d.getMinutes();
+    var max = Math.max(0, box.scrollWidth - box.clientWidth);
+    var left = Math.min(max, Math.max(0, nowMin * lgPpm() - box.clientWidth * 0.32));
+    if (smooth && box.scrollTo) {
+      try { box.scrollTo({ left: left, behavior: 'smooth' }); return; } catch (e) { }
+    }
+    box.scrollLeft = left;
   }
 
   /* ------------------------------------------------------------------ *
@@ -3356,6 +3467,8 @@
     document.addEventListener('mousemove', function () { if (!$('player').hidden) bumpIdle(); });
 
     renderLiveChips();
+    var liveNowBtn = $('liveNowBtn');
+    if (liveNowBtn) liveNowBtn.addEventListener('click', function () { liveScrollToNow(true); });
     renderSettings();
     var _hd=$('health'); if(_hd){_hd.hidden=true; try{_hd.style.display='none';}catch(_){}} 
 

@@ -256,7 +256,11 @@
           <h1 class="page-title">Živé vysílání</h1>
           <div id="liveChips" class="chips"></div>
         </div>
-        <div id="liveGrid" class="channels"></div>
+        <div class="live-bar">
+          <button class="f chip" id="liveNowBtn" type="button">Teď</button>
+          <span class="live-hint">Klikni na pořad nebo kanál a přehraje se živě.</span>
+        </div>
+        <div id="liveGrid" class="live-guide" hidden></div>
         <div id="liveState" class="state"></div>
       </section>
 

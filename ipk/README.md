@@ -84,9 +84,11 @@ Fokus je vždy vidět (bílý rám + modrý obrys), ovládání přehrávače se
   tam, kde jsi skončil (řady *Pokračovat ve sledování* a *Nedávno sledované* na úvodní stránce).
 - **Oblíbené** – záložka ★ v detailu titulu a řada *Moje oblíbené* (`wflix-favs`).
 - **Titulky na míru** – velikost a pozadí titulků v Nastavení (CSS proměnné, stopa se nenačítá znovu).
-- **Živě** – `/api/live` (iptv-org: Česko, Čeština, Slovensko, USA, VB) s filtry 1080p /
-  bez geo bloku / jen 24-7, HLS přes `hls.js`, relay `/api/live/hls` pro kanály, které chtějí
-  vlastní User-Agent nebo Referer.
+- **Živě** – `/api/live?epg=1` (iptv-org: Česko, Čeština, Slovensko, USA, VB) jako časová
+  osa 00:00–24:00: řádek na kanál, pořady z EPG jako bloky, červená linka „teď“ a tlačítko
+  Teď; kanál bez programu má blok „Data o programu nejsou k dispozici“ a pořád jde přehrát.
+  Filtry 1080p / bez geo bloku / jen 24-7, HLS přes `hls.js`, relay `/api/live/hls` pro
+  kanály, které chtějí vlastní User-Agent nebo Referer.
 - **Nastavení** – server, přímé přehrávání, jazyk katalogu, výchozí zdroj živého vysílání,
   test spojení.
 
