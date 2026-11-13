@@ -367,14 +367,19 @@
             });
 
             // jediná epizoda nemá smysl seskupovat - zůstane normální kartou
+            const extras = [];
             const flat = entries.flatMap(e => {
                 if (e.type !== 'series') return [e];
                 const series = finalizeSeries(e.series);
-                return series.episodeCount >= 2
-                    ? [{ type: 'series', series }]
-                    : e.series.raw.map(r => ({ type: 'movie', movie: r.movie }));
+                if (series.episodeCount >= 2) {
+                    if (series.extras && series.extras.length) extras.push(...series.extras);
+                    return [{ type: 'series', series }];
+                }
+                return e.series.raw.map(r => ({ type: 'movie', movie: r.movie }));
             });
-            return groupCollections(flat);
+            const result = groupCollections(flat);
+            extras.forEach(m => result.push({ type: 'movie', movie: m }));
+            return result;
         }
 
         function finalizeSeries(raw) {
@@ -410,12 +415,26 @@
                 return a.season - b.season;
             });
 
+            // V každém dílu nech jen nejlepší variantu; ostatní varianty vrať jako samostatné
+            // výsledky hledání (nezahazovat je).
+            const extras = [];
+            seasonList.forEach(season => {
+                season.episodes.forEach(ep => {
+                    if (ep.variants.length > 1) {
+                        const best = bestVariant(ep);
+                        ep.variants.forEach(v => { if (v !== best) extras.push(v); });
+                        ep.variants = [best];
+                    }
+                });
+            });
+
             const episodeCount = seasonList.reduce((n, s) => n + s.episodes.length, 0);
             return {
                 ...raw,
                 seasons: seasonList,
                 episodeCount,
                 seasonCount: seasonList.filter(s => s.season != null).length,
+                extras,
             };
         }
 
@@ -554,6 +573,17 @@
                 };
             });
 
+            // V každém filmu/dílu nech jen nejlepší variantu; ostatní vrať jako samostatné
+            // výsledky hledání (nezahazovat je).
+            const extras = [];
+            episodes.forEach(ep => {
+                if (ep.variants.length > 1) {
+                    const best = bestVariant(ep);
+                    ep.variants.forEach(v => { if (v !== best) extras.push(v); });
+                    ep.variants = [best];
+                }
+            });
+
             const years = rows.map(r => Number(r.row.year)).filter(y => y > 1900).sort((a, b) => a - b);
             const withThumb = items.find(it => it.movie.thumbnail);
             return {
@@ -568,6 +598,7 @@
                 seasons: [{ key: '?', season: null, episodes }],
                 episodeCount: episodes.length,
                 seasonCount: 0,
+                extras,
             };
         }
 
@@ -588,12 +619,17 @@
 
             const at = new Map();
             const drop = new Set();
+            const extras = [];
             groups.forEach(g => {
                 const first = Math.min(...g.items.map(it => it.index));
-                at.set(first, { type: 'series', series: buildCollection(g.base, g.baseTokens, 'c:' + g.baseTokens.join(' '), g.items) });
+                const series = buildCollection(g.base, g.baseTokens, 'c:' + g.baseTokens.join(' '), g.items);
+                if (series.extras && series.extras.length) extras.push(...series.extras);
+                at.set(first, { type: 'series', series });
                 g.items.forEach(it => { if (it.index !== first) drop.add(it.index); });
             });
-            return entries.flatMap((e, i) => drop.has(i) ? [] : [at.get(i) || e]);
+            const result = entries.flatMap((e, i) => drop.has(i) ? [] : [at.get(i) || e]);
+            extras.forEach(m => result.push({ type: 'movie', movie: m }));
+            return result;
         }
 
         // Patří film do otevřené série? U kolekce rozhoduje stejný začátek názvu.

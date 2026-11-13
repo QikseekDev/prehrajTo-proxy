@@ -276,17 +276,23 @@
     }
 
     var out = [];
+    var extras = [];
     for (var e = 0; e < entries.length; e++) {
       if (entries[e].type !== 'series') { out.push(entries[e]); continue; }
       var fin = finalizeSeries(entries[e].series);
       if (fin.episodeCount >= 2) {
+        if (fin.extras && fin.extras.length) {
+          for (var xi = 0; xi < fin.extras.length; xi++) extras.push(fin.extras[xi]);
+        }
         out.push({ type: 'series', series: fin });
       } else {
         // jediná epizoda nemá smysl seskupovat – zůstane normální kartou
         for (var r = 0; r < fin.raw.length; r++) out.push({ type: 'movie', movie: fin.raw[r].movie });
       }
     }
-    return groupCollections(out);
+    var result = groupCollections(out);
+    for (var xj = 0; xj < extras.length; xj++) result.push({ type: 'movie', movie: extras[xj] });
+    return result;
   }
 
   function finalizeSeries(raw) {
@@ -335,13 +341,28 @@
     });
 
     var episodeCount = 0;
-    for (var si = 0; si < seasonList.length; si++) episodeCount += seasonList[si].episodes.length;
+    var extras = [];
+    for (var si = 0; si < seasonList.length; si++) {
+      episodeCount += seasonList[si].episodes.length;
+      var eps = seasonList[si].episodes;
+      for (var ei = 0; ei < eps.length; ei++) {
+        var ep = eps[ei];
+        if (ep.variants.length > 1) {
+          var best = bestVariant(ep);
+          for (var vi = 0; vi < ep.variants.length; vi++) {
+            if (ep.variants[vi] !== best) extras.push(ep.variants[vi]);
+          }
+          ep.variants = [best];
+        }
+      }
+    }
 
     return {
       key: raw.key, title: raw.title, year: raw.year, poster: raw.poster,
       raw: raw.raw, seasons: seasonList,
       episodeCount: episodeCount,
-      seasonCount: seasonList.filter(function (x) { return x.season != null; }).length
+      seasonCount: seasonList.filter(function (x) { return x.season != null; }).length,
+      extras: extras
     };
   }
 
@@ -499,6 +520,20 @@
       episodes.push({ season: null, episode: r.episode != null ? r.episode : e + 1, num: num, label: num, variants: variants });
     }
 
+    // V každém filmu/dílu nech jen nejlepší variantu; ostatní vrať jako samostatné
+    // výsledky hledání (nezahazovat je).
+    var extras = [];
+    for (var ei = 0; ei < episodes.length; ei++) {
+      var ep = episodes[ei];
+      if (ep.variants.length > 1) {
+        var best = bestVariant(ep);
+        for (var vi = 0; vi < ep.variants.length; vi++) {
+          if (ep.variants[vi] !== best) extras.push(ep.variants[vi]);
+        }
+        ep.variants = [best];
+      }
+    }
+
     var years = [];
     for (var y = 0; y < rows.length; y++) {
       var yr = Number(rows[y].row.year);
@@ -523,7 +558,8 @@
       raw: raw,
       seasons: [{ key: '?', season: null, episodes: episodes }],
       episodeCount: episodes.length,
-      seasonCount: 0
+      seasonCount: 0,
+      extras: extras
     };
   }
 
@@ -544,13 +580,15 @@
     if (!groups.length) return entries;
 
     var at = {}, drop = {};
+    var extras = [];
     for (var g = 0; g < groups.length; g++) {
       var grp = groups[g], first = 1e9;
       for (var j = 0; j < grp.items.length; j++) if (grp.items[j].index < first) first = grp.items[j].index;
-      at[first] = {
-        type: 'series',
-        series: buildCollection(grp.base, grp.baseTokens, 'c:' + grp.baseTokens.join(' '), grp.items)
-      };
+      var series = buildCollection(grp.base, grp.baseTokens, 'c:' + grp.baseTokens.join(' '), grp.items);
+      if (series.extras && series.extras.length) {
+        for (var xe = 0; xe < series.extras.length; xe++) extras.push(series.extras[xe]);
+      }
+      at[first] = { type: 'series', series: series };
       for (var k = 0; k < grp.items.length; k++) if (grp.items[k].index !== first) drop[grp.items[k].index] = true;
     }
 
@@ -559,6 +597,7 @@
       if (drop[x]) continue;
       out.push(at[x] || entries[x]);
     }
+    for (var xo = 0; xo < extras.length; xo++) out.push({ type: 'movie', movie: extras[xo] });
     return out;
   }
 
