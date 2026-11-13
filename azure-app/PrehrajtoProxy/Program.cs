@@ -1461,10 +1461,39 @@ app.MapGet("/api/live/hls", async (string url, string? ua, string? referrer, IHt
             || target.AbsolutePath.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase)
             || target.AbsolutePath.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase);
 
+        await using var src = await res.Content.ReadAsStreamAsync(ctx.RequestAborted);
+
+        // Sniff prefixu: některé servery vrací HLS playlist jako text/plain nebo
+        // application/octet-stream (bez přípony .m3u8). Prvních 7 bajtů „#EXTM3U"
+        // prozradí playlist, i když hlavičky/URL lžou - bez přepsání by klient dostal
+        // neupravené odkazy na origin a přehrávání přes server selže (často jen zvuk).
+        var prefix = new byte[7];
+        var prefixLen = 0;
+        if (!looksPlaylist)
+        {
+            while (prefixLen < prefix.Length)
+            {
+                int n;
+                try { n = await src.ReadAsync(prefix.AsMemory(prefixLen, prefix.Length - prefixLen), ctx.RequestAborted); }
+                catch { n = 0; }
+                if (n <= 0) break;
+                prefixLen += n;
+            }
+            looksPlaylist = prefixLen >= 7
+                && prefix[0] == (byte)'#' && prefix[1] == (byte)'E' && prefix[2] == (byte)'X'
+                && prefix[3] == (byte)'T' && prefix[4] == (byte)'M' && prefix[5] == (byte)'3' && prefix[6] == (byte)'U';
+        }
+
         if (looksPlaylist)
         {
-            var text = await res.Content.ReadAsStringAsync(ctx.RequestAborted);
-            if (!text.TrimStart().StartsWith("#EXTM3U", StringComparison.OrdinalIgnoreCase))
+            string text;
+            using (var ms = new MemoryStream())
+            {
+                if (prefixLen > 0) ms.Write(prefix, 0, prefixLen);
+                await src.CopyToAsync(ms, ctx.RequestAborted);
+                text = Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
+            }
+            if (!text.TrimStart('\uFEFF', ' ', '\t', '\r', '\n').StartsWith("#EXTM3U", StringComparison.OrdinalIgnoreCase))
                 return Results.Json(new { success = false, error = "Zdroj nevrátil playlist" }, statusCode: 502);
             ctx.Response.Headers.CacheControl = "no-store";
             return Results.Text(RewritePlaylist(text, target, uaClean, referrerClean), "application/vnd.apple.mpegurl");
@@ -1477,7 +1506,7 @@ app.MapGet("/api/live/hls", async (string url, string? ua, string? referrer, IHt
             if (res.Headers.TryGetValues(h, out var hv)) ctx.Response.Headers[h] = hv.ToArray();
         }
         ctx.Response.Headers.CacheControl = "no-store";
-        await using var src = await res.Content.ReadAsStreamAsync(ctx.RequestAborted);
+        if (prefixLen > 0) await ctx.Response.Body.WriteAsync(prefix.AsMemory(0, prefixLen), ctx.RequestAborted);
         // Segmenty a klíče tečou po blocích s hlídačem nečinnosti - žádné načítání celého
         // souboru do paměti a žádné visící spojení, když zdroj přestane odpovídat.
         await CopyWithIdleTimeout(src, ctx.Response.Body, ctx.RequestAborted);
