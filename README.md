@@ -1,4 +1,4 @@
-# Wflix 🎬
+# Wflix
 
 [![Uptime Status](https://img.shields.io/uptimerobot/status/m801943371-78c6e4351b1a34cc26858090?label=Azure%20App&style=flat-square)](https://stats.uptimerobot.com/oMZ6zgtbxR)
 
@@ -18,7 +18,7 @@ Backend v `Program.cs` **prehraj.to nikdy nevolá přímo** – každý dotaz jd
 Azure prehraj.to vrací captcha stránku, která se tváří jako platná odpověď, ale nenajde nic.
 PHP servery z české IP vrací skutečné výsledky.
 
-> ⚠️ prehraj.to blokuje zahraniční IP. Appka proto posílá každý dotaz přes PHP proxy níže – region
+> prehraj.to blokuje zahraniční IP. Appka proto posílá každý dotaz přes PHP proxy níže – region
 > Azure ani IP, ze které běží, tím pádem nerozhoduje.
 
 ### PHP proxy
@@ -429,10 +429,10 @@ Celé to jde provozovat jen přes PHP, bez Azure a bez .NET. Navíc požadavky n
 půjdou z tvého zařízení (česká IP), takže odpadá geo-blokace.
 
 ```bash
-# Termux: pkg install git php   (start-termux.sh si PHP doinstaluje sám)
-./start-termux.sh                 # http://127.0.0.1 (port 80, jen tenhle telefon)
-HOST=0.0.0.0 ./start-termux.sh    # dostupné i z jiných zařízení ve Wi-Fi
-PORT=9000 ./start-termux.sh       # jiný port
+# Termux: pkg install git php   (start.sh si PHP doinstaluje sám)
+./start.sh                # http://127.0.0.1 (port 80, jen tenhle telefon)
+HOST=0.0.0.0 ./start.sh   # dostupné i z jiných zařízení ve Wi-Fi
+PORT=9000 ./start.sh      # jiný port
 ```
 
 Běží to přes `router.php` (vestavěný PHP server): `/` je Wflix a `/api/search`, `/api/proxy`,
@@ -446,29 +446,24 @@ seznam serverů.
 
 > Nevystavuj `HOST=0.0.0.0` do veřejného internetu - je to bez přihlášení.
 
-## Živá verze
-
-Provozní URL sem záměrně nepatří – appka je sdílená jen s přáteli. Když ji potřebuješ,
-vyptej se provozovatele ([contact@qikseek.qzz.io](mailto:contact@qikseek.qzz.io)).
-
 ## Funkce
 
-- 🔍 Vyhledávání filmů a seriálů
-- 🎥 Přehrávání videí přímo v prohlížeči
-- ⏱ Knihovna s historií přehrávání (pozice v `localStorage`), mazání po jednom i celé
-- ⏸ Vypínač ukládání historie – nic se pak neposílá ani neukládá
-- ⭐ Oblíbené (watchlist) se záložkou u každého titulu a filtrovatelným seznamem v Knihovně
-- ⌨️ Klávesové zkratky přehrávače (mezerník, šipky, F)
-- 🪟 Obraz v obraze (Picture-in-Picture)
-- 📺 Přehrát na TV (Chromecast / AirPlay na webu, přenos obrazovky v Android aplikaci)
-- 💬 Volba velikosti a pozadí titulků
-- 🌗 Světlý a tmavý režim
-- 📝 Titulky (WebVTT) u filmů, které je mají
-- 📱 Responzivní design (mobil, tablet, desktop)
-- 📺 Živé vysílání – IPTV kanály (Česko, čeština, Slovensko)
-- 🎬 Filmový úvodní podpis se zvukem
-- 🔗 Sdílení odkazů na konkrétní videa
-- ⬅️ Navigace zpět/vpřed v prohlížeči
+- Vyhledávání filmů a seriálů
+- Přehrávání videí přímo v prohlížeči
+- Knihovna s historií přehrávání (pozice v `localStorage`), mazání po jednom i celé
+- Vypínač ukládání historie – nic se pak neposílá ani neukládá
+- Oblíbené (watchlist) se záložkou u každého titulu a filtrovatelným seznamem v Knihovně
+- Klávesové zkratky přehrávače (mezerník, šipky, F)
+- Obraz v obraze (Picture-in-Picture)
+- Přehrát na TV (Chromecast / AirPlay na webu, přenos obrazovky v Android aplikaci)
+- Volba velikosti a pozadí titulků
+- Světlý a tmavý režim
+- Titulky (WebVTT) u filmů, které je mají
+- Responzivní design (mobil, tablet, desktop)
+- Živé vysílání – IPTV kanály (Česko, čeština, Slovensko)
+- Filmový úvodní podpis se zvukem
+- Sdílení odkazů na konkrétní videa
+- Navigace zpět/vpřed v prohlížeči
 
 ## Technologie
 

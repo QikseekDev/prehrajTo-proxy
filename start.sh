@@ -1,9 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Wflix self-host pro Termux (funguje i na běžném Linuxu/macOS s PHP 7.4+)
 #
-#   ./start-termux.sh              -> http://127.0.0.1:8080  (jen tenhle telefon)
-#   HOST=0.0.0.0 ./start-termux.sh -> dostupné i z jiných zařízení v Wi-Fi
-#   PORT=9000 ./start-termux.sh    -> jiný port
+#   ./start.sh                      -> http://127.0.0.1:80  (jen tenhle telefon)
+#   HOST=0.0.0.0 ./start.sh         -> dostupné i z jiných zařízení v Wi-Fi
+#   PORT=9000 ./start.sh            -> jiný port
 
 set -e
 cd "$(dirname "$0")"
