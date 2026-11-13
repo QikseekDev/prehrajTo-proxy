@@ -116,6 +116,77 @@ libovolná URL nenačítá, aby appka nebyla otevřený proxy pro cokoli.
 > část je neoficiální re-stream a může kdykoli přestat fungovat. Když kanál nenaskočí, je to vlastnost
 > zdroje, ne chyba přehrávače.
 
+## Volitelná rozšíření (metadata, EPG, Cloudflare)
+
+Nad základní provoz jde appku doplnit o čtyři volitelné vrstvy. Všechny jsou **vypnuté,
+dokud se nenastaví**, a každá při nedostupnosti zdroje tiše zmizí – UI se chová jako dřív.
+Co se z výzkumu integrovalo a co ne (a proč), je v [docs/EXPANSION.md](docs/EXPANSION.md).
+
+### ČSFD metadata
+
+Hodnocení, žánry a plakát k přehrávanému titulu. Zdroj je samostatná REST služba
+[node-csfd-api](https://github.com/bartholomej/node-csfd-api) (MIT, Docker image
+`bartholomej/node-csfd-api`) – ČSFD nemá veřejné API, takže scraping zůstává v té jedné
+službě a appka jen čte její JSON.
+
+```jsonc
+"Csfd": { "BaseUrl": "http://127.0.0.1:3000", "ApiKey": "", "Language": "cs" }
+```
+
+Na Azure jako `Csfd__BaseUrl`. Prázdné `BaseUrl` = metadata vypnutá.
+
+- `GET /api/meta?q=Matrix&y=1999` → hodnocení, žánry, plakát, odkaz na ČSFD
+- `GET /api/thumb?src=csfd&q=Matrix` → plakát (stejný tvar jako `src=itunes`)
+
+V přehrávači se pod názvem objeví řádek s hodnocením a odkazem na ČSFD; když se nic
+nenajde, řádek zůstane skrytý.
+
+### EPG pro Živě
+
+Programový průvodce („teď vysílá“) na dlaždicích kanálů. Server stáhne XMLTV, rozparsuje
+ho streamovaně a drží v paměti jen aktuální blok; do prohlížeče posílá jen `now`/`next`.
+
+```jsonc
+"Epg": {
+  "Urls": [
+    "https://epgshare01.online/epgshare01/epg_ripper_CZ1.xml.gz",
+    "https://epgshare01.online/epgshare01/epg_ripper_SK1.xml.gz"
+  ],
+  "TtlMinutes": 360
+}
+```
+
+Jde použít i vlastní výstup z [iptv-org/epg](https://github.com/iptv-org/epg) nebo cokoli
+z indexu <https://epgshare01.online/epgshare01/>. Formát se pozná podle obsahu, ne podle
+přípony: XMLTV (`.xml`, `.xml.gz`) dodá programy, `.txt` seznam kanálů slouží jako slovník
+id (`Prima.Krimi.cz` → `primakrimi`), takže se trefí i kanál bez `tvg-id`.
+
+Kanály se párují podle `tvg-id` bez varianty (`CT1.cz@SD` → `CT1.cz`), pak podle aliasu
+z `.txt` seznamu a nakonec podle názvu. Endpoint `GET /api/live/epg` vrací
+`configured: false`, když `Epg:Urls` chybí.
+
+### Katalog zdrojů obsahu
+
+Přehled toho, které weby appka umí (prehraj.to, sledujteto, bombuj, hellspy.to, fastshare.cz,
+sdilej.cz), které zná z Kodi pluginu Nokturno a proč je neumí (WebShare, Sosáč, CZtor, Luna –
+chtějí účty nebo vlastní server), je v [docs/SOURCES.md](docs/SOURCES.md).
+
+### Náhradní loga kanálů
+
+Kde playlist nemá `tvg-logo`, dopočítá `/api/live` adresu z datové sady
+[tv-logo/tv-logos](https://github.com/tv-logo/tv-logos). Je to odhad: iniciály zůstávají
+pod obrázkem, takže neexistující soubor dlaždici nerozbije.
+
+### FlareSolverr pro PHP proxy
+
+Když zdroj odpoví Cloudflare výzvou (403/503 nebo „Just a moment“), zkusí PHP proxy stejnou
+stránku ještě jednou přes [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr).
+Primární cesta se nemění a limit 429 se neopakuje.
+
+```
+FLARESOLVERR_URL=http://127.0.0.1:8191   # nenastavené = fallback vypnutý
+```
+
 ## Limity a ochrana proti scrapingu
 
 Appka je veřejná a bez přihlášení, takže `/api/*` má dvě vrstvy ochrany (obojí v `Program.cs`):
@@ -187,8 +258,9 @@ patřit nemá. Bez něj `/admin` i celá `/api/admin` vrací `503`.
 | Více výsledků | `source=all` degraduje na jeden zapnutý zdroj |
 | Náhledy z iTunes | katalog a plakáty z prehraj.to fungují dál |
 
-**Zdroje** – zapnout/vypnout `prehraj.to`, `sledujteto.cz`, `bombuj.si`, automatický fallback a
-strop stránek (`maxPage`). Vypnutý zdroj vrátí `400` s českou hláškou, takže je vidět, že jde o
+**Zdroje** – zapnout/vypnout `prehraj.to`, `sledujteto.cz`, `bombuj.si`, `hellspy.to`,
+`fastshare.cz`, `sdilej.cz`, automatický fallback a strop stránek (`maxPage`). Vypnutý zdroj
+se neobjeví ani ve „Více výsledků“ – appka posílá PHP seznam povolených zdrojů (`only=...`). Vypnutý zdroj vrátí `400` s českou hláškou, takže je vidět, že jde o
 vědomé vypnutí, a ne o rozbitou appku. Když prehraj.to sype 429, vypneš ho a jede sledujteto.
 
 **Cache** – počty položek, zásahy (hit rate) a mazání po oblastech: hledání, náhledy, katalog,
@@ -265,20 +337,27 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
   ukládá jen do prohlížeče – `localStorage` (`wflix-history`, `wflix-favs`, `wflix-settings`),
   žádný účet ani server.
 - **API Endpoints**:
-  - `GET /api/search?q={query}[&source=prehrajto|bombuj|sledujteto|all][&fallback=0]` - Vyhledávání filmů.
+  - `GET /api/search?q={query}[&source=prehrajto|bombuj|sledujteto|hellspy|fastshare|sdilej|all][&fallback=0]` - Vyhledávání filmů.
     Výchozí zdroj je `prehrajto` (zpětně kompatibilní). Při prázdném výsledku/chybě `prehrajto` se
     automaticky zkusí `sledujteto` jako fallback a výsledky se sloučí s deduplikací (vypne se `fallback=0`).
-    `all` (aliasy `merge`/`both`, experimentální) hledá na `prehraj.to`, `sledujteto` a `bombuj` současně/omezeně a výsledky
-    sloučí s deduplikací. Když jeden zdroj selže, pokračuje se s ostatními; chyba se vrátí jen když selžou všechny.
+    `all` (aliasy `merge`/`both`, experimentální) hledá na `prehraj.to`, `sledujteto`, `bombuj`, `hellspy`, `fastshare`
+    a `sdilej` současně (PHP je pouští přes `curl_multi`) a výsledky sloučí s deduplikací. Když jeden zdroj selže, pokračuje se s ostatními; chyba se vrátí jen když selžou všechny.
     Ve web UI jde zapnout volitelně v Nastavení → Vyhledávání („Více výsledků“).
     `bombuj` hledá přes `bombuj.si` (autocomplete endpoint z `uvod.php`, dynamicky zjištěný).
     `sledujteto` zkouší API endpointy `https://www.sledujteto.cz/api/web/videos` / `https://sledujteto.cz/api/web/videos`
     (primárně) a `old.sledujteto.cz` jako zálohu, s `page`/`query`/`limit`/`sort=relevance`; běží přes PHP proxy
     (česká IP). HTML stránka `https://www.sledujteto.cz/vyhledat/?search=...&page=...` je JS-renderovaná,
     takže server-side se parsuje API varianta. Prehraj.to vrací třicítku, kterou stránka hledání nabízí.
-  - `GET /api/proxy?url={page_url}[&source=prehrajto|bombuj|sledujteto]` - Získání URL videa/resolve stránky
-    (a seznamu VTT titulků, pokud je stránka má). Pro `prehrajto` extrahuje CDN URL; pro `bombuj`/`sledujteto`
-    vrací best-effort nalezené stream/embed URL (přímý stream nemusí být ve statickém HTML vždy dostupný).
+    `hellspy` volá veřejné `https://api.hellspy.to/gw/search?query=...&limit=&offset=` a bere jen objekty
+    `GWSearchVideo`; odkaz na soubor je 302 z `gw/video/<id>/<hash>/download`, takže se dohrává až v resolve.
+    Při 429 (HellSpy omezuje podle IP) se zdroj přeskočí a ostatní jdou dál.
+    `fastshare` a `sdilej` volají `api_kodi.php?process=search&term=...&pagination=...` (stejný katalog pod dvěma
+    značkami) a vrací `download_url` přímo na soubor – bez účtu jde hledání i přehrání, u některých souborů
+    přehrání účet vyžaduje.
+  - `GET /api/proxy?url={page_url}[&source=prehrajto|bombuj|sledujteto|hellspy|fastshare|sdilej]` - Získání URL
+    videa/resolve stránky (a seznamu VTT titulků, pokud je stránka má). Pro `prehrajto` extrahuje CDN URL; pro
+    `bombuj`/`sledujteto` vrací best-effort nalezené stream/embed URL (přímý stream nemusí být ve statickém HTML
+    vždy dostupný); pro `hellspy`/`fastshare`/`sdilej` vrací rovnou odkaz z jejich veřejného API.
   - `GET /api/stream?url={prehrajto_url}[&download=1&name={titul}]` - Server video přeposílá z CDN (podporuje Range/seeking)
     a sám obnovuje vypršelý odkaz, takže se přehrávání ani stahování nezasekne po pár minutách. Používá se pro
     stahování, ruční přehrání přes server a jako záložní cesta, když přímé přehrávání z CDN neprojde. S `download=1` se

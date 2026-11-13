@@ -532,6 +532,19 @@
             margin-top: var(--sp-4); font-family: var(--font-display);
             font-size: var(--fs-2xl); font-weight: 600; letter-spacing: 0.01em;
         }
+        /* Hodnocení a žánry z ČSFD pod názvem titulu. Když metadata nejsou, řádek
+           zůstane skrytý, takže přehrávač vypadá i bez nich stejně. */
+        .csfd-meta {
+            display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) 10px;
+            margin-top: var(--sp-2); font-size: var(--fs-sm); color: var(--text-dim);
+        }
+        .csfd-meta[hidden] { display: none; }
+        .cm-rating {
+            padding: 2px 8px; border-radius: 4px; font-weight: 700;
+            background: rgba(245,197,24,0.16); color: var(--warn);
+        }
+        .cm-link { color: var(--text-dim); text-decoration: underline; text-underline-offset: 2px; }
+        .cm-link:hover { color: var(--text); }
         .player-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
         .player-actions[hidden] { display: none; }
         .dl-btn {
@@ -642,6 +655,17 @@
             display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
         }
         .lc-group { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        /* Logo z tv-logo je jen odhad adresy, iniciály proto zůstávají pod obrázkem:
+           když se soubor nenačte, dlaždice nespadne na prázdné místo. */
+        .lc-logo { position: relative; }
+        .lc-logo img { position: relative; z-index: 1; }
+        .lc-logo .lc-init { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+        /* Co právě běží podle EPG (nebo co bude následovat, když se nic netrefí). */
+        .lc-now {
+            font-size: 11px; line-height: 1.3; color: var(--text-dim);
+            max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .lc-now.next { color: var(--muted); }
         .live-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
         .lchip {
             min-height: 38px; padding: 0 var(--sp-3); border-radius: var(--r-pill);

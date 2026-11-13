@@ -214,6 +214,53 @@ function viaProxyRace(array $bases, string $query, int $timeoutSeconds = 30) {
 const STREAM_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     . '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+// FlareSolverr (github.com/FlareSolverr/FlareSolverr, MIT) je samostatná služba, která
+// stránku načte skutečným prohlížečem a vrátí její HTML. Používá se jen jako fallback,
+// když zdroj odpoví Cloudflare výzvou (403/503 nebo "Just a moment"), takže běžné
+// požadavky to nezdrží. Zapíná se přes FLARESOLVERR_URL (např. http://127.0.0.1:8191).
+function wflixFlareSolverrUrl() {
+    $url = getenv('FLARESOLVERR_URL');
+    return is_string($url) ? rtrim(trim($url), '/') : '';
+}
+
+function wflixLooksBlocked($code, $body) {
+    if ($code === 403 || $code === 503) return true;
+    $b = is_string($body) ? $body : '';
+    return stripos($b, 'Just a moment') !== false
+        || stripos($b, 'cf-challenge') !== false
+        || stripos($b, 'Attention Required! | Cloudflare') !== false;
+}
+
+// Vrací [kód, html] nebo null, když FlareSolverr není nastavený nebo selhal.
+function wflixFlareSolverrGet($url, $timeout = 45) {
+    $base = wflixFlareSolverrUrl();
+    if ($base === '' || !function_exists('curl_init')) return null;
+
+    $ch = curl_init($base . '/v1');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode([
+            'cmd' => 'request.get',
+            'url' => $url,
+            'maxTimeout' => max(5000, ((int)$timeout) * 1000),
+        ]),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => ((int)$timeout) + 10,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+    ]);
+    $raw = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code < 200 || $code >= 300 || !is_string($raw)) return null;
+    $json = json_decode($raw, true);
+    if (!is_array($json) || (isset($json['status']) ? $json['status'] : '') !== 'ok') return null;
+    $solution = isset($json['solution']) && is_array($json['solution']) ? $json['solution'] : null;
+    if ($solution === null || !isset($solution['response'])) return null;
+
+    return [(int)(isset($solution['status']) ? $solution['status'] : 0), (string)$solution['response']];
+}
+
 function curlText($url, $timeout = 30) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -231,6 +278,15 @@ function curlText($url, $timeout = 30) {
     $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
     curl_close($ch);
+
+    // Cloudflare výzva na cílové stránce: zkusit znovu přes FlareSolverr, pokud je nastavený.
+    if (wflixLooksBlocked($code, $body)) {
+        $solved = wflixFlareSolverrGet($url, $timeout);
+        if ($solved !== null && $solved[0] >= 200 && $solved[0] < 400 && $solved[1] !== '') {
+            return [$solved[0], $solved[1], ''];
+        }
+    }
+
     return [$code, is_string($body) ? $body : '', $err];
 }
 

@@ -12,6 +12,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Caching.Memory;
 using Wflix.Admin;
+using Wflix.Meta;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -120,6 +121,25 @@ builder.Services.AddSingleton(sp => ProxyCommitSettings.From(sp.GetRequiredServi
 
 // Odhad polohy podle IP pro seznam klientů v panelu (volitelné, na pozadí).
 builder.Services.AddSingleton<GeoIpService>();
+
+// Metadata (volitelné): ČSFD přes node-csfd-api a XMLTV průvodce pro Živě. Obojí je jen
+// HTTP klient - bez nastavení appka funguje beze změny, jen tyhle vrstvy nic nevrátí.
+builder.Services.AddHttpClient("meta", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(25);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Wflix/1.0 (+https://github.com/QikseekDev/prehrajTo-proxy)");
+    c.DefaultRequestHeaders.Accept.ParseAdd("application/json, application/xml, */*;q=0.5");
+})
+    .SetHandlerLifetime(TimeSpan.FromMinutes(10))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = true,
+        AutomaticDecompression = DecompressionMethods.All,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+        ConnectCallback = ConnectPreferIpv4,
+    });
+builder.Services.AddSingleton<CsfdClient>();
+builder.Services.AddSingleton<EpgService>();
 
 // ------------------------------------------------------------------ veřejný provoz
 // App Service stojí před appkou jako reverzní proxy: bez tohohle by měly všechny
@@ -455,7 +475,7 @@ static bool IsPrehrajUrl(string u) =>
 static bool IsAllowedSourcePageUrl(string u) =>
     Uri.TryCreate(u, UriKind.Absolute, out var x)
     && (x.Scheme == Uri.UriSchemeHttp || x.Scheme == Uri.UriSchemeHttps)
-    && IsAllowedHost(x.Host, "prehraj.to", "bombuj.si", "sledujteto.cz");
+    && IsAllowedHost(x.Host, "prehraj.to", "bombuj.si", "sledujteto.cz", "hellspy.to", "fastshare.cz", "fastshare.cloud", "sdilej.cz");
 
 static string NormalizeSource(string? s)
 {
@@ -465,6 +485,9 @@ static string NormalizeSource(string? s)
         "prehraj" or "prehrajto" or "prehraj.to" => "prehrajto",
         "bombuj" or "bombuj.si" => "bombuj",
         "sledujteto" or "sledujteto.cz" or "old.sledujteto.cz" => "sledujteto",
+        "hellspy" or "hellspy.to" => "hellspy",
+        "fastshare" or "fastshare.cz" or "fastshare.cloud" => "fastshare",
+        "sdilej" or "sdilej.cz" => "sdilej",
         "all" or "merge" or "both" or "prehrajto+sledujteto" => "all",
         _ => "prehrajto"
     };
@@ -946,6 +969,7 @@ app.MapGet("/api/search", async (string q, int? page, string? source, string[]? 
     // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nikdy nechodí (datacentrová IP
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
     var query = $"action=search&q={Uri.EscapeDataString(q)}&source={Uri.EscapeDataString(src)}" + (pg > 1 ? $"&page={pg}" : "")
+                + (src == "all" ? "&only=" + Uri.EscapeDataString(string.Join(",", st.Sources.Enabled())) : "")
                 + (st.Sources.Fallback ? "" : "&fallback=0");
     var proxies = EffectiveProxies(proxy, proxyPool.Current);
     var sources = OrderedProxies(proxies)
@@ -1037,17 +1061,30 @@ async Task<ThumbResult?> ItunesThumb(IHttpClientFactory f, string term, Regex rx
     catch (Exception) { return null; }
 }
 
-app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string? src, string[]? proxy, IHttpClientFactory f, IMemoryCache cache, HttpContext ctx) =>
+app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string? src, string[]? proxy, IHttpClientFactory f, IMemoryCache cache, CsfdClient csfd, HttpContext ctx) =>
 {
     q = (q ?? "").Replace("*", " ").Trim();
     t = (t ?? "").Replace("*", " ").Trim();
     re = (re ?? "").Trim();
-    src = src == "itunes" ? "itunes" : "prehraj";
+    src = src switch { "itunes" => "itunes", "csfd" => "csfd", _ => "prehraj" };
     if (q.Length == 0)
         return Results.BadRequest(new { success = false, error = "Missing q parameter", usage = "/api/thumb?q=Matrix&y=1999" });
 
     if (src == "itunes" && !adminStore.Current.Flags.ItunesThumb)
         return Results.Json(new { success = false, error = "Náhledy z iTunes jsou dočasně vypnuté." }, statusCode: 403);
+
+    // Plakát z ČSFD (volitelná integrace node-csfd-api). Na rozdíl od prehraj.to/iTunes ho
+    // netaháme přes PHP proxy - ČSFD není geoblokované a odpověď je pár set kB.
+    if (src == "csfd")
+    {
+        if (!csfd.Enabled)
+            return Results.Json(new { success = false, error = "ČSFD metadata nejsou nastavená (Csfd:BaseUrl)." });
+        var info = await csfd.LookupAsync(t.Length > 0 ? t : q, y, ctx.RequestAborted);
+        if (info == null || info.Poster.Length == 0)
+            return Results.Json(new { success = false, error = "Na ČSFD se nic nenašlo." });
+        ctx.Response.Headers.CacheControl = "public, max-age=86400";
+        return Results.Json(new { success = true, q, thumbnail = info.Poster, title = info.Title, url = info.Url });
+    }
 
     var eff = EffectiveProxies(proxy, proxyPool.Current);
     var qs = $"action=thumb&q={Uri.EscapeDataString(q)}&t={Uri.EscapeDataString(t)}&re={Uri.EscapeDataString(re)}&src={src}"
@@ -1101,6 +1138,29 @@ app.MapGet("/api/thumb", async (string? q, string? t, int? y, string? re, string
     catch (JsonException) { }
     ctx.Response.Headers.CacheControl = thumb.Length > 0 ? "public, max-age=86400" : "public, max-age=600";
     return Results.Content(body, "application/json");
+}).RequireRateLimiting("thumb");
+
+// ------------------------------------------------------------------ /api/meta  (metadata titulu)
+// GET /api/meta?q=Matrix&y=1999 - hodnocení, žánry, plakát a odkaz na ČSFD pro detail
+// přehrávaného titulu. Zdroj je volitelná služba node-csfd-api (MIT, Docker image
+// bartholomej/node-csfd-api, Csfd:BaseUrl); bez ní endpoint vrátí configured:false
+// a UI metadata prostě neukáže. ČSFD nemá veřejné API, takže se scraping odehrává
+// v té jedné službě, ne tady - appka jen čte její JSON.
+app.MapGet("/api/meta", async (string? q, string? t, int? y, CsfdClient csfd, HttpContext ctx) =>
+{
+    var query = (t ?? q ?? "").Replace("*", " ").Trim();
+    if (query.Length < 2)
+        return Results.BadRequest(new { success = false, error = "Missing q parameter", usage = "/api/meta?q=Matrix&y=1999" });
+
+    if (!csfd.Enabled)
+        return Results.Json(new { success = false, configured = false, error = "Metadata z ČSFD nejsou nastavená (Csfd:BaseUrl)." });
+
+    var info = await csfd.LookupAsync(query, y, ctx.RequestAborted);
+    if (info == null)
+        return Results.Json(new { success = false, configured = true, error = "Na ČSFD se nic nenašlo." });
+
+    ctx.Response.Headers.CacheControl = "public, max-age=86400";
+    return Results.Json(new { success = true, configured = true, source = "csfd", info });
 }).RequireRateLimiting("thumb");
 
 // ------------------------------------------------------------------ /api/catalog  (filmy pro homepage)
@@ -1196,6 +1256,7 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
         return Results.Json(new { success = false, error = "Živé vysílání je dočasně vypnuté." }, statusCode: 503);
 
     string url;
+    string? countryCode = null;
     if (custom is int idx && idx >= 0 && idx < liveCustom.Length && IsValidProxyUrl(liveCustom[idx]))
         url = liveCustom[idx];
     else if (!string.IsNullOrWhiteSpace(lang) && Regex.IsMatch(lang.Trim(), "^[a-zA-Z]{2,3}$"))
@@ -1204,6 +1265,7 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
     {
         var cc = (country ?? "cz").Trim().ToLowerInvariant();
         if (!Regex.IsMatch(cc, "^[a-z]{2}$")) cc = "cz";
+        countryCode = cc;
         // Sestavený seznam má navíc tvg-logo a group-title (raw streams/xx.m3u je nemá), takže
         // dlaždice vypadají jako dlaždice. Když sestavený seznam selže, zkusí se raw varianta.
         url = $"https://iptv-org.github.io/iptv/countries/{cc}.m3u";
@@ -1226,6 +1288,16 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
     var channels = ParseM3u(body);
     if (channels.Count == 0)
         return Results.Json(new { success = false, error = "Playlist neobsahuje žádné kanály" });
+
+    // Playlisty nemají logo vždy. Kde chybí, doplní se odkaz na datovou sadu
+    // tv-logo/tv-logos podle tvg-id ("CT1.cz@SD" -> czech-republic/ct1-cz.png).
+    // Je to odhad: když soubor neexistuje, prohlížeč obrázek zahodí a dlaždice zůstane
+    // s iniciálami, takže se tím nic nerozbije.
+    channels = channels
+        .Select(ch => string.IsNullOrWhiteSpace(ch.Logo) && TvLogos.Fallback(ch.Id, countryCode) is { Length: > 0 } logo
+            ? ch with { Logo = logo }
+            : ch)
+        .ToList();
 
     cache.Set(key, channels, TimeSpan.FromMinutes(30));
     WflixCache.Track(key, "live");
@@ -1387,6 +1459,39 @@ app.MapGet("/api/live/hls", async (string url, string? ua, string? referrer, IHt
     }
 }).RequireRateLimiting("live");
 
+// ------------------------------------------------------------------ /api/live/epg  (co běží teď)
+// Programový průvodce pro dlaždice Živě. XMLTV se stahuje a parsuje na serveru a drží
+// v paměti; do prohlížeče jde jen "teď" a "následuje" pro každý kanál, takže klient
+// netahá megabajty XML. Kanály se párují podle tvg-id (bez varianty @SD/@HD) a když to
+// nesedí, podle normalizovaného názvu. Zdroj: Epg:Urls, např. výstup iptv-org/epg
+// nebo hotový guide pro CZ/SK (epgshare01). Bez nastavení vrátí configured:false.
+app.MapGet("/api/live/epg", async (EpgService epg, CancellationToken ct) =>
+{
+    if (!adminStore.Current.Flags.Live)
+        return Results.Json(new { success = false, error = "Živé vysílání je dočasně vypnuté." }, statusCode: 503);
+
+    if (!epg.Enabled)
+        return Results.Json(new { success = false, configured = false, error = "EPG není nastavené (Epg:Urls)." });
+
+    var snapshot = await epg.GetAsync(ct);
+    if (snapshot == null)
+        return Results.Json(new { success = false, configured = true, error = "Průvodce se nepodařilo načíst." });
+
+    var at = DateTimeOffset.UtcNow;
+    var entries = EpgService.Entries(snapshot, at);
+    return Results.Json(new
+    {
+        success = true,
+        configured = true,
+        updated = snapshot.Loaded,
+        now = at,
+        count = entries.Count,
+        // Počet aliasů z .txt seznamů (diagnostika párování, v UI se nepoužívá).
+        aliases = snapshot.Aliases.Count,
+        channels = entries,
+    });
+}).RequireRateLimiting("api");
+
 // ------------------------------------------------------------------ /api/subtitles  (VTT relay)
 // <track> musí mít VTT z naší domény (CDN nemusí posílat CORS) a podepsaný odkaz
 // z prehraj.to po chvíli vyprší. Titulky proto stahuje server - jsou malé, takže
@@ -1467,6 +1572,9 @@ app.MapGet("/api/proxy", async (string url, string? source, string[]? proxy, IHt
     {
         if (IsAllowedHost(u.Host, "bombuj.si")) src = "bombuj";
         else if (IsAllowedHost(u.Host, "sledujteto.cz")) src = "sledujteto";
+        else if (IsAllowedHost(u.Host, "hellspy.to")) src = "hellspy";
+        else if (IsAllowedHost(u.Host, "fastshare.cz", "fastshare.cloud")) src = "fastshare";
+        else if (IsAllowedHost(u.Host, "sdilej.cz")) src = "sdilej";
         else if (IsAllowedHost(u.Host, "prehraj.to")) src = "prehrajto";
     }
     // Vypnutý zdroj se neobsluhuje ani tady - jinak by se dal obejít /api/search a přehrávat dál.
@@ -1480,7 +1588,7 @@ app.MapGet("/api/proxy", async (string url, string? source, string[]? proxy, IHt
             enabled = adminStore.Current.Sources.Enabled(),
         }, statusCode: 400);
     if (!IsAllowedSourcePageUrl(url))
-        return Results.BadRequest(new { success = false, error = "URL must be from a supported source (prehraj.to, bombuj.si, sledujteto.cz)" });
+        return Results.BadRequest(new { success = false, error = "URL must be from a supported source (prehraj.to, bombuj.si, sledujteto.cz, hellspy.to, fastshare.cz, sdilej.cz)" });
 
     // Jen PHP proxy servery, zkoušené postupně. 2xx s normální odpovědí = vyhrává;
     // 429/403/5xx nebo {"success":false} = prohra a bere se další zdroj.
