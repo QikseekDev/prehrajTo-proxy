@@ -2336,6 +2336,116 @@
             return (name || '?').split(/\s+/).slice(0, 2).map(w => w.charAt(0)).join('').toUpperCase();
         }
 
+        // Ikony kanálů jsou skoro vždy průhledná PNG, takže pod nimi prosvítaly iniciály
+        // a šedá dlaždice. Po načtení se iniciály schovají a dlaždice dostane barvu
+        // spočítanou z pixelů loga - průměrný odstín, jas na opačnou stranu, aby bílé
+        // logo nezmizelo na bílém a černé na černém.
+        const LOGO_BG_MAX = 400;
+        let logoBgCache = null;
+
+        function logoBgLoad() {
+            if (logoBgCache) return logoBgCache;
+            logoBgCache = {};
+            try {
+                const raw = localStorage.getItem('wflix.logoBg');
+                const parsed = raw ? JSON.parse(raw) : null;
+                if (parsed && typeof parsed === 'object') logoBgCache = parsed;
+            } catch (e) { logoBgCache = {}; }
+            return logoBgCache;
+        }
+
+        function logoBgGet(url) {
+            const c = logoBgLoad();
+            return Object.prototype.hasOwnProperty.call(c, url) ? c[url] : '';
+        }
+
+        let logoSaveTimer = 0;
+        function logoBgSave() {
+            try { localStorage.setItem('wflix.logoBg', JSON.stringify(logoBgLoad())); } catch (e) { /* plná kvóta */ }
+        }
+
+        function logoBgPut(url, css) {
+            const c = logoBgLoad();
+            c[url] = css;
+            const keys = Object.keys(c);
+            if (keys.length > LOGO_BG_MAX) {
+                for (let i = 0; i < keys.length - LOGO_BG_MAX; i++) delete c[keys[i]];
+            }
+            // Ukládá se jednou za chvíli: při otevření guide se barev spočítá třeba sto
+            // a serializovat celý slovník po každé z nich by zdržovalo vykreslení.
+            if (logoSaveTimer) return;
+            logoSaveTimer = setTimeout(() => { logoSaveTimer = 0; logoBgSave(); }, 1200);
+        }
+
+        function logoAvgColour(img) {
+            const S = 24;
+            const cv = document.createElement('canvas');
+            cv.width = S; cv.height = S;
+            const ctx = cv.getContext && cv.getContext('2d');
+            if (!ctx) return '';
+            ctx.clearRect(0, 0, S, S);
+            ctx.drawImage(img, 0, 0, S, S);
+            const d = ctx.getImageData(0, 0, S, S).data;   // cizí obrázek bez CORS tu vyhodí chybu
+            let r = 0, g = 0, b = 0, w = 0;
+            for (let i = 0; i < d.length; i += 4) {
+                const a = d[i + 3] / 255;
+                if (a < 0.15) continue;
+                r += d[i] * a; g += d[i + 1] * a; b += d[i + 2] * a; w += a;
+            }
+            if (!w) return '';
+            r = r / w / 255; g = g / w / 255; b = b / w / 255;
+
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            const l = (max + min) / 2;
+            const sat = max === min ? 0 : (l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min));
+            let h = 0.6;                                   // šedé logo: neutrální modrošedá
+            if (max !== min) {
+                if (max === r) h = ((g - b) / (max - min) + (g < b ? 6 : 0)) / 6;
+                else if (max === g) h = ((b - r) / (max - min) + 2) / 6;
+                else h = ((r - g) / (max - min) + 4) / 6;
+            }
+            // Odstín z loga, jas na opačnou stranu než logo samo: u světlých log tmavá
+            // dlaždice, u tmavých (černé wordmarky) světlá, aby logo nezmizelo.
+            const bgL = l >= 0.32 ? 0.2 : 0.8;
+            const bgS = Math.min(0.5, sat * 0.9 + 0.12);
+            return `hsl(${Math.round(h * 360)},${Math.round(bgS * 100)}%,${Math.round(bgL * 100)}%)`;
+        }
+
+        function livePaintLogo(img) {
+            const box = img.parentNode;
+            const url = img.getAttribute('data-u');
+            if (!box || !url) return;
+            const cached = logoBgGet(url);
+            if (cached) {
+                box.style.background = cached;
+                box.classList.add('has-logo');
+            }
+            const loaded = () => {
+                box.classList.add('has-logo');
+                if (cached) return;
+                let css = '';
+                try { css = logoAvgColour(img); } catch (e) { css = ''; }   // canvas je znečištěný
+                if (css) { box.style.background = css; logoBgPut(url, css); }
+            };
+            if (img.complete && img.naturalWidth) { loaded(); return; }
+            img.addEventListener('load', loaded);
+            img.addEventListener('error', () => {
+                // Zdroj neposílá CORS hlavičky - obrázek se v CORS režimu nenačetl.
+                // Druhý pokus bez crossorigin ho zobrazí, jen bez spočítané barvy.
+                if (img.getAttribute('crossorigin') !== null) {
+                    img.removeAttribute('crossorigin');
+                    img.src = url;
+                } else {
+                    img.style.display = 'none';        // iniciály zůstanou vidět
+                }
+            });
+        }
+
+        function livePaintLogos(root) {
+            if (!root) return;
+            root.querySelectorAll('.lg-logo img').forEach(livePaintLogo);
+        }
+
         function openLive(push = true) {
             stopVideo();
             hideStatus();
@@ -2455,7 +2565,7 @@
                         title="${escapeHtml(c.name)} – program neznáme"><b>Data o programu nejsou k dispozici</b><small>klikni a hraj živě</small></button>`;
                 return `<div class="lg-row">
                     <div class="lg-chan"><button type="button" class="lg-chan-btn" data-live="${i}" title="${escapeHtml(c.name)}">
-                        <span class="lg-logo">${c.logo ? `<img src="${escapeHtml(c.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="lg-init">${escapeHtml(initials(c.name))}</span></span>
+                        <span class="lg-logo">${c.logo ? `<img src="${escapeHtml(c.logo)}" data-u="${escapeHtml(c.logo)}" alt="" loading="lazy" crossorigin="anonymous" referrerpolicy="no-referrer">` : ''}<span class="lg-init">${escapeHtml(initials(c.name))}</span></span>
                         <span class="lg-name">${escapeHtml(c.name)}</span>
                     </button></div>
                     <div class="lg-track">${blocks}</div>
@@ -2472,6 +2582,8 @@
                 <div class="lg-now" style="left:calc(var(--lg-cw) + ${nowMin * LG_PPM}px)"></div>
             </div></div>`
                 + (rest ? `<button type="button" class="live-more" id="liveMore">Zobrazit další (${rest})</button>` : '');
+
+            livePaintLogos(liveGrid);
 
             if (reset) {
                 // Až po layoutu: v tu chvíli už .lg-scroll zná svou šířku. Když se sekce

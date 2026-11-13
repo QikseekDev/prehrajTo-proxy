@@ -2134,6 +2134,120 @@
   function lgInitials(name) {
     return String(name || '?').split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0); }).join('').toUpperCase();
   }
+
+  /* Ikony kanálů jsou skoro vždy průhledná PNG, takže pod nimi prosvítaly iniciály
+     a šedá dlaždice. Po načtení se iniciály schovají a dlaždice dostane barvu
+     spočítanou z pixelů loga - průměrný odstín, ale jas na opačné straně, aby
+     bílé logo nezmizelo na bílém a černé na černém. */
+  var logoBg = null;
+  var LOGO_BG_MAX = 400;
+
+  function logoBgLoad() {
+    if (logoBg) return logoBg;
+    logoBg = {};
+    try {
+      var raw = localStorage.getItem('wflix.logoBg');
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') logoBg = parsed;
+      }
+    } catch (e) { logoBg = {}; }
+    return logoBg;
+  }
+
+  function logoBgGet(url) {
+    var c = logoBgLoad();
+    return Object.prototype.hasOwnProperty.call(c, url) ? c[url] : '';
+  }
+
+  var logoSaveTimer = 0;
+  function logoBgSave() {
+    try { localStorage.setItem('wflix.logoBg', JSON.stringify(logoBgLoad())); } catch (e) { /* plná kvóta - barva zůstane aspoň v paměti */ }
+  }
+
+  function logoBgPut(url, css) {
+    var c = logoBgLoad();
+    c[url] = css;
+    var keys = Object.keys(c);
+    if (keys.length > LOGO_BG_MAX) {
+      for (var i = 0; i < keys.length - LOGO_BG_MAX; i++) delete c[keys[i]];
+    }
+    // Ukládá se jednou za chvíli: při otevření guide se barev spočítá třeba sto
+    // a serializovat celý slovník po každé z nich by na televizi znatelně škubalo.
+    if (logoSaveTimer) return;
+    logoSaveTimer = setTimeout(function () { logoSaveTimer = 0; logoBgSave(); }, 1200);
+  }
+
+  function logoAvgColour(img) {
+    var S = 24;
+    var cv = document.createElement('canvas');
+    cv.width = S; cv.height = S;
+    var ctx = cv.getContext && cv.getContext('2d');
+    if (!ctx) return '';
+    ctx.clearRect(0, 0, S, S);
+    ctx.drawImage(img, 0, 0, S, S);
+    var d = ctx.getImageData(0, 0, S, S).data;     // cizí obrázek bez CORS tu vyhodí chybu
+    var r = 0, g = 0, b = 0, w = 0;
+    for (var i = 0; i < d.length; i += 4) {
+      var a = d[i + 3] / 255;
+      if (a < 0.15) continue;
+      r += d[i] * a; g += d[i + 1] * a; b += d[i + 2] * a; w += a;
+    }
+    if (!w) return '';
+    r = r / w / 255; g = g / w / 255; b = b / w / 255;
+
+    var max = Math.max(r, g, b), min = Math.min(r, g, b);
+    var l = (max + min) / 2;
+    var s2 = max === min ? 0 : (l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min));
+    var h = 0;
+    if (max !== min) {
+      if (max === r) h = ((g - b) / (max - min) + (g < b ? 6 : 0)) / 6;
+      else if (max === g) h = ((b - r) / (max - min) + 2) / 6;
+      else h = ((r - g) / (max - min) + 4) / 6;
+    } else {
+      h = 0.6;                                     // šedé logo: neutrální modrošedá
+    }
+    // Odstín z loga, jas na opačnou stranu než logo samo: u světlých log tmavá
+    // dlaždice, u tmavých (černé wordmarky) světlá, aby logo nezmizelo.
+    var bgL = l >= 0.32 ? 0.2 : 0.8;
+    var bgS = Math.min(0.5, s2 * 0.9 + 0.12);
+    return 'hsl(' + Math.round(h * 360) + ',' + Math.round(bgS * 100) + '%,' + Math.round(bgL * 100) + '%)';
+  }
+
+  function lgPaintLogo(img) {
+    var box = img.parentNode;
+    var url = img.getAttribute('data-u');
+    if (!box || !url) return;
+    var cached = logoBgGet(url);
+    if (cached) {
+      box.style.background = cached;
+      box.classList.add('has-logo');
+    }
+    var loaded = function () {
+      box.classList.add('has-logo');
+      if (cached) return;
+      var css = '';
+      try { css = logoAvgColour(img); } catch (e) { css = ''; }   // canvas je znečištěný -> necháme neutrální dlaždici
+      if (css) { box.style.background = css; logoBgPut(url, css); }
+    };
+    if (img.complete && img.naturalWidth) { loaded(); return; }
+    img.addEventListener('load', loaded);
+    img.addEventListener('error', function () {
+      // Zdroj neposílá CORS hlavičky, takže se obrázek v CORS režimu nenačetl.
+      // Druhý pokus bez crossorigin ho zobrazí, jen bez spočítané barvy.
+      if (img.getAttribute('crossorigin') !== null) {
+        img.removeAttribute('crossorigin');
+        img.src = url;
+      } else {
+        img.style.display = 'none';                // iniciály zůstanou vidět
+      }
+    });
+  }
+
+  function lgPaintLogos(root) {
+    var imgs = root ? root.querySelectorAll('.lg-logo img') : [];
+    for (var i = 0; i < imgs.length; i++) lgPaintLogo(imgs[i]);
+  }
   // Pořady kanálu oříznuté na dnešní den (přes půlnoc jde blok jen po okraj osy).
   function lgProgrammes(ch, base) {
     var list = liveGuide[ch.name];
@@ -2356,7 +2470,7 @@
       rows += '<div class="lg-row">'
         + '<div class="lg-ch"><button class="f lg-ch-btn" type="button" data-ch="' + idx + '" title="' + esc(c.name) + '">'
         + '<span class="lg-logo">'
-        + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '')
+        + (c.logo ? '<img src="' + esc(c.logo) + '" data-u="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async" crossorigin="anonymous" referrerpolicy="no-referrer">' : '')
         + '<span class="lg-init">' + esc(initials) + '</span></span>'
         + '<span class="lg-name">' + esc(c.name) + '</span>'
         + '</button></div>'
@@ -2372,6 +2486,8 @@
       + '<div class="lg-rows">' + rows + '</div>'
       + '<div class="lg-now" style="left:calc(var(--lg-cw) + ' + Math.round(nowMin * ppm) + 'px)"></div>'
       + '</div></div>';
+
+    lgPaintLogos(grid);
 
     var box = grid.querySelector('.lg-scroll');
     if (reset) {
