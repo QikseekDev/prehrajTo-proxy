@@ -468,11 +468,6 @@ static string ClientKey(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToSt
 static bool IsAllowedHost(string host, params string[] domains) =>
     domains.Any(d => host.Equals(d, StringComparison.OrdinalIgnoreCase) || host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
 
-static bool IsPrehrajUrl(string u) =>
-    Uri.TryCreate(u, UriKind.Absolute, out var x)
-    && (x.Scheme == Uri.UriSchemeHttp || x.Scheme == Uri.UriSchemeHttps)
-    && IsAllowedHost(x.Host, "prehraj.to");
-
 static bool IsAllowedSourcePageUrl(string u) =>
     Uri.TryCreate(u, UriKind.Absolute, out var x)
     && (x.Scheme == Uri.UriSchemeHttp || x.Scheme == Uri.UriSchemeHttps)
@@ -1794,6 +1789,20 @@ static string NormCdn(string u) => WebUtility.HtmlDecode(u.Replace("\\/", "/")).
 static string CdnKey(string u) =>
     Uri.TryCreate(u, UriKind.Absolute, out var x) ? (x.Host + x.AbsolutePath).ToLowerInvariant() : u.ToLowerInvariant();
 
+// Zdroj podle hostitele stránky - stejné mapování jako v /api/proxy. Potřebují ho
+// i relay a stahování, aby se daly přeposílat odkazy z ostatních zdrojů, ne jen z prehraj.to.
+static string? SourceFromUrl(string url)
+{
+    if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) return null;
+    if (IsAllowedHost(u.Host, "bombuj.si")) return "bombuj";
+    if (IsAllowedHost(u.Host, "sledujteto.cz")) return "sledujteto";
+    if (IsAllowedHost(u.Host, "hellspy.to")) return "hellspy";
+    if (IsAllowedHost(u.Host, "fastshare.cz", "fastshare.cloud")) return "fastshare";
+    if (IsAllowedHost(u.Host, "sdilej.cz")) return "sdilej";
+    if (IsAllowedHost(u.Host, "prehraj.to")) return "prehrajto";
+    return null;
+}
+
 // hint = CDN odkaz, který klient právě přehrává (&v=). Přímo ho používáme jen pro premiumcdn.net
 // (jinak by šlo přes server stahovat cokoli); jinak slouží jen k nalezení správného souboru na stránce.
 async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, string page, bool fresh, string? hint, CancellationToken ct = default)
@@ -1816,7 +1825,9 @@ async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, stri
     {
             if (ct.IsCancellationRequested) return null;
             var sep = p.Contains('?') ? "&" : "?";
-            var (ps, pb, pe) = await GetAsync(f, p + sep + "url=" + Uri.EscapeDataString(page), 30, null, ct);
+            var src = SourceFromUrl(page);
+            var pageQuery = "url=" + Uri.EscapeDataString(page) + (src == null ? "" : "&source=" + src);
+            var (ps, pb, pe) = await GetAsync(f, p + sep + pageQuery, 30, null, ct);
             if (pe != null || !Is2xx(ps) || !IsGoodBody(pb)) continue;   // 429/403/5xx nebo chybové JSON = další proxy
             try
             {
@@ -1841,8 +1852,20 @@ async Task<string?> ResolveCdnUrl(IHttpClientFactory f, IMemoryCache cache, stri
 
 app.MapGet("/api/stream", async (string url, string? name, string? download, string? v, IHttpClientFactory f, IMemoryCache cache, HttpContext ctx) =>
 {
-    if (!IsPrehrajUrl(url))
-        return Results.Json(new { success = false, error = "URL must be from prehraj.to" }, statusCode: 400);
+    // Dřív šlo přeposílat/stahovat jen prehraj.to, takže stažení filmu z bombuj/sledujteto/
+    // hellspy skončilo 400 "URL must be from prehraj.to". Přehrávání přitom tyhle zdroje zná,
+    // takže se sem pustí stejná sada a odkaz se dohledá stejnými proxy servery.
+    if (!IsAllowedSourcePageUrl(url))
+        return Results.Json(new { success = false, error = "URL must be from a supported source" }, statusCode: 400);
+    // Vypnutý zdroj se neobsluhuje ani tady - jinak by se dal obejít přepínač v adminu.
+    var streamSrc = SourceFromUrl(url);
+    if (streamSrc != null && !adminStore.Current.Sources.IsEnabled(streamSrc))
+        return Results.Json(new
+        {
+            success = false,
+            source = streamSrc,
+            error = "Zdroj \"" + streamSrc + "\" je dočasně vypnutý.",
+        }, statusCode: 400);
 
     // Admin kill switch: stahování počítá přenesená data (na Azure free tier to je reálná položka),
     // přehrávání přes server funguje dál.
@@ -1870,6 +1893,10 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
     // Půjčený buffer: 80 kB na požadavek by jinak bylo při víc souběžných filmech zbytečně
     // mnoho alokací pro GC (a na sdíleném hostingu je paměť vzácná).
     var buf = ArrayPool<byte>.Shared.Rent(81920);
+    // Referer bere podle zdroje: každé CDN kontroluje ten svůj (prehraj.to u bombuj videa neprojde).
+    var referer = Uri.TryCreate(url, UriKind.Absolute, out var pageUri)
+        ? new Uri(pageUri.GetLeftPart(UriPartial.Authority) + "/")
+        : new Uri("https://prehraj.to/");
     try
     {
         for (var attempt = 0; attempt < 6 && !ct.IsCancellationRequested; attempt++)
@@ -1894,7 +1921,7 @@ app.MapGet("/api/stream", async (string url, string? name, string? download, str
         else if (hasRange || sent > 0) range = $"bytes={offset}-{(reqEnd?.ToString() ?? "")}";
 
         using var req = new HttpRequestMessage(HttpMethod.Get, cdn);
-        req.Headers.Referrer = new Uri("https://prehraj.to/");
+        req.Headers.Referrer = referer;
         req.Headers.Accept.ParseAdd("*/*");
         if (range != null) req.Headers.TryAddWithoutValidation("Range", range);
 

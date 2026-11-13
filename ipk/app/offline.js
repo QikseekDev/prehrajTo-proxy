@@ -221,13 +221,26 @@
     if (ctrl) opts.signal = ctrl.signal;
 
     fetch(src, opts).then(function (res) {
-      if (!res.ok) throw new Error('Server vrátil HTTP ' + res.status);
+      if (!res.ok) {
+        // Server posílá důvod v JSONu ("URL must be from a supported source",
+        // "Stahování je dočasně vypnuté."), tak ho ukaž místo holého kódu.
+        return res.text().then(function (t) {
+          var detail = '';
+          try { var j = JSON.parse(t); detail = (j && (j.error || j.message)) || ''; } catch (_) { detail = ''; }
+          throw new Error('HTTP ' + res.status + (detail ? ': ' + detail : ''));
+        }, function () { throw new Error('HTTP ' + res.status); });
+      }
       var total = 0;
       try { total = +res.headers.get('Content-Length') || 0; } catch (_) { total = 0; }
       job.total = total;
+      var ctype = 'video/mp4';
+      try {
+        var ct = String(res.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+        if (ct.indexOf('video/') === 0 || ct.indexOf('audio/') === 0) ctype = ct;
+      } catch (_) {}
       if (res.body && typeof res.body.getReader === 'function') {
         return readStream(key, res.body).then(function (chunks) {
-          return new Blob(chunks, { type: 'video/mp4' });
+          return new Blob(chunks, { type: ctype });
         });
       }
       return res.blob();          // starší prohlížeč: bez průběhu, ale uloží se
