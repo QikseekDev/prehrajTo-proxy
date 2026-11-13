@@ -756,6 +756,10 @@
             background: repeating-linear-gradient(135deg, rgba(255,255,255,0.035) 0 8px, transparent 8px 16px);
             border-style: dashed; border-color: var(--line-strong);
         }
+        .lg-pg.empty { overflow: visible; }
+        /* Když je osa odscrollovaná, text placeholdu se drží u sloupce kanálů -
+           jinak by z něj byl vidět jen konec věty. */
+        .lg-pg.empty b, .lg-pg.empty small { position: sticky; left: calc(var(--lg-cw) + 8px); }
         .lg-pg.empty b { color: var(--muted); font-weight: 500; }
         .lg-prog { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); }
         .lg-now { position: absolute; top: 30px; bottom: 0; width: 2px; background: var(--accent); z-index: 2; pointer-events: none; }
