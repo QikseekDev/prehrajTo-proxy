@@ -40,7 +40,13 @@ $destSite = "contentPath='$Site',$remote"
 # ("Web Deploy cannot modify the file 'PrehrajtoProxy.dll' ... locked by an external process").
 # Proto tři fáze: nahrát app_offline.htm -> počkat, než appka spadne -> synchronizovat
 # (app_offline.htm se přeskakuje, aby ho sync nesmazal) -> app_offline.htm smazat.
+#
+# POZOR: Web Deploy při syncu maže na cíli soubory, které ve zdroji nejsou. První fáze
+# posílá složku, ve které je JEN app_offline.htm, takže bez -enableRule:DoNotDeleteRule
+# by smazala celý web (přesně to se stalo 13. 11. a web zůstal rozbitý). Proto je
+# DoNotDeleteRule povinný a App_Data (admin stav, audit) se navíc přeskakuje.
 $skipOffline = '-skip:objectName=filePath,absolutePath=.*app_offline\.htm'
+$skipAppData = '-skip:objectName=dirPath,absolutePath=.*[\\/]App_Data.*'
 
 $offlineDir = Join-Path ([System.IO.Path]::GetTempPath()) ('wflix-offline-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $offlineDir -Force | Out-Null
@@ -99,14 +105,15 @@ function Wait-AppOffline {
 $deployed = $false
 try {
     Write-Host "1/3 app_offline.htm -> $Site"
-    & $msdeploy -verb:sync "-source:contentPath=$offlineDir" "-dest:$destSite" -useChecksum -verbose
+    # DoNotDeleteRule = nahraj app_offline.htm, ale nic na serveru nemaž.
+    & $msdeploy -verb:sync "-source:contentPath=$offlineDir" "-dest:$destSite" -enableRule:DoNotDeleteRule -useChecksum -verbose
     if ($LASTEXITCODE -ne 0) { throw "app_offline.htm se nenahral (exit $LASTEXITCODE) pro $Site" }
 
     Wait-AppOffline -Url $WaitUrl -TimeoutSeconds $OfflineTimeoutSeconds
 
     for ($attempt = 1; $attempt -le 3; $attempt++) {
         Write-Host "2/3 deploy do $Site z $SourcePath (pokus $attempt)"
-        & $msdeploy -verb:sync "-source:contentPath=$SourcePath" "-dest:$destSite" $skipOffline -useChecksum -verbose
+        & $msdeploy -verb:sync "-source:contentPath=$SourcePath" "-dest:$destSite" $skipOffline $skipAppData -useChecksum -verbose
         if ($LASTEXITCODE -eq 0) { $deployed = $true; break }
         Write-Host "msdeploy selhal (exit $LASTEXITCODE), zkusim znovu za 15 s"
         Start-Sleep -Seconds 15
@@ -115,9 +122,14 @@ try {
 } finally {
     Remove-Item -Recurse -Force $offlineDir -ErrorAction SilentlyContinue
     Write-Host "3/3 odstraneni app_offline.htm na $Site"
-    & $msdeploy -verb:delete "-dest:contentPath='$Site/app_offline.htm',$remote" -verbose
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "::warning::app_offline.htm se nepodarilo smazat (exit $LASTEXITCODE) - web muze zustat na 503, smaz ho rucne."
+    $deleteOut = & $msdeploy -verb:delete "-dest:contentPath='$Site/app_offline.htm',$remote" -verbose 2>&1
+    $deleteCode = $LASTEXITCODE
+    if ($deleteCode -ne 0) {
+        if (($deleteOut | Out-String) -match 'FileOrFolderNotFound') {
+            Write-Host "app_offline.htm na serveru nebyl - neni co mazat."
+        } else {
+            Write-Host "::warning::app_offline.htm se nepodarilo smazat (exit $deleteCode) - web muze zustat na 503, smaz ho rucne."
+        }
     }
 }
 
