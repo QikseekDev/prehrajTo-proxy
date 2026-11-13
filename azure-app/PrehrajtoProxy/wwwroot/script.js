@@ -1108,9 +1108,16 @@
             };
         }
 
-        function renderHero() {
+        function heroPick() {
             const day = Math.floor(Date.now() / 86400000);
-            const m = CATALOG[(day + heroOffset) % CATALOG.length];
+            const pool = CATALOG.filter(x => x && x.trailer);
+            const src = pool.length ? pool : CATALOG;
+            return src.length ? src[(day + heroOffset) % src.length] : null;
+        }
+
+        function renderHero() {
+            const m = heroPick();
+            if (!m) return;
             stopHeroTrailer();   // jiný tip / nový katalog = starý trailer i časovač pryč
             document.getElementById('hero').innerHTML = `
                 <div class="hero" style="--hero-bg:${posterGradient(m.t)}">
@@ -4298,3 +4305,4 @@
                 .then(apply)
                 .catch(() => { /* self-host bez /api/config */ });
         })();
+
