@@ -382,6 +382,19 @@
             return result;
         }
 
+
+        // Výběr nejlepší varianty (v celém skriptu je později plná verze se skóre kvality;
+        // tento fallback slouží i pro izolované testy parsování).
+        function bestVariant(ep) {
+            if (ep.variants.length === 1) return ep.variants[0];
+            if (typeof variantScore === 'function') {
+                let best = ep.variants[0];
+                ep.variants.forEach(v => { if (variantScore(v) > variantScore(best)) best = v; });
+                return best;
+            }
+            return ep.variants[0];
+        }
+
         function finalizeSeries(raw) {
             const seasons = new Map();   // klíč sezóny -> Map(číslo dílu -> epizoda)
             raw.raw.forEach(({ movie, parsed }) => {

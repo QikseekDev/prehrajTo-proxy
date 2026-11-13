@@ -295,6 +295,21 @@
     return result;
   }
 
+
+  // Výběr nejlepší varianty (v celém skriptu je později plná verze se skóre kvality;
+  // tento fallback slouží i pro izolované testy parsování).
+  function bestVariant(ep) {
+    if (ep.variants.length === 1) return ep.variants[0];
+    if (typeof variantScore === 'function') {
+      var best = ep.variants[0];
+      for (var i = 1; i < ep.variants.length; i++) {
+        if (variantScore(ep.variants[i]) > variantScore(best)) best = ep.variants[i];
+      }
+      return best;
+    }
+    return ep.variants[0];
+  }
+
   function finalizeSeries(raw) {
     var seasonKeys = [];
     var seasons = {};

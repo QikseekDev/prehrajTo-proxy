@@ -121,8 +121,10 @@ test('seskupení slije epizody, dedupuje URL i stejné názvy a nechá filmy', (
     const shows = entries.filter(e => e.type === 'series');
     const films = entries.filter(e => e.type === 'movie');
     assert.equal(shows.length, 1);
-    assert.equal(films.length, 1);
-    assert.equal(films[0].movie.title, 'Matrix');
+    assert.equal(films.length, 2, 'Matrix + nevybraná varianta dílu zůstane ve výsledcích');
+    assert.ok(films.some(f => f.movie.title === 'Matrix'));
+    assert.ok(films.some(f => f.movie.url === 'https://prehraj.to/mr-robot-s01e01-cz/2'),
+        'druhý zdroj téhož dílu se nesmí zahodit');
 
     const show = shows[0].series;
     assert.equal(show.title, 'Mr. Robot');
@@ -130,23 +132,27 @@ test('seskupení slije epizody, dedupuje URL i stejné názvy a nechá filmy', (
     assert.equal(show.episodeCount, 4);
     assert.deepEqual(show.seasons.map(s => s.season), [1, 2]);
     assert.equal(show.seasons[0].episodes.length, 3);
-    assert.equal(show.seasons[0].episodes[0].variants.length, 2, 'dva různé zdroje = varianty');
+    assert.equal(show.seasons[0].episodes[0].variants.length, 1, 'v kartě seriálu zůstane nejlepší varianta');
+    assert.equal(show.seasons[0].episodes[0].variants[0].url, 'https://prehraj.to/mr-robot-s01e01/1');
     assert.equal(seriesMeta(show), '2 série · 4 díly');
 });
 
 test('S02E02-12 je jen díl 2, ne rozsah ani kopie pro každý díl', () => {
-    const show = groupSearchResults([
+    const entries = groupSearchResults([
         m('Mr. Robot S02E01', 'u1', '2016'),
         m('Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc', 'u2', '2016'),
         m('Mr. Robot S02E02-12 2016 CZ dab - d2.0_odkr7ti2.tc', 'u2', '2016'),   // stejná URL
         m('Mr. Robot S02E02 ULTRA HD', 'u4', '2016'),                            // jiný zdroj téhož dílu
         m('Mr. Robot S02E03', 'u3', '2016'),
-    ]).find(e => e.type === 'series').series;
+    ]);
+    const show = entries.find(e => e.type === 'series').series;
 
     const season = show.seasons[0];
     assert.equal(season.episodes.length, 3, 'E01, E02, E03');
     assert.deepEqual(season.episodes.map(e => e.label), ['S02E01', 'S02E02', 'S02E03']);
-    assert.equal(season.episodes[1].variants.length, 2, 'soubor S02E02-12 je jen další zdroj dílu 2');
+    assert.equal(season.episodes[1].variants.length, 1, 'v kartě seriálu zůstane nejlepší varianta dílu 2');
+    assert.ok(entries.some(e => e.type === 'movie' && e.movie.url === 'u4'),
+        'další zdroj dílu 2 zůstane ve výsledcích hledání');
     assert.equal(show.episodeCount, 3, 'počítají se skutečné díly');
     assert.ok(!season.episodes.some(e => e.label === 'S02E12'), 'číslo za pomlčkou není díl');
     assert.ok(!season.episodes.some(e => e.label === 'S02E05'), 'žádné rozkopírování');
@@ -167,15 +173,18 @@ test('klientská appka parsuje díly stejně jako web', () => {
 test('appka slije S01E02-09 s dílem 2 a neudělá z něj rozsah', () => {
     const app = loadAppParser();
     const mm = (title, url) => ({ title, url, thumbnail: '', year: '2025' });
-    const show = app.groupSearchResults([
+    const entries = app.groupSearchResults([
         mm('TO Vítejte v Derry S01E01 CZ dabing 2025', 'a1'),
         mm('TO Vítejte v Derry S01E02 ULTRA HD KVALITA', 'a2'),
         mm('TO - Vítejte v Derry S01E03 2160p CZ SK Dabing', 'a3'),
         mm('TO - Vítejte v Derry S01E02-09 2025 CZ dabing 1080p FHD - Věc ve tmě', 'a4'),
-    ]).find(e => e.type === 'series').series;
+    ]);
+    const show = entries.find(e => e.type === 'series').series;
     const season = show.seasons[0];
     assert.deepEqual(season.episodes.map(e => e.label), ['S01E01', 'S01E02', 'S01E03']);
-    assert.equal(season.episodes[1].variants.length, 2, 'upload s -09 je jen další zdroj dílu 2');
+    assert.equal(season.episodes[1].variants.length, 1, 'v kartě seriálu zůstane nejlepší varianta dílu 2');
+    assert.ok(entries.some(e => e.type === 'movie' && e.movie && e.movie.url === 'a4'),
+        'upload s -09 je další zdroj dílu 2 a zůstane ve výsledcích hledání');
     assert.equal(app.seriesMeta(show), '1 série · 3 díly');
 });
 
@@ -326,17 +335,19 @@ const franchise = [
 
 test('franšíza bez SxxExx se slije do jedné série a jde otevřít', () => {
     const entries = groupSearchResults(franchise.map((t, i) => m(t, 'f' + i, i === 5 ? '' : '')));
-    assert.equal(entries.length, 1, 'jedna karta pro celou sérii');
-    assert.equal(entries[0].type, 'series');
+    assert.equal(entries.filter(e => e.type === 'series').length, 1, 'jedna karta pro celou sérii');
+    assert.equal(entries.filter(e => e.type === 'movie').length, 1, 'nevybraná varianta filmu zůstane ve výsledcích');
+    assert.ok(entries.some(e => e.type === 'movie' && e.movie.url === 'f1'),
+        'druhý upload téhož filmu se nesmí zahodit');
 
-    const show = entries[0].series;
+    const show = entries.find(e => e.type === 'series').series;
     assert.equal(show.kind, 'collection');
     assert.equal(show.title, 'Spiderman');
     const rows = show.seasons[0].episodes;
     assert.deepEqual(rows.map(r => r.variants[0].name), [
         'Spiderman', 'Spiderman 2', 'Spiderman 3', 'Spiderman Daleko od domova', 'SpiderMan Zbrusu nový den',
     ]);
-    assert.equal(rows[4].variants.length, 2, 'druhý upload téhož filmu je varianta, ne další řádek');
+    assert.equal(rows[4].variants.length, 1, 'v kolekci zůstane nejlepší varianta filmu');
     assert.equal(seriesMeta(show), '5 filmů');
     assert.ok(rows.every(r => r.variants[0].url), 'každý řádek má video k přehrání');
 });
