@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
 
 namespace Wflix.Meta;
@@ -44,12 +46,35 @@ public sealed class EpgService
     private readonly ILogger<EpgService> _log;
     private readonly string[] _urls;
     private readonly TimeSpan _ttl;
+    // Šablona guide pro jednu zemi ("https://iptv-epg.org/files/epg-{country}.xml.gz").
+    // Prázdná = dotahování podle země je vypnuté.
+    private readonly string _countryTemplate;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private EpgSnapshot? _snapshot;
     private DateTimeOffset _loadedAt = DateTimeOffset.MinValue;
 
-    public bool Enabled => _urls.Length > 0;
+    // Guide jednotlivých zemí: drží se jen ty naposledy použité, protože dohromady mají
+    // stovky megabajtů a v paměti instance by se nevyplatily.
+    private readonly ConcurrentDictionary<string, GuideEntry> _countryGuides = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _countryLocks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _countrySlots = new(3, 3);
+    private const int CountryCacheMax = 4;
+    // Země s obřím guide (US má 60 MB gzip) se nepřekládá do paměti - playlist pro ni
+    // zůstane bez programu, ale instance nespadne.
+    private const long CountryMaxBytes = 24 * 1024 * 1024;
+
+    // iptv-org používá pro Británii "uk", iptv-epg.org (a ISO) "gb"; soubor se jmenuje
+    // epg-gb.xml.gz. Ostatní kódy sedí, chybějící země (sk, xk…) vrátí 404 a hodinu
+    // se nezkoušejí.
+    private static readonly Dictionary<string, string> CountryFileCodes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["uk"] = "gb",
+    };
+
+    private sealed record GuideEntry(EpgSnapshot? Snapshot, DateTimeOffset ExpiresAt);
+
+    public bool Enabled => _urls.Length > 0 || _countryTemplate.Length > 0;
 
     public EpgService(IConfiguration cfg, IHttpClientFactory factory, ILogger<EpgService> log)
     {
@@ -59,6 +84,7 @@ public sealed class EpgService
             .Where(u => !string.IsNullOrWhiteSpace(u))
             .Select(u => u.Trim())
             .ToArray();
+        _countryTemplate = (cfg.GetValue<string>("Epg:CountryGuideUrl") ?? "").Trim();
         var minutes = cfg.GetValue<int?>("Epg:TtlMinutes") ?? 360;
         _ttl = TimeSpan.FromMinutes(Math.Clamp(minutes, 15, 1440));
     }
@@ -75,7 +101,7 @@ public sealed class EpgService
         {
             if (_snapshot != null && DateTimeOffset.UtcNow - _loadedAt < _ttl) return _snapshot;
 
-            var fresh = await LoadAsync(ct);
+            var fresh = await LoadAsync(_urls, 64 * 1024 * 1024, ct);
             _loadedAt = DateTimeOffset.UtcNow;
             if (fresh != null) _snapshot = fresh;
             return _snapshot;
@@ -84,6 +110,70 @@ public sealed class EpgService
         {
             _gate.Release();
         }
+    }
+
+    // Guide pro jednu zemi. Stahuje se až ve chvíli, kdy ho divák opravdu potřebuje -
+    // seznam zemí v iptv-epg.org má desítky XMLTV a všechna naráz by znamenala stovky
+    // megabajtů v paměti. Neúspěch (země bez guide) se pamatuje hodinu, aby se 404
+    // nezkoušela při každém obnovení seznamu kanálů.
+    public async Task<EpgSnapshot?> GetCountryAsync(string? country, CancellationToken ct)
+    {
+        if (_countryTemplate.Length == 0) return null;
+        var cc = (country ?? "").Trim().ToLowerInvariant();
+        if (!Regex.IsMatch(cc, "^[a-z]{2}$")) return null;
+        if (_countryGuides.TryGetValue(cc, out var cached) && cached.ExpiresAt > DateTimeOffset.UtcNow)
+            return cached.Snapshot;
+
+        var gate = _countryLocks.GetOrAdd(cc, _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(TimeSpan.FromSeconds(20), ct))
+            return _countryGuides.TryGetValue(cc, out var stale) ? stale.Snapshot : null;
+        try
+        {
+            if (_countryGuides.TryGetValue(cc, out cached) && cached.ExpiresAt > DateTimeOffset.UtcNow)
+                return cached.Snapshot;
+
+            var file = CountryFileCodes.TryGetValue(cc, out var mapped) ? mapped : cc;
+            var url = _countryTemplate.Replace("{country}", file);
+            // Stejný guide může být i v Epg:Urls (CZ tam je kvůli slovenským kanálům,
+            // které se v něm taky hledají) - pak se nestahuje podruhé.
+            if (_urls.Any(u => u.Equals(url, StringComparison.OrdinalIgnoreCase))) return _snapshot;
+
+            EpgSnapshot? snapshot = null;
+            // Souběžných stahování je nanejvýš pár, aby jeden velký guide nezabral
+            // všechny prostředky instance.
+            if (await _countrySlots.WaitAsync(TimeSpan.FromSeconds(20), ct))
+            {
+                try
+                {
+                    snapshot = await LoadAsync(new[] { url }, CountryMaxBytes, ct);
+                }
+                finally
+                {
+                    _countrySlots.Release();
+                }
+            }
+            if (snapshot == null) _log.LogDebug("EPG pro zemi {Country} není k dispozici ({Url})", cc, url);
+
+            _countryGuides[cc] = new GuideEntry(snapshot, DateTimeOffset.UtcNow.Add(snapshot == null ? TimeSpan.FromMinutes(60) : _ttl));
+            TrimCountryGuides(cc);
+            return snapshot;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    // Nechá v paměti jen pár zemí: tu, kterou právě řešíme, a ty s nejdelší platností.
+    // Velký guide ( Německo, Británie) se tak po chvíli uvolní sám.
+    private void TrimCountryGuides(string keep)
+    {
+        if (_countryGuides.Count <= CountryCacheMax) return;
+        foreach (var pair in _countryGuides
+                     .Where(p => !p.Key.Equals(keep, StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(p => p.Value.ExpiresAt)
+                     .Take(_countryGuides.Count - CountryCacheMax))
+            _countryGuides.TryRemove(pair.Key, out _);
     }
 
     // Kanál z guide, který odpovídá kanálu z playlistu. Zkouší se varianty popořadě:
@@ -234,7 +324,7 @@ public sealed class EpgService
         return sb.ToString();
     }
 
-    private async Task<EpgSnapshot?> LoadAsync(CancellationToken ct)
+    private async Task<EpgSnapshot?> LoadAsync(IReadOnlyList<string> urls, long maxBytes, CancellationToken ct)
     {
         var snapshot = new EpgSnapshot { Loaded = DateTimeOffset.UtcNow };
         // Časová osa v prohlížeči začíná o půlnoci místního času, takže se drží i program,
@@ -244,7 +334,7 @@ public sealed class EpgService
         var client = _factory.CreateClient("meta");
         var failures = new List<string>();
 
-        foreach (var url in _urls)
+        foreach (var url in urls)
         {
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
                 || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
@@ -264,7 +354,11 @@ public sealed class EpgService
                 // Průvodce pro jednu zemi má jednotky MB (gzip) až desítky MB po rozbalení.
                 // Strop je tam proto, aby špatně nastavená URL (nebo omylem binární soubor)
                 // nesežrala paměť instance.
-                if (bytes.Length == 0 || bytes.Length > 64 * 1024 * 1024) continue;
+                if (bytes.Length == 0 || bytes.Length > maxBytes)
+                {
+                    failures.Add($"{uri.Host}: {bytes.Length / (1024 * 1024)} MB je nad limit");
+                    continue;
+                }
 
                 // epgshare01 publikuje ke každému guidu i .txt se seznamem id kanálů -
                 // podle prvního znaku poznáme, jestli jde o XMLTV, nebo o ten seznam.
@@ -333,6 +427,7 @@ public sealed class EpgService
 
     private static async Task ParseAsync(Stream xml, EpgSnapshot snapshot, DateTimeOffset cutoff, CancellationToken ct)
     {
+        var horizon = DateTimeOffset.UtcNow.AddHours(72);
         var settings = new XmlReaderSettings
         {
             Async = true,
@@ -389,7 +484,9 @@ public sealed class EpgService
             }
 
             if (string.IsNullOrWhiteSpace(title) || start == null || stop == null) continue;
-            if (stop <= start || stop < cutoff) continue;
+            // Držíme jen okno, které se dá zobrazit: dnešní den a kousek zítřka. Guide
+            // některých zemí obsahuje týden dopředu a v paměti by to bylo zbytečné.
+            if (stop <= start || stop < cutoff || start > horizon) continue;
 
             var channelKey = TextNorm.Key(TextNorm.StripVariant(channelRaw));
             if (channelKey.Length == 0) continue;

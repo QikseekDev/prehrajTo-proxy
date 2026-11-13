@@ -1349,12 +1349,19 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? 
     if (epg is 1 && epgService.Enabled)
     {
         var snapshot = await epgService.GetAsync(ct);
+        // Guide pro zemi, kterou má divák otevřenou, se dotahuje zvlášť (Epg:CountryGuideUrl).
+        // Držet všechny země naráz nejde - iptv-epg.org jich publikuje desítky a dohromady
+        // mají stovky megabajtů. Pro lang=… žádná země není, tam platí jen Epg:Urls.
+        var countryGuide = countryCode is { Length: 2 } ? await epgService.GetCountryAsync(countryCode, ct) : null;
         var from = DateTimeOffset.UtcNow.AddHours(-16);
         var to = DateTimeOffset.UtcNow.AddHours(26);
         var guide = new Dictionary<string, object[]>(StringComparer.Ordinal);
         foreach (var ch in channels)
         {
-            if (EpgService.FindChannel(snapshot, ch.Id, ch.Name, from, to) is not { } matched) continue;
+            // Epg:Urls má přednost, guide země doplní kanály, které v něm nejsou.
+            var matched = EpgService.FindChannel(snapshot, ch.Id, ch.Name, from, to)
+                ?? EpgService.FindChannel(countryGuide, ch.Id, ch.Name, from, to);
+            if (matched is null) continue;
             var programmes = EpgService.Programmes(matched, from, to)
                 .Select(p => (object)new { t = p.Title, s = p.Start, e = p.Stop })
                 .ToArray();
