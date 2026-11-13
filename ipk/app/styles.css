@@ -720,3 +720,7 @@ html.no-flex-gap .state .health-inline > * + *{margin-left:.5rem}
 html.no-flex-gap .p-next > * + *{margin-top:.55rem}
 html.no-flex-gap .p-next-bar > * + *{margin-left:1rem}
 html.no-flex-gap .p-next-actions > * + *{margin-left:.45rem}
+
+/* TV (IPK/webOS): větší text pro čitelnost na dálku; vyjímky: levý panel, hero/banner, klávesnice a návrhy */
+.webos .main{font-size:1.12em}
+.webos .main .hero,.webos .main .skeys,.webos .main .search-hint{font-size:.893em}
