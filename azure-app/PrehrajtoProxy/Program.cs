@@ -140,6 +140,7 @@ builder.Services.AddHttpClient("meta", c =>
     });
 builder.Services.AddSingleton<CsfdClient>();
 builder.Services.AddSingleton<EpgService>();
+builder.Services.AddSingleton<IptvOrgApi>();
 
 // ------------------------------------------------------------------ veřejný provoz
 // App Service stojí před appkou jako reverzní proxy: bez tohohle by měly všechny
@@ -874,7 +875,7 @@ static List<LiveChannel> ParseM3u(string text)
         clean = Regex.Replace(clean, @"\s*\(\d{3,4}p\)|\s*\(\d+k\)", "", RegexOptions.IgnoreCase).Trim();
         if (clean.Length == 0) clean = u.Host;
         if (seen.Add(line))
-            list.Add(new LiveChannel(clean, group ?? "", logo ?? "", line, id ?? "", ua ?? "", referrer ?? "", quality, tags.ToArray()));
+            list.Add(new LiveChannel(clean, group ?? "", logo ?? "", line, id ?? "", ua ?? "", referrer ?? "", quality, tags.ToArray(), Array.Empty<IptvAlt>()));
         name = null; logo = null; group = null; id = null; ua = null; referrer = null;
     }
     return list;
@@ -1275,7 +1276,7 @@ app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCac
 //   ?country=cz   -> https://iptv-org.github.io/iptv/countries/cz.m3u (když selže, streams/cz.m3u)
 //   ?lang=ces     -> https://iptv-org.github.io/iptv/languages/ces.m3u
 //   ?custom=<i>   -> "Prehraj:LivePlaylists" z konfigurace
-app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? epg, IHttpClientFactory f, IMemoryCache cache, EpgService epgService, CancellationToken ct) =>
+app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? epg, IHttpClientFactory f, IMemoryCache cache, EpgService epgService, IptvOrgApi iptv, CancellationToken ct) =>
 {
     if (!adminStore.Current.Flags.Live)
         return Results.Json(new { success = false, error = "Živé vysílání je dočasně vypnuté." }, statusCode: 503);
@@ -1332,6 +1333,16 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? 
         channels = cached;
     }
 
+    // Playlist má jeden stream na kanál, ale iptv-org streams.json jich u části kanálů zná
+    // víc (u CZ playlistu 29 kanálů a 86 adres navíc) - pošlou se jako záložní, aby klient
+    // mohl zkusit jinou, když ta první nefunguje. Dataset má megabajty, takže se čeká jen
+    // chvíli a zbytek se dočte na pozadí; kanály se cachují zvlášť, takže další požadavek
+    // už alternativy má.
+    await iptv.WarmAsync(TimeSpan.FromMilliseconds(1500), ct);
+    channels = channels
+        .Select(ch => iptv.Alts(ch.Id, ch.Url) is { Count: > 0 } alts ? ch with { Alts = alts.ToArray() } : ch)
+        .ToList();
+
     // epg=1 přidá ke kanálům program pro časovou osu. Párování playlistu s guide dělá
     // server (EpgService), takže prohlížeč nemusí znát žádná pravidla - jen vykreslí,
     // co dostane. Kanály bez programu v odpovědi chybí a osa jim ukáže "data nejsou".
@@ -1385,7 +1396,12 @@ app.MapGet("/api/live/countries", async (IHttpClientFactory f, IMemoryCache cach
                 string? lcName = lcEl.TryGetProperty("name", out var lcNameEl) && lcNameEl.ValueKind == JsonValueKind.String
                     ? lcNameEl.GetString() : null;
                 if (lcCode != null && Regex.IsMatch(lcCode, "^[A-Za-z]{2}$") && !string.IsNullOrWhiteSpace(lcName))
-                    lcList.Add(new LiveCountry(lcCode.ToLowerInvariant(), lcName.Trim()));
+                {
+                    // Vlajka je v countries.json jako emoji - v seznamu zemí ušetří hledání.
+                    var lcFlag = lcEl.TryGetProperty("flag", out var lcFlagEl) && lcFlagEl.ValueKind == JsonValueKind.String
+                        ? (lcFlagEl.GetString() ?? "").Trim() : "";
+                    lcList.Add(new LiveCountry(lcCode.ToLowerInvariant(), lcName.Trim(), lcFlag));
+                }
             }
         }
     }
@@ -1997,5 +2013,6 @@ record ThumbResult(string Thumbnail, string Title, string Url);
 // Položka katalogu pro homepage (iTunes RSS): t=název, y=rok, img=plakát, q=hledací výraz, g=žánry
 record CatalogItem(string T, string Y, string Img, string Q, string[] G);
 
-record LiveChannel(string Name, string Group, string Logo, string Url, string Id, string Ua, string Referrer, string Quality, string[] Tags);
-record LiveCountry(string Code, string Name);
+// Alts = záložní streamy z iptv-org API (když playlist URL nefunguje, klient zkusí další).
+record LiveChannel(string Name, string Group, string Logo, string Url, string Id, string Ua, string Referrer, string Quality, string[] Tags, IptvAlt[] Alts);
+record LiveCountry(string Code, string Name, string Flag);

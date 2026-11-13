@@ -2731,7 +2731,14 @@
     }
     var hlsSrc = isLive || /\.m3u8(\?|$)/i.test(player.cdn || '');
     attachSource(src, hlsSrc, {
-      onFatal: function () { setPlayerState('Ani relay nepřehraje tento zdroj.'); }
+      onFatal: function () {
+        // Kanál z playlistu může mít v API další adresy - zkusit je, než to vzdáme.
+        if (isLive && player.page && player.page.channel) {
+          liveNextAlt(player.page.channel, function () { setPlayerState('Ani relay nepřehraje tento zdroj.'); });
+          return;
+        }
+        setPlayerState('Ani relay nepřehraje tento zdroj.');
+      }
     });
   }
 
@@ -2743,18 +2750,40 @@
     return url(u);
   }
 
+  // Záložní stream z iptv-org API: playlist nese jeden, API jich u části kanálů zná víc.
+  function liveAltRelayUrl(a) {
+    var u = '/api/live/hls?url=' + encodeURIComponent(a.u);
+    if (a.ua) u += '&ua=' + encodeURIComponent(a.ua);
+    if (a.referrer) u += '&referrer=' + encodeURIComponent(a.referrer);
+    return url(u);
+  }
+
+  // Mrtvá adresa je u IPTV běžná věc, takže se zkouší další záložní, dokud nějaká nevyjde.
+  function liveNextAlt(ch, onFail) {
+    var alts = (ch && ch.alts) || [];
+    if (!alts.length || (player.altIndex || 0) >= alts.length) { onFail(); return; }
+    var a = alts[player.altIndex++];
+    setPlayerState('Zkouším záložní adresu kanálu…');
+    attachSource(liveAltRelayUrl(a), true, {
+      onFatal: function () { liveNextAlt(ch, onFail); }
+    });
+  }
+
   function playLive(ch) {
     player.page = { channel: ch, channelIndex: state.channels.indexOf(ch) };
     player.cdn = '';
     player.title = ch.name || 'Živě';
     openPlayer('live', player.title);
     var needsHeaders = !!(ch.ua || ch.referrer);
+    player.altIndex = 0;
     setPlayerState('Připojuji kanál…');
     if (needsHeaders || !settings.direct) {
       player.triedRelay = true;
       player.mode = 'relay';
       attachSource(liveRelayUrl(ch), true, {
-        onFatal: function () { setPlayerState('Kanál se nepodařilo přehrát.'); }
+        onFatal: function () {
+          liveNextAlt(ch, function () { setPlayerState('Kanál se nepodařilo přehrát.'); });
+        }
       });
       return;
     }

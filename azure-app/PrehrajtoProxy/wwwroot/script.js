@@ -2521,6 +2521,14 @@
             return url;
         }
 
+        // Stejná věc pro záložní stream z API (nese si vlastní ua/referrer).
+        function liveAltRelayUrl(a) {
+            let url = '/api/live/hls?url=' + encodeURIComponent(a.u);
+            if (a.ua) url += '&ua=' + encodeURIComponent(a.ua);
+            if (a.referrer) url += '&referrer=' + encodeURIComponent(a.referrer);
+            return url;
+        }
+
         function showLiveError(msg) {
             liveError.textContent = msg;
             liveError.hidden = false;
@@ -2543,6 +2551,15 @@
             const needsHeaders = !!(ch.ua || ch.referrer);
             const relayUrl = liveRelayUrl(ch);
 
+            // Server ke kanálu přidá záložní adresy z iptv-org API (ch.alts), protože playlist
+            // nese jen jeden stream. Mrtvá adresa je u IPTV běžná věc, takže se zkusí další
+            // dřív, než se divákovi ukáže chyba. Alternativy jdou vždy přes relay - prohlížeč
+            // k nim nedostane hlavičky, které zdroj může chtít.
+            const alts = Array.isArray(ch.alts) ? ch.alts.filter(a => a && a.u) : [];
+            let altIdx = -1;
+            const nextAltUrl = () => altIdx + 1 < alts.length ? liveAltRelayUrl(alts[++altIdx]) : null;
+            const liveFailMessage = 'Kanál teď nejde přehrát – může být geoblokovaný, dočasně mimo provoz nebo změnil adresu. Zkus jiný kanál.';
+
             // Safari/iOS umí HLS nativně a CORS u videa neřeší - tam je přímé přehrání nejlepší.
             // Vypnuté přímé přehrávání znamená server od začátku.
             const useRelay = needsHeaders || !directPreferred();
@@ -2561,10 +2578,20 @@
                     liveVideo.addEventListener('playing', () => {
                         if (liveChannel === ch) liveError.hidden = true;
                     }, { once: true });
-                    liveVideo.addEventListener('error', () => {
-                        if (liveChannel === ch && liveVideo.getAttribute('src') === relayUrl)
-                            showLiveError('Kanál teď nejde přehrát – může být geoblokovaný, dočasně mimo provoz nebo změnil adresu. Zkus jiný kanál.');
-                    }, { once: true });
+                    // Relay může být taky mrtvý - pak se zkoušejí záložní adresy, dokud nějaká nevyjde.
+                    const nativeAltError = () => {
+                        if (liveChannel !== ch) return;
+                        const next = nextAltUrl();
+                        if (next) {
+                            liveVideo.src = next;
+                            liveVideo.play().catch(() => {});
+                            showLiveError('Zkouším záložní adresu kanálu…');
+                            return;
+                        }
+                        showLiveError(liveFailMessage);
+                    };
+                    liveNativeErrorHandler = nativeAltError;
+                    liveVideo.addEventListener('error', nativeAltError);
                 };
                 liveVideo.addEventListener('error', liveNativeErrorHandler);
                 return;
@@ -2595,7 +2622,15 @@
                     hls.startLoad();
                     return;
                 }
-                showLiveError('Kanál teď nejde přehrát – může být geoblokovaný, dočasně mimo provoz nebo změnil adresu. Zkus jiný kanál.');
+                // Ani relay nevyšel: zkusit záložní adresu z API, než to vzdáme.
+                const next = nextAltUrl();
+                if (next) {
+                    showLiveError('Zkouším záložní adresu kanálu…');
+                    hls.loadSource(next);
+                    hls.startLoad();
+                    return;
+                }
+                showLiveError(liveFailMessage);
                 hls.destroy();
                 if (liveHls === hls) liveHls = null;
             });
@@ -3220,7 +3255,8 @@
             const q = liveNorm(liveSrcSearch.value.trim());
             const cur = liveSource.value;
             const match = it => !q || liveNorm(it.n).includes(q) || (it.en && liveNorm(it.en).includes(q)) || it.v === q;
-            const item = it => `<button type="button" class="lsrc-item${it.v === cur ? ' active' : ''}" role="option" aria-selected="${it.v === cur}" data-v="${escapeHtml(it.v)}">${escapeHtml(it.n)}</button>`;
+            // vlajka z countries.json (emoji) - v dlouhém seznamu zemí se podle ní hledá líp
+            const item = it => `<button type="button" class="lsrc-item${it.v === cur ? ' active' : ''}" role="option" aria-selected="${it.v === cur}" data-v="${escapeHtml(it.v)}">${it.f ? escapeHtml(it.f) + ' ' : ''}${escapeHtml(it.n)}</button>`;
             let html = '';
             const rec = LIVE_RECOMMENDED.filter(match);
             if (rec.length) html += '<div class="lsrc-group">Doporučené</div>' + rec.map(item).join('');
@@ -3256,7 +3292,7 @@
                             const cs = names && names.of(code);
                             if (cs && cs !== code) n = cs;
                         } catch (e) { /* neplatný kód - zůstane anglický název */ }
-                        return { v: code.toLowerCase(), n, en: c.name || '' };
+                        return { v: code.toLowerCase(), n, en: c.name || '', f: c.flag || '' };
                     })
                     .sort((a, b) => a.n.localeCompare(b.n, 'cs'));
                 liveOthersState = 'ready';
