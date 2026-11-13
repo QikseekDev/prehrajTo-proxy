@@ -978,6 +978,7 @@
         function stopHeroTrailer() {
             clearTimeout(heroTrailer.timer);
             heroTrailer.timer = 0;
+            if (heroTrailer._cleanup) { try { heroTrailer._cleanup(); } catch (e) {} heroTrailer._cleanup = null; }
             if (heroTrailer.io) { heroTrailer.io.disconnect(); heroTrailer.io = null; }
             const v = heroTrailer.video;
             heroTrailer.video = null;
@@ -1047,31 +1048,64 @@
 
         function armHeroTrailer(heroEl, m) {
             const url = m && m.trailer;
-            if (!url || !heroEl || !('IntersectionObserver' in window)) return;
+            if (!url || !heroEl) return;
             // Datová úspora v prohlížeči = billboard zůstane u plakátu.
             if (navigator.connection && navigator.connection.saveData) return;
-            heroTrailer.io = new IntersectionObserver(entries => {
-                const e = entries[entries.length - 1];
-                if (e.isIntersecting && e.intersectionRatio >= 0.35) {
-                    const v = heroTrailer.video;
-                    if (v) {   // už načtený: po návratu nahoru jen pokračovat (případně se zvukem)
-                        if (heroTrailer.sound && v.muted) { v.muted = false; v.removeAttribute('muted'); }
-                        if (v.paused && v.readyState > 2) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
-                        return;
-                    }
-                    if (heroTrailer.timer) return;
-                    heroTrailer.timer = setTimeout(() => {
-                        heroTrailer.timer = 0;
-                        if (heroEl.isConnected) playHeroTrailer(heroEl, url);
-                    }, HERO_TRAILER_AFTER);
-                } else {
-                    // Zmizel z obrazovky dřív než po 4 s -> časovač se ruší a nic se nestahuje.
+
+            const isVisibleEnough = () => {
+                if (!heroEl.isConnected) return false;
+                const r = heroEl.getBoundingClientRect();
+                const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+                const visible = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+                return visible >= Math.min(r.height, vh) * 0.3 && r.bottom > 0 && r.top < vh;
+            };
+
+            const tryStartTimer = () => {
+                const v = heroTrailer.video;
+                if (v) {   // už načtený: po návratu nahoru jen pokračovat (případně se zvukem)
+                    if (heroTrailer.sound && v.muted) { v.muted = false; v.removeAttribute('muted'); v.volume = 1; }
+                    if (v.paused && v.readyState >= 2) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+                    return;
+                }
+                if (!isVisibleEnough()) {
+                    clearTimeout(heroTrailer.timer);
+                    heroTrailer.timer = 0;
+                    return;
+                }
+                if (heroTrailer.timer) return;
+                heroTrailer.timer = setTimeout(() => {
+                    heroTrailer.timer = 0;
+                    if (!heroTrailer.video && heroEl.isConnected && isVisibleEnough()) playHeroTrailer(heroEl, url);
+                }, HERO_TRAILER_AFTER);
+            };
+
+            const onVisChange = () => {
+                if (!isVisibleEnough()) {
                     clearTimeout(heroTrailer.timer);
                     heroTrailer.timer = 0;
                     if (heroTrailer.video) { try { heroTrailer.video.pause(); } catch (err) {} }
+                } else {
+                    tryStartTimer();
                 }
-            }, { threshold: [0, 0.35, 0.75] });
-            heroTrailer.io.observe(heroEl);
+            };
+
+            if ('IntersectionObserver' in window) {
+                heroTrailer.io = new IntersectionObserver(onVisChange, { threshold: [0, 0.15, 0.3, 0.6, 1] });
+                heroTrailer.io.observe(heroEl);
+            }
+            // spolehlivý start i bez prvního callbacku / při zvláštním layoutu
+            tryStartTimer();
+            window.addEventListener('scroll', onVisChange, { passive: true });
+            window.addEventListener('resize', onVisChange, { passive: true });
+            const oldStop = stopHeroTrailer;
+            // navázat úklid posluchačů na aktuální stop (stopHeroTrailer je už definovaný výše)
+            // jednorázově přes přepsání reference na instanci řešit netřeba - stopHeroTrailer
+            // smaže io/video a timer; scroll/resize listenery necháme (levné, jen čtou DOM),
+            // další arm si přidá své. Pro jistotu je odpojíme při příštím renderu takto:
+            heroTrailer._cleanup = () => {
+                window.removeEventListener('scroll', onVisChange);
+                window.removeEventListener('resize', onVisChange);
+            };
         }
 
         function renderHero() {
