@@ -17,6 +17,13 @@ public sealed class EpgSnapshot
     public Dictionary<string, EpgChannel> Channels { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> NameKeys { get; } = new(StringComparer.Ordinal);
 
+    // Slovník všech variant, kterými se dá kanál z playlistu trefit: id bez varianty,
+    // id bez země ("Prima.Krimi.cz" -> "Prima.Krimi"), název z guide, název bez kvality
+    // a země ("ČT1 HD" -> "ČT1") a aliasy z .txt seznamů. Na jednu variantu může sedět
+    // víc kanálů guide ("Barrandov" je v CZ i SK guide), takže se drží seznam v pořadí
+    // priorit - hledání bere první, který má v daném okně opravdu program.
+    public Dictionary<string, List<string>> Index { get; } = new(StringComparer.Ordinal);
+
     // Aliasy z doprovodných .txt seznamů kanálů (epgshare01 jimi publikuje id, která
     // guide používá): "primakrimi" -> "primakrimicz". Díky tomu se trefí i kanál, který
     // v playlistu nemá tvg-id a jmenuje se jen "Prima Krimi".
@@ -79,28 +86,42 @@ public sealed class EpgService
         }
     }
 
+    // Kanál z guide, který odpovídá kanálu z playlistu. Zkouší se varianty popořadě:
+    // tvg-id bez varianty (@SD), bez země (CT1.cz -> CT1), pak název a název bez
+    // kvality/země (ČT1 HD -> ČT1). Aliasy z .txt seznamů jsou ve stejném slovníku,
+    // takže se trefí i kanál, který v playlistu nemá tvg-id.
+    public static EpgChannel? FindChannel(EpgSnapshot? snapshot, string? tvgId, string? name,
+        DateTimeOffset? from = null, DateTimeOffset? to = null)
+    {
+        if (snapshot == null) return null;
+        foreach (var key in ChannelKeys(tvgId, name))
+        {
+            if (key.Length < 2) continue;
+            if (!snapshot.Index.TryGetValue(key, out var candidates)) continue;
+            foreach (var channelKey in candidates)
+            {
+                if (!snapshot.Channels.TryGetValue(channelKey, out var channel)) continue;
+                // Guide někdy zná kanál, ale nemá k němu program (prázdná položka <channel>
+                // nebo data jen z minulých dní). Taková shoda se přeskočí a zkusí se další -
+                // jinak by kanál zůstal bez programu, i když guide má stejný kanál s daty.
+                if (from is { } f && to is { } t && Programmes(channel, f, t).Count == 0) continue;
+                return channel;
+            }
+        }
+        return null;
+    }
+
+    private static void AddIndex(EpgSnapshot snapshot, string variant, string channelKey)
+    {
+        if (!snapshot.Index.TryGetValue(variant, out var list))
+            snapshot.Index[variant] = list = new List<string>(1);
+        if (!list.Contains(channelKey)) list.Add(channelKey);
+    }
+
     // Program, který běží v danou chvíli, a ten následující. Null = pro kanál nic nevíme.
     public static EpgEntry? Match(EpgSnapshot? snapshot, string? tvgId, string? name, DateTimeOffset at)
     {
-        if (snapshot == null) return null;
-
-        EpgChannel? channel = null;
-        var idKey = TextNorm.Key(TextNorm.StripVariant(tvgId));
-        if (idKey.Length > 2 && snapshot.Channels.TryGetValue(idKey, out var byId)) channel = byId;
-
-        if (channel == null)
-        {
-            var nameKey = TextNorm.Key(name);
-            if (nameKey.Length > 1 && snapshot.Aliases.TryGetValue(nameKey, out var aliased)
-                && snapshot.Channels.TryGetValue(aliased, out var byAlias)) channel = byAlias;
-        }
-
-        if (channel == null)
-        {
-            var nameKey = TextNorm.Key(name);
-            if (nameKey.Length > 1 && snapshot.NameKeys.TryGetValue(nameKey, out var mapped)
-                && snapshot.Channels.TryGetValue(mapped, out var byName)) channel = byName;
-        }
+        var channel = FindChannel(snapshot, tvgId, name);
         if (channel == null) return null;
 
         EpgProgramme? current = null, next = null;
@@ -130,12 +151,96 @@ public sealed class EpgService
         return list.OrderByDescending(e => e.Now != null).ToList();
     }
 
+    // Programy, které zasahují do zadaného okna - pro časovou osu se posílá celý den.
+    public static IReadOnlyList<EpgProgramme> Programmes(EpgChannel channel, DateTimeOffset from, DateTimeOffset to)
+    {
+        var list = new List<EpgProgramme>();
+        foreach (var p in channel.Programmes)
+            if (p.Stop > from && p.Start < to) list.Add(p);
+        return list;
+    }
+
+    // Varianty klíčů kanálu z playlistu, od nejpřesnější. Id je spolehlivější než název.
+    private static IEnumerable<string> ChannelKeys(string? tvgId, string? name) =>
+        IdKeys(tvgId).Concat(NameVariants(name));
+
+    private static IEnumerable<string> IdKeys(string? tvgId)
+    {
+        var id = TextNorm.StripVariant(tvgId);
+        foreach (var variant in Variants(id)) yield return variant;
+        foreach (var variant in Variants(WithoutCountrySuffix(id))) yield return variant;
+    }
+
+    private static IEnumerable<string> NameVariants(string? name) => Variants(name);
+
+    // Klíč názvu a jeho čištěné podoby: bez závorek ("(HD)") a bez slov, která nenesou
+    // identitu (kvalita, země, "TV"). Playlist píše "ČT1 HD", guide "ČT1" - tím se potkají.
+    private static IEnumerable<string> Variants(string? value)
+    {
+        var text = (value ?? "").Trim();
+        if (text.Length == 0) yield break;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var candidate in new[]
+                 {
+                     text,
+                     WithoutBrackets(text),
+                     WithoutNoise(text),
+                     WithoutNoise(WithoutBrackets(text)),
+                 })
+        {
+            var key = TextNorm.Key(candidate);
+            if (key.Length > 1 && seen.Add(key)) yield return key;
+        }
+    }
+
+    // Slova, která kanál nerozlišují: kvalita, země a označení feedu se v názvu z playlistu
+    // i z guide objevují nahodile, takže se při porovnání zahazují. Playlist píše
+    // "AXN CEE Czech Republic", guide "AXN" - bez těch slov se klíče potkají.
+    private static readonly HashSet<string> NoiseWords = new(StringComparer.Ordinal)
+    {
+        "hd", "sd", "fhd", "uhd", "fullhd", "4k", "8k", "hq", "hdr", "h265", "hevc",
+        "cz", "sk", "czech", "slovak", "czechia", "slovakia", "cesko", "slovensko", "ceska", "cesky",
+        "republic", "republika", "ceskarepublika", "europe", "evropa", "central",
+        "cee", "international", "balkan", "nordic", "feed", "plus",
+        "tv", "televize",
+    };
+
+    private static string WithoutBrackets(string value)
+    {
+        var sb = new StringBuilder(value.Length);
+        var depth = 0;
+        foreach (var ch in value)
+        {
+            if (ch is '(' or '[') { depth++; continue; }
+            if (ch is ')' or ']') { if (depth > 0) depth--; continue; }
+            if (depth == 0) sb.Append(ch);
+        }
+        return sb.ToString();
+    }
+
+    private static string WithoutNoise(string value)
+    {
+        var sb = new StringBuilder(value.Length);
+        var token = new StringBuilder();
+        foreach (var ch in value + " ")
+        {
+            if (char.IsLetterOrDigit(ch)) { token.Append(ch); continue; }
+            if (token.Length == 0) continue;
+            var word = token.ToString();
+            if (!NoiseWords.Contains(TextNorm.Key(word))) sb.Append(word).Append(' ');
+            token.Clear();
+        }
+        return sb.ToString();
+    }
+
     private async Task<EpgSnapshot?> LoadAsync(CancellationToken ct)
     {
         var snapshot = new EpgSnapshot { Loaded = DateTimeOffset.UtcNow };
-        // Programy, které skončily před dvěma hodinami, už nikoho nezajímají - zahodí se
-        // hned při parsování, aby průvodce nedržel v paměti celý den zpětně.
-        var cutoff = DateTimeOffset.UtcNow.AddHours(-2);
+        // Časová osa v prohlížeči začíná o půlnoci místního času, takže se drží i program,
+        // který už skončil - jinak by dopoledne byla levá část osy prázdná. Starší než
+        // 14 hodin se zahazuje, aby průvodce nedržel v paměti celý den zpětně.
+        var cutoff = DateTimeOffset.UtcNow.AddHours(-14);
         var client = _factory.CreateClient("meta");
         var failures = new List<string>();
 
@@ -206,6 +311,19 @@ public sealed class EpgService
             var nameKey = TextNorm.Key(pair.Value.Name);
             if (nameKey.Length > 1) snapshot.NameKeys[nameKey] = pair.Key;
         }
+
+        // Slovník variant pro párování playlistu s guide. TryAdd drží priority: přesná id
+        // jsou první, pak názvy a nakonec aliasy z .txt, takže volnější varianta
+        // nepřepíše přesnější shodu.
+        foreach (var pair in snapshot.Channels)
+            foreach (var variant in IdKeys(pair.Value.Id))
+                AddIndex(snapshot, variant, pair.Key);
+        foreach (var pair in snapshot.Channels)
+            foreach (var variant in NameVariants(pair.Value.Name))
+                AddIndex(snapshot, variant, pair.Key);
+        foreach (var pair in snapshot.Aliases)
+            if (snapshot.Channels.ContainsKey(pair.Value))
+                AddIndex(snapshot, pair.Key, pair.Value);
 
         if (failures.Count > 0)
             _log.LogWarning("EPG: část zdrojů selhala ({Failures})", string.Join(", ", failures));
@@ -281,9 +399,9 @@ public sealed class EpgService
                 snapshot.Channels[channelKey] = channel;
             }
 
-            // Na kanál držíme jen pár pořadů (dnešní blok) - víc se v UI neukáže
-            // a průvodce na celý den by zbytečně seděl v paměti.
-            if (channel.Programmes.Count >= 12) continue;
+            // Na kanál držíme jeden den programu (max 60 pořadů) - to je přesně to, co
+            // se vejde na časovou osu, a víc by jen zbytečně sedělo v paměti.
+            if (channel.Programmes.Count >= 60) continue;
             channel.Programmes.Add(new EpgProgramme(
                 TextNorm.Clean(title, 160),
                 TextNorm.Clean(description, 220),

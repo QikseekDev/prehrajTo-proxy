@@ -2282,9 +2282,8 @@
         // stránka nenačítala 400 kB navíc.
         let liveChannels = [];
         let liveShown = 0;
-        // EPG (programový průvodce) k dlaždicím: mapa "id:klíč" / "n:klíč" -> { now, next }.
-        let liveEpg = null;
-        let liveEpgPromise = null;
+        // Program kanálů pro časovou osu: mapa "název kanálu" -> [{ t, s, e }].
+        let liveGuide = {};
         let liveHls = null;
         let liveHlsPromise = null;
         let liveChannel = null;   // kanál, který právě hraje
@@ -2317,18 +2316,17 @@
             liveState.className = 'results-state show';
             liveState.innerHTML = '<span class="spinner"></span><span class="state-text">Načítám kanály…</span>';
             liveGrid.innerHTML = '';
+            liveGrid.hidden = true;
             try {
-                const r = await fetch('/api/live?' + liveQuery());
+                // epg=1: server ke kanálům přidá program pro časovou osu a sám je spáruje
+                // s průvodcem, takže prohlížeč nemusí znát žádná pravidla párování.
+                const r = await fetch('/api/live?' + liveQuery() + '&epg=1');
                 const d = await r.json();
                 if (!d.success) throw new Error(d.error || 'Seznam kanálů se nepodařilo načíst');
                 liveChannels = Array.isArray(d.channels) ? d.channels : [];
+                liveGuide = d.guide && typeof d.guide === 'object' ? d.guide : {};
                 if (!liveChannels.length) throw new Error('Seznam je prázdný');
                 renderLive(true);
-                // Průvodce se dotahuje zvlášť: dlaždice se ukážou hned a program se doplní,
-                // až dorazí. Když EPG není nastavené, zůstanou dlaždice bez programu.
-                liveEpg = null;
-                liveEpgPromise = null;
-                loadLiveEpg();
             } catch (e) {
                 liveChannels = [];
                 liveState.className = 'results-state show error';
@@ -2336,59 +2334,44 @@
             }
         }
 
-        // Seznamy jako USA mají přes tisíc kanálů - vykreslujeme po dávkách, ať se telefon nezadusí.
-        const LIVE_PAGE = 300;
+        // Seznamy jako USA mají přes tisíc kanálů - vykreslujeme po dávkách, ať se telefon
+        // nezadusí. Český seznam (~110 kanálů) se vejde celý, takže se otevře najednou.
+        const LIVE_PAGE = 400;
 
-        // Programový průvodce (EPG) k dlaždicím Živě. Server posílá "teď" a "následuje" pro
-        // každý kanál; klíč se počítá stejně jako TextNorm.Key v backendu, aby se kanál
-        // z playlistu ("CT1.cz@SD") spároval s programem ("CT1.cz" i "ČT1").
-        function epgKey(value) {
-            return String(value || '').split('@')[0]
-                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-                .toLowerCase().replace(/[^a-z0-9]+/g, '');
+        // ===== Časová osa programu =====
+        // Kanály jsou řádky, pořady bloky na ose 00:00-24:00 místního času. Program posílá
+        // server u /api/live?epg=1 a páruje ho s průvodcem sám, takže tady se jen kreslí.
+        // Kanál bez programu dostane blok "Data o programu nejsou k dispozici" - neztratí
+        // se a pořád se na něj dá kliknout.
+        const LG_PPM = 2.4;          // pixelů na minutu: celý den má 3456 px
+        const LG_DAY = 1440;         // minut na ose
+        let lgDayStart = 0;          // lokální půlnoc (ms) pro převod ISO času na minuty osy
+
+        function lgTime(min) {
+            const m = Math.max(0, Math.round(min));
+            return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
         }
 
-        function epgEntryFor(channel) {
-            if (!liveEpg) return null;
-            const byId = epgKey(channel.id);
-            if (byId && liveEpg['id:' + byId]) return liveEpg['id:' + byId];
-            const byName = epgKey(channel.name);
-            return (byName && liveEpg['n:' + byName]) || null;
-        }
-
-        function epgTime(iso) {
+        function lgOffset(iso) {
             const d = new Date(iso);
-            if (Number.isNaN(d.getTime())) return '';
-            return d.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+            return Number.isNaN(d.getTime()) ? null : (d.getTime() - lgDayStart) / 60000;
         }
 
-        async function loadLiveEpg() {
-            if (liveEpgPromise) return liveEpgPromise;
-            liveEpgPromise = (async () => {
-                try {
-                    const r = await fetch('/api/live/epg');
-                    const d = await r.json();
-                    // Nenastavené EPG není chyba - dlaždice se prostě vykreslí bez programu.
-                    if (!d.success || !Array.isArray(d.channels)) return;
-                    const map = {};
-                    for (const e of d.channels) {
-                        const entry = {
-                            name: e.name || '',
-                            now: e.now ? { title: e.now.title, start: e.now.start, stop: e.now.stop } : null,
-                            next: e.next ? { title: e.next.title, start: e.next.start } : null,
-                        };
-                        const idKey = epgKey(e.id);
-                        if (idKey) map['id:' + idKey] = entry;
-                        const nameKey = epgKey(e.name);
-                        if (nameKey) map['n:' + nameKey] = entry;
-                    }
-                    liveEpg = map;
-                    renderLive(false);
-                } catch (e) {
-                    console.debug('EPG není k dispozici:', e.message);
-                }
-            })();
-            return liveEpgPromise;
+        // Pořady kanálu oříznuté na dnešní den (přes půlnoc jde blok jen po okraj osy).
+        function lgProgrammes(channel) {
+            const list = liveGuide[channel.name];
+            if (!Array.isArray(list)) return [];
+            const out = [];
+            for (const p of list) {
+                const from = lgOffset(p.s);
+                const to = lgOffset(p.e);
+                if (from == null || to == null || to <= from) continue;
+                const a = Math.max(0, from);
+                const b = Math.min(LG_DAY, to);
+                if (b - a < 1) continue;
+                out.push({ title: p.t || 'Bez názvu', from, to, a, b });
+            }
+            return out;
         }
 
         function renderLive(reset) {
@@ -2407,30 +2390,79 @@
 
             liveState.className = 'results-state' + (items.length ? '' : ' show empty');
             liveState.innerHTML = items.length ? '' : '<span class="state-text">Takový kanál tu není. Zkus jiný název nebo jiný zdroj.</span>';
+            liveGrid.hidden = items.length === 0;
+            if (!items.length) { liveGrid.innerHTML = ''; return; }
+
+            if (!lgDayStart) {
+                const day = new Date();
+                day.setHours(0, 0, 0, 0);
+                lgDayStart = day.getTime();
+            }
+            const clock = new Date();
+            const nowMin = clock.getHours() * 60 + clock.getMinutes() + clock.getSeconds() / 60;
+            const width = LG_DAY * LG_PPM;
+
+            let ticks = '';
+            for (let m = 0; m < LG_DAY; m += 30)
+                ticks += `<span class="lg-tick${m % 60 === 0 ? ' hour' : ''}" style="left:${m * LG_PPM}px">${lgTime(m)}</span>`;
 
             const rest = Math.max(0, items.length - liveShown);
-            liveGrid.innerHTML = items.slice(0, liveShown).map(({ c, i }) => {
-                const epg = epgEntryFor(c);
-                return `
-                <button class="live-card" data-live="${i}" title="${escapeHtml(c.name)}">
-                    <span class="lc-logo">${c.logo
-                        ? `<img src="${escapeHtml(c.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
-                        : ''}<span class="lc-init">${escapeHtml(initials(c.name))}</span></span>
-                    <span class="lc-name">${escapeHtml(c.name)}</span>
-                    ${epg && epg.now
-                        ? `<span class="lc-now">${epgTime(epg.now.start)} ${escapeHtml(epg.now.title)}</span>`
-                        : epg && epg.next
-                            ? `<span class="lc-now next">od ${epgTime(epg.next.start)} ${escapeHtml(epg.next.title)}</span>`
-                            : ''}
-                    ${(c.quality || (c.tags || []).length) ? `<span class="lc-badges">
-                        ${c.quality ? `<span class="lc-badge q">${escapeHtml(c.quality)}</span>` : ''}
-                        ${(c.tags || []).includes('geo') ? '<span class="lc-badge geo">geo blok</span>' : ''}
-                        ${(c.tags || []).includes('not24') ? '<span class="lc-badge not24">ne 24/7</span>' : ''}
-                    </span>` : ''}
-                    ${c.group ? `<span class="lc-group">${escapeHtml(c.group)}</span>` : ''}
-                </button>`;
-            }).join('')
-                + (rest ? `<button class="live-more" id="liveMore">Zobrazit další (${rest})</button>` : '');
+            const rows = items.slice(0, liveShown).map(({ c, i }) => {
+                const programmes = lgProgrammes(c);
+                const blocks = programmes.length
+                    ? programmes.map(p => {
+                        const running = p.from <= nowMin && nowMin < p.to;
+                        const state = running ? 'run' : p.to <= nowMin ? 'past' : 'fut';
+                        const done = running ? Math.round((nowMin - p.from) / (p.to - p.from) * 100) : 0;
+                        return `<button type="button" class="lg-pg ${state}" data-live="${i}"
+                            style="left:${p.a * LG_PPM}px;width:${Math.max(16, (p.b - p.a) * LG_PPM - 2)}px"
+                            title="${escapeHtml(p.title)} · ${lgTime(p.from)}–${lgTime(p.to)}"><b>${escapeHtml(p.title)}</b><small>${lgTime(p.from)}–${lgTime(p.to)}</small>${done ? `<i class="lg-prog" style="width:${Math.min(100, done)}%"></i>` : ''}</button>`;
+                    }).join('')
+                    : `<button type="button" class="lg-pg empty" data-live="${i}" style="left:0;width:${width}px"
+                        title="${escapeHtml(c.name)} – program neznáme"><b>Data o programu nejsou k dispozici</b><small>klikni a hraj živě</small></button>`;
+                return `<div class="lg-row">
+                    <div class="lg-chan"><button type="button" class="lg-chan-btn" data-live="${i}" title="${escapeHtml(c.name)}">
+                        <span class="lg-logo">${c.logo ? `<img src="${escapeHtml(c.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="lg-init">${escapeHtml(initials(c.name))}</span></span>
+                        <span class="lg-name">${escapeHtml(c.name)}</span>
+                    </button></div>
+                    <div class="lg-track">${blocks}</div>
+                </div>`;
+            }).join('');
+
+            const scrollBox = liveGrid.querySelector('.lg-scroll');
+            const keepLeft = scrollBox ? scrollBox.scrollLeft : 0;
+            const keepTop = scrollBox ? scrollBox.scrollTop : 0;
+
+            liveGrid.innerHTML = `<div class="lg-scroll"><div class="lg-canvas" style="width:calc(var(--lg-cw) + ${width}px)">
+                <div class="lg-head"><div class="lg-corner">Kanál</div><div class="lg-ticks" style="width:${width}px">${ticks}</div></div>
+                <div class="lg-rows">${rows}</div>
+                <div class="lg-now" style="left:calc(var(--lg-cw) + ${nowMin * LG_PPM}px)"></div>
+            </div></div>`
+                + (rest ? `<button type="button" class="live-more" id="liveMore">Zobrazit další (${rest})</button>` : '');
+
+            if (reset) {
+                // Až po layoutu: v tu chvíli už .lg-scroll zná svou šířku. Když se sekce
+                // zrovna zobrazuje, první pokus ještě nemusí mít co posouvat - proto se
+                // po chvíli zopakuje (podruhé už je to no-op).
+                requestAnimationFrame(() => {
+                    liveScrollToNow(false);
+                    setTimeout(() => liveScrollToNow(false), 150);
+                });
+            } else {
+                const box = liveGrid.querySelector('.lg-scroll');
+                if (box) { box.scrollLeft = keepLeft; box.scrollTop = keepTop; }
+            }
+        }
+
+        // Posune osu tak, aby "teď" bylo zhruba ve třetině šířky - otevíráš to na aktuálním programu.
+        function liveScrollToNow(smooth) {
+            const box = liveGrid.querySelector('.lg-scroll');
+            if (!box) return;
+            const d = new Date();
+            const nowMin = d.getHours() * 60 + d.getMinutes();
+            const max = Math.max(0, box.scrollWidth - box.clientWidth);
+            const left = Math.min(max, Math.max(0, nowMin * LG_PPM - box.clientWidth * 0.32));
+            box.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
         }
 
         function ensureHls() {
@@ -3270,6 +3302,8 @@
             if (!card) return;
             playLive(liveChannels[Number(card.dataset.live)]);
         });
+        const liveNowBtn = document.getElementById('liveNowBtn');
+        if (liveNowBtn) liveNowBtn.addEventListener('click', () => liveScrollToNow(true));
 
         // ===== Stav služby (/api/health) overlay =====
         function formatHealthValue(v) {
