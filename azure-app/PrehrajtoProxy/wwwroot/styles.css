@@ -462,6 +462,28 @@
         .hero-video.on { opacity: 1; }
         .hero.trailer .hero-mark { display: none; }
 
+        /* Rozšířený trailer v billboardu: po 5 s přehrávání "half fullscreen" */
+        .hero.expanded {
+            height: 86vh; min-height: 520px; max-height: 92vh;
+            padding-bottom: 6%;
+        }
+        .hero.expanded .hero-tag,
+        .hero.expanded h2,
+        .hero.expanded .meta,
+        .hero.expanded .hero-desc,
+        .hero.expanded .hero-rating,
+        .hero.expanded .btn-info { display: none !important; }
+        .hero.expanded .hero-content {
+            max-width: none; width: 100%;
+            display: flex; align-items: flex-end;
+        }
+        .hero.expanded .hero-actions { margin-top: 0; }
+        .hero.expanded::after {
+            background:
+                linear-gradient(78deg, rgba(8,8,10,0.72) 0%, rgba(8,8,10,0.32) 34%, rgba(8,8,10,0) 62%),
+                linear-gradient(0deg, var(--bg) 1%, rgba(14,14,16,0.72) 16%, rgba(14,14,16,0) 46%);
+        }
+
         /* ---------- Search results ---------- */
         .results-section, .player-section { display: none; }
         .results-section { padding: 100px 4% 0; }

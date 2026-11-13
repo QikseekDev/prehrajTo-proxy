@@ -962,7 +962,7 @@
         // se zvukem a při blokaci se tiše spadne na ztlumené přehrání; po prvním kliknutí/
         // dotyku/klávese uživatele se běžící trailer odtlumí.
         const HERO_TRAILER_AFTER = 4000;
-        const heroTrailer = { io: null, timer: 0, video: null, sound: false };
+        const heroTrailer = { io: null, timer: 0, video: null, sound: false, expandTimer: 0, expanded: false };
 
         function unmuteHeroTrailer() {
             heroTrailer.sound = true;
@@ -975,9 +975,20 @@
         ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
             document.addEventListener(ev, unmuteHeroTrailer, { passive: true }));
 
+        function collapseHeroTrailer() {
+            clearTimeout(heroTrailer.expandTimer);
+            heroTrailer.expandTimer = 0;
+            heroTrailer.expanded = false;
+            const heroEl = document.querySelector('#hero .hero');
+            if (heroEl) heroEl.classList.remove('expanded');
+        }
+
         function stopHeroTrailer() {
             clearTimeout(heroTrailer.timer);
             heroTrailer.timer = 0;
+            clearTimeout(heroTrailer.expandTimer);
+            heroTrailer.expandTimer = 0;
+            heroTrailer.expanded = false;
             if (heroTrailer._cleanup) { try { heroTrailer._cleanup(); } catch (e) {} heroTrailer._cleanup = null; }
             if (heroTrailer.io) { heroTrailer.io.disconnect(); heroTrailer.io = null; }
             const v = heroTrailer.video;
@@ -1005,10 +1016,27 @@
             v.setAttribute('aria-hidden', 'true');
             heroTrailer.video = v;
             heroEl.appendChild(v);
+            let revealedOnce = false;
             const reveal = () => {
                 if (!v.isConnected) return;
                 v.classList.add('on');
                 heroEl.classList.add('trailer');
+                if (revealedOnce) return;
+                revealedOnce = true;
+                clearTimeout(heroTrailer.expandTimer);
+                heroTrailer.expandTimer = setTimeout(() => {
+                    heroTrailer.expandTimer = 0;
+                    if (!v.isConnected || v.paused) return;
+                    heroTrailer.expanded = true;
+                    heroEl.classList.add('expanded');
+                    // Fokus bereme jen když nic navigačního vybrané není, aby šipky vlevo/vpravo
+                    // pořád procházely karty. Když byl fokus na skrytém tlačítku, přesuneme ho na Přehrát.
+                    const playBtn = heroEl.querySelector('.btn-play');
+                    const cur = document.activeElement;
+                    if (playBtn && (!cur || cur === document.body || heroEl.contains(cur))) {
+                        try { playBtn.focus({ preventScroll: true }); } catch (e) {}
+                    }
+                }, 5000);
             };
             v.addEventListener('playing', reveal, { once: true });
             const tryPlay = () => {
@@ -3525,6 +3553,14 @@
         // Enter/Space kartu otevře (to umí <button> sám). Bez toho se dálkovým ovladačem
         // nedá v řadách pohybovat.
         document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown' && heroTrailer.expanded) {
+                const heroEl = document.querySelector('#hero .hero');
+                if (heroEl && heroEl.classList.contains('expanded')) {
+                    e.preventDefault();
+                    collapseHeroTrailer();
+                    return;
+                }
+            }
             if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
             const el = document.activeElement;
             const isLiveCard = el && el.classList.contains('live-card');

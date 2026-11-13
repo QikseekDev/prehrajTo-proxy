@@ -157,6 +157,13 @@ body.touch .f:focus:not(.search-input):not(.p-bar){outline:none}
 .hero-video.on{opacity:1}
 .hero.trailer .hero-art{opacity:0}
 .hero.trailer .hero-poster{opacity:0}
+
+/* Rozšířený trailer v hero: po 5 s přehrávání "half fullscreen" */
+.hero.expanded{min-height:70vh;height:82vh;max-height:90vh}
+.hero.expanded .hero-kicker,.hero.expanded h1,.hero.expanded .hero-meta,.hero.expanded .hero-poster,.hero.expanded [data-hero="info"]{display:none !important}
+.hero.expanded .hero-inner{max-width:none;width:100%;padding-top:0;display:flex;align-items:flex-end;height:100%}
+.hero.expanded .hero-actions{margin-top:0}
+.hero.expanded .hero-scrim{background:linear-gradient(180deg,rgba(14,14,16,.05) 0%,rgba(14,14,16,.35) 62%,rgba(14,14,16,.9) 100%)}
 .hero-kicker{
   display:inline-flex;align-items:center;font-size:.72rem;font-weight:700;
   letter-spacing:.2em;text-transform:uppercase;color:var(--text);

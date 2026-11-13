@@ -1241,7 +1241,7 @@
 
   /* ===== Trailer v hero (billboardu) ===== */
   var HERO_TRAILER_AFTER = 4000;
-  var heroTrailer = { io: null, timer: 0, video: null, sound: false, cleanup: null };
+  var heroTrailer = { io: null, timer: 0, video: null, sound: false, cleanup: null, expandTimer: 0, expanded: false };
 
   function unmuteHeroTrailer() {
     heroTrailer.sound = true;
@@ -1255,9 +1255,22 @@
     document.addEventListener(ev, unmuteHeroTrailer, { passive: true });
   });
 
+  function collapseHeroTrailer() {
+    clearTimeout(heroTrailer.expandTimer);
+    heroTrailer.expandTimer = 0;
+    heroTrailer.expanded = false;
+    var heroEl = $('hero');
+    if (heroEl && heroEl.className.indexOf('expanded') !== -1) {
+      heroEl.className = heroEl.className.replace(/\bexpanded\b/g, '').replace(/\s+/g, ' ').trim();
+    }
+  }
+
   function stopHeroTrailer() {
     clearTimeout(heroTrailer.timer);
     heroTrailer.timer = 0;
+    clearTimeout(heroTrailer.expandTimer);
+    heroTrailer.expandTimer = 0;
+    heroTrailer.expanded = false;
     if (heroTrailer.cleanup) { try { heroTrailer.cleanup(); } catch (e) {} heroTrailer.cleanup = null; }
     if (heroTrailer.io) { try { heroTrailer.io.disconnect(); } catch (e) {} heroTrailer.io = null; }
     var v = heroTrailer.video;
@@ -1287,10 +1300,27 @@
     if (scrim) heroEl.insertBefore(v, scrim); else heroEl.appendChild(v);
     var revealed = false;
     var reveal = function () {
-      if (revealed || !v.isConnected) return;
-      revealed = true;
-      v.className += ' on';
-      if (heroEl.className.indexOf('trailer') === -1) heroEl.className += ' trailer';
+      if (!v.isConnected) return;
+      if (!revealed) {
+        revealed = true;
+        v.className += ' on';
+        if (heroEl.className.indexOf('trailer') === -1) heroEl.className += ' trailer';
+        clearTimeout(heroTrailer.expandTimer);
+        heroTrailer.expandTimer = setTimeout(function () {
+          heroTrailer.expandTimer = 0;
+          if (!v.isConnected || v.paused) return;
+          heroTrailer.expanded = true;
+          if (heroEl.className.indexOf('expanded') === -1) heroEl.className += ' expanded';
+          // Fokus přesuneme jen když nic navigačního vybrané není (aby šipky vlevo/vpravo
+          // pořád procházely karty) nebo když byl fokus na prvku, který se teď skryl.
+          var playBtn = heroEl.querySelector('[data-hero="play"]');
+          var cur = null;
+          try { cur = currentFocus(); } catch (e) {}
+          if (playBtn && (!cur || cur === document.body || heroEl.contains(cur))) {
+            try { focusEl(playBtn); } catch (e) { try { playBtn.focus(); } catch (e2) {} }
+          }
+        }, 5000);
+      }
     };
     v.addEventListener('playing', reveal, { once: false });
     var tryPlay = function () {
@@ -3704,6 +3734,13 @@
         var end = fld && typeof fld.selectionEnd === 'number' ? fld.selectionEnd : 0;
         var len = fld && fld.value ? fld.value.length : 0;
         if (k === 'ArrowLeft' ? pos > 0 || end > 0 : pos < len || end < len) return;
+      }
+      // Rozšířený trailer v hero: šipka dolů ho zase zmenší (vlevo/vpravo a Přehrát fungují dál).
+      if (k === 'ArrowDown' && heroTrailer.expanded && !playerOpen && !kbdOpen
+          && $('detail').hidden && $('series').hidden) {
+        e.preventDefault();
+        collapseHeroTrailer();
+        return;
       }
       if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
         if (playerOpen) bumpIdle();
