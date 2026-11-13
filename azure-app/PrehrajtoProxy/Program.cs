@@ -1250,7 +1250,7 @@ app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCac
 //   ?country=cz   -> https://iptv-org.github.io/iptv/countries/cz.m3u (když selže, streams/cz.m3u)
 //   ?lang=ces     -> https://iptv-org.github.io/iptv/languages/ces.m3u
 //   ?custom=<i>   -> "Prehraj:LivePlaylists" z konfigurace
-app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttpClientFactory f, IMemoryCache cache) =>
+app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? epg, IHttpClientFactory f, IMemoryCache cache, EpgService epgService, CancellationToken ct) =>
 {
     if (!adminStore.Current.Flags.Live)
         return Results.Json(new { success = false, error = "Živé vysílání je dočasně vypnuté." }, statusCode: 503);
@@ -1272,35 +1272,61 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, IHttp
     }
 
     var key = "live|" + url;
-    if (cache.TryGetValue<List<LiveChannel>>(key, out var cached) && cached is { Count: > 0 })
-        return Results.Json(new { success = true, source = url, count = cached.Count, channels = cached });
-
-    var (status, body, error) = await GetAsync(f, url, 25);
-    if ((error != null || !Is2xx(status) || body.Length == 0) && url.Contains("/countries/", StringComparison.Ordinal))
+    List<LiveChannel> channels;
+    if (!cache.TryGetValue<List<LiveChannel>>(key, out var cached) || cached is not { Count: > 0 })
     {
-        var cc = Regex.Match(url, @"/countries/([a-z]{2})\.m3u").Groups[1].Value;
-        url = $"https://raw.githubusercontent.com/iptv-org/iptv/master/streams/{cc}.m3u";
-        (status, body, error) = await GetAsync(f, url, 25);
+        var (status, body, error) = await GetAsync(f, url, 25);
+        if ((error != null || !Is2xx(status) || body.Length == 0) && url.Contains("/countries/", StringComparison.Ordinal))
+        {
+            var cc = Regex.Match(url, @"/countries/([a-z]{2})\.m3u").Groups[1].Value;
+            url = $"https://raw.githubusercontent.com/iptv-org/iptv/master/streams/{cc}.m3u";
+            (status, body, error) = await GetAsync(f, url, 25);
+        }
+        if (error != null || !Is2xx(status) || body.Length == 0)
+            return Results.Json(new { success = false, error = "Playlist nedostupná: " + (error ?? "HTTP " + status) });
+
+        var parsed = ParseM3u(body);
+        if (parsed.Count == 0)
+            return Results.Json(new { success = false, error = "Playlist neobsahuje žádné kanály" });
+
+        // Playlisty nemají logo vždy. Kde chybí, doplní se odkaz na datovou sadu
+        // tv-logo/tv-logos podle tvg-id ("CT1.cz@SD" -> czech-republic/ct1-cz.png).
+        // Je to odhad: když soubor neexistuje, prohlížeč obrázek zahodí a dlaždice zůstane
+        // s iniciálami, takže se tím nic nerozbije.
+        channels = parsed
+            .Select(ch => string.IsNullOrWhiteSpace(ch.Logo) && TvLogos.Fallback(ch.Id, countryCode) is { Length: > 0 } logo
+                ? ch with { Logo = logo }
+                : ch)
+            .ToList();
+
+        cache.Set(key, channels, TimeSpan.FromMinutes(30));
+        WflixCache.Track(key, "live");
     }
-    if (error != null || !Is2xx(status) || body.Length == 0)
-        return Results.Json(new { success = false, error = "Playlist nedostupná: " + (error ?? "HTTP " + status) });
+    else
+    {
+        channels = cached;
+    }
 
-    var channels = ParseM3u(body);
-    if (channels.Count == 0)
-        return Results.Json(new { success = false, error = "Playlist neobsahuje žádné kanály" });
+    // epg=1 přidá ke kanálům program pro časovou osu. Párování playlistu s guide dělá
+    // server (EpgService), takže prohlížeč nemusí znát žádná pravidla - jen vykreslí,
+    // co dostane. Kanály bez programu v odpovědi chybí a osa jim ukáže "data nejsou".
+    if (epg is 1 && epgService.Enabled)
+    {
+        var snapshot = await epgService.GetAsync(ct);
+        var from = DateTimeOffset.UtcNow.AddHours(-16);
+        var to = DateTimeOffset.UtcNow.AddHours(26);
+        var guide = new Dictionary<string, object[]>(StringComparer.Ordinal);
+        foreach (var ch in channels)
+        {
+            if (EpgService.FindChannel(snapshot, ch.Id, ch.Name, from, to) is not { } matched) continue;
+            var programmes = EpgService.Programmes(matched, from, to)
+                .Select(p => (object)new { t = p.Title, s = p.Start, e = p.Stop })
+                .ToArray();
+            if (programmes.Length > 0 && !guide.ContainsKey(ch.Name)) guide[ch.Name] = programmes;
+        }
+        return Results.Json(new { success = true, source = url, count = channels.Count, channels, guide });
+    }
 
-    // Playlisty nemají logo vždy. Kde chybí, doplní se odkaz na datovou sadu
-    // tv-logo/tv-logos podle tvg-id ("CT1.cz@SD" -> czech-republic/ct1-cz.png).
-    // Je to odhad: když soubor neexistuje, prohlížeč obrázek zahodí a dlaždice zůstane
-    // s iniciálami, takže se tím nic nerozbije.
-    channels = channels
-        .Select(ch => string.IsNullOrWhiteSpace(ch.Logo) && TvLogos.Fallback(ch.Id, countryCode) is { Length: > 0 } logo
-            ? ch with { Logo = logo }
-            : ch)
-        .ToList();
-
-    cache.Set(key, channels, TimeSpan.FromMinutes(30));
-    WflixCache.Track(key, "live");
     return Results.Json(new { success = true, source = url, count = channels.Count, channels });
 }).RequireRateLimiting("api");
 

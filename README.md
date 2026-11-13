@@ -161,9 +161,19 @@ z indexu <https://epgshare01.online/epgshare01/>. Formát se pozná podle obsahu
 přípony: XMLTV (`.xml`, `.xml.gz`) dodá programy, `.txt` seznam kanálů slouží jako slovník
 id (`Prima.Krimi.cz` → `primakrimi`), takže se trefí i kanál bez `tvg-id`.
 
-Kanály se párují podle `tvg-id` bez varianty (`CT1.cz@SD` → `CT1.cz`), pak podle aliasu
-z `.txt` seznamu a nakonec podle názvu. Endpoint `GET /api/live/epg` vrací
+Kanály se párují podle `tvg-id` bez varianty (`CT1.cz@SD` → `CT1.cz`), pak podle id bez
+země (`Prima.Krimi.cz` → `Prima.Krimi`), podle aliasu z `.txt` seznamu a nakonec podle
+názvu bez kvality a země (`ČT1 HD` → `ČT1`, `AXN CEE Czech Republic` → `AXN`). Když na
+jednu variantu sedí víc kanálů guide (stejný název v českém i slovenském guide), bere se
+ten, který v daném okně opravdu má program. Endpoint `GET /api/live/epg` vrací
 `configured: false`, když `Epg:Urls` chybí.
+
+V UI se kanály kreslí jako **časová osa**: řádek na kanál, bloky na ose 00:00–24:00
+místního času, červená linka „teď“ a tlačítko „Teď“ pro skok na aktuální program.
+Program posílá `GET /api/live?country=cz&epg=1` v poli `guide` (klíč = název kanálu),
+takže prohlížeč nic nepáruje a jen vykresluje, co dostane. Kanál, ke kterému guide
+program nemá (např. Óčko, HGTV, regionální TV), dostane blok „Data o programu nejsou
+k dispozici“ a pořád jde kliknout a přehrát.
 
 ### Katalog zdrojů obsahu
 

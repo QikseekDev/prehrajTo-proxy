@@ -16,7 +16,7 @@
     <title>Wflix – filmy a seriály</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230e0e10'/><text x='50' y='72' font-size='62' font-weight='700' text-anchor='middle' fill='%23e33229' font-family='Helvetica Neue,sans-serif'>W</text></svg>">
     <link rel="stylesheet" href="fonts.css?v=20261112-1">
-    <link rel="stylesheet" href="styles.css?v=20261112-1">
+    <link rel="stylesheet" href="styles.css?v=20261113-1">
     <link rel="stylesheet" href="intro.css?v=20261112-1">
     <noscript><style>.intro { display: none; }</style></noscript>
     <!-- Světlý režim se musí zapnout dřív než první vykreslení, jinak stránka blikne tmavě. -->
@@ -305,8 +305,12 @@
                 <button class="lchip" data-flag="noGeo" type="button">Bez geo bloku</button>
                 <button class="lchip" data-flag="only24" type="button">Jen 24/7</button>
             </div>
+            <div class="live-guide-bar">
+                <button class="lchip" id="liveNowBtn" type="button">Teď</button>
+                <span class="live-guide-hint">Klikni na pořad nebo kanál a přehraje se živě.</span>
+            </div>
             <div id="liveState" class="results-state"></div>
-            <div id="liveGrid" class="live-grid"></div>
+            <div id="liveGrid" class="live-guide" hidden></div>
         </div>
 
         <!-- Přehrávač živého vysílání -->
@@ -379,6 +383,6 @@
         </div>
     </div>
 
-    <script src="script.js?v=20261111-1"></script>
+    <script src="script.js?v=20261113-1"></script>
 </body>
 </html>
