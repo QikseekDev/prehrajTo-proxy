@@ -2081,20 +2081,73 @@
     return 'country=cz';
   }
 
+  function applyLive(d) {
+    state.channels = d.channels || [];
+    // "curated" = ruční žebříček země, "auto" = server pořadí spočítal z EPG a skupin.
+    state.livePopMode = d.popMode || '';
+    liveGuide = (d.guide && typeof d.guide === 'object') ? d.guide : {};
+    if (!state.channels.length) throw new Error('Seznam je prázdný');
+    renderChannels(true);
+  }
+
+  /* Kanály, program i pořadí počítá server, takže první otevření karty Živě čeká
+     hlavně na tuhle odpověď. Stahuje se proto na pozadí hned po startu appky -
+     uživatel ji skoro nikdy neotevře dřív než za pár vteřin, takže ho pak nic
+     nezdržuje a žádná hláška "Načítám kanály…" se neukáže. */
+  var LIVE_WARM_TTL = 180000;                              // starší data už by mohla mít jiný program
+  var liveWarm = null;                                     // { key, data, t }
+  var liveWarmBusy = false;
+  var liveBusy = false;                                    // zrovna běží normální načtení karty
+
+  function liveWarmData(key) {
+    if (liveWarm && liveWarm.key === key && (Date.now() - liveWarm.t) < LIVE_WARM_TTL) return liveWarm.data;
+    return null;
+  }
+
+  function liveWarmOne(key) {
+    if (!key || liveWarmBusy || liveWarmData(key)) return Promise.resolve();
+    liveWarmBusy = true;
+    return apiJson('/api/live?' + key + '&epg=1', 35000).then(function (d) {
+      if (d && d.success && d.channels && d.channels.length) liveWarm = { key: key, data: d, t: Date.now() };
+    }).catch(function () {
+      // na pozadí je to jen zrychlení - když to selže, normální cesta to zkusí znovu
+    }).then(function () { liveWarmBusy = false; });
+  }
+
+  function warmLive() {
+    // Vybraný zdroj (výchozí je Česko); když je vybraná jiná země, dotáhne se po
+    // něm i Česko, ale na to už se nečeká.
+    return liveWarmOne(sourceQuery(state.liveFilter)).then(function () {
+      if (state.liveFilter !== 'cz') return liveWarmOne('country=cz');
+    });
+  }
+
+  function scheduleLiveWarm() {
+    // Když si uživatel kartu stihl otevřít sám, stahuje se jen jednou.
+    function start() { if (!state.channels.length && !liveBusy) warmLive(); }
+    // Až se appka usadí (intro, řady na Domů), ať se start nepere o první obrazovku.
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(start, { timeout: 2500 });
+    else setTimeout(start, 1500);
+  }
+
   function loadLive() {
     var st = $('liveState');
+    var warm = liveWarmData(sourceQuery(state.liveFilter));
+    if (warm) {
+      // Data jsou z přednačtení při startu: karta se otevře hned a bez spinneru.
+      try {
+        applyLive(warm);
+        return Promise.resolve();
+      } catch (e) { /* prázdná data - zkusí se normální cesta */ }
+    }
     st.className = 'state show';
     st.textContent = 'Načítám kanály…';
     loading('Načítám kanály…');
+    liveBusy = true;
     return apiJson('/api/live?' + sourceQuery(state.liveFilter) + '&epg=1', 35000).then(function (d) {
       loading(null);
       if (!d || !d.success) throw new Error((d && d.error) || 'Seznam kanálů se nepodařilo načíst');
-      state.channels = d.channels || [];
-      // "curated" = ruční žebříček země, "auto" = server pořadí spočítal z EPG a skupin.
-      state.livePopMode = d.popMode || '';
-      liveGuide = (d.guide && typeof d.guide === 'object') ? d.guide : {};
-      if (!state.channels.length) throw new Error('Seznam je prázdný');
-      renderChannels(true);
+      applyLive(d);
     }).catch(function (e) {
       loading(null);
       state.channels = [];
@@ -2102,7 +2155,7 @@
       showStateError(st, e.message + ' – zkontroluj adresu serveru a jestli backend /api/live povoluje CORS.', function () { loadLive(); });
       $('liveGrid').innerHTML = '';
       $('liveGrid').hidden = true;
-    });
+    }).then(function () { liveBusy = false; });
   }
 
   /* Časová osa programu: kanály jako řádky, pořady jako bloky na ose 00:00-24:00.
@@ -3858,6 +3911,7 @@
 
     try{initDragScroll();}catch(_){}
     startApp();
+    scheduleLiveWarm();
   }
 
   if (document.readyState === 'loading') {

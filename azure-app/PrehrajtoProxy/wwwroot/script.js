@@ -1131,6 +1131,9 @@
                 const showKey = params.get('show');
                 searchMovies().then(() => { if (showKey) openSeriesByKey(showKey, false); });
             }
+
+            // Kanály a program karty Živě se stáhnou na pozadí, aby se karta otevřela hned.
+            scheduleLiveWarm();
         });
 
         // Enter key to search
@@ -2455,25 +2458,79 @@
             if (!liveChannels.length) loadLive();
         }
 
+        function applyLive(d) {
+            liveChannels = Array.isArray(d.channels) ? d.channels : [];
+            liveGuide = d.guide && typeof d.guide === 'object' ? d.guide : {};
+            if (!liveChannels.length) throw new Error('Seznam je prázdný');
+            renderLive(true);
+        }
+
+        // Kanály, program i pořadí počítá server, takže první otevření karty Živě čeká
+        // hlavně na tuhle odpověď. Stahuje se proto na pozadí hned po startu stránky -
+        // uživatel ji skoro nikdy neotevře dřív než za pár vteřin, takže ho pak nic
+        // nezdržuje a žádný spinner se neukáže.
+        const LIVE_WARM_TTL = 180000;      // starší data už by mohla mít jiný program
+        let liveWarm = null;               // { key, data, t }
+        let liveWarmBusy = false;
+        let liveBusy = false;              // zrovna běží normální načtení karty
+
+        function liveWarmData(key) {
+            if (liveWarm && liveWarm.key === key && Date.now() - liveWarm.t < LIVE_WARM_TTL) return liveWarm.data;
+            return null;
+        }
+
+        function liveWarmOne(key) {
+            if (!key || liveWarmBusy || liveWarmData(key)) return Promise.resolve();
+            liveWarmBusy = true;
+            return fetch('/api/live?' + key + '&epg=1', { cache: 'no-store' })
+                .then(r => r.ok ? r.json() : null)
+                .then(d => {
+                    if (d && d.success && Array.isArray(d.channels) && d.channels.length) liveWarm = { key, data: d, t: Date.now() };
+                })
+                .catch(() => { /* na pozadí je to jen zrychlení - normální cesta to zkusí znovu */ })
+                .then(() => { liveWarmBusy = false; });
+        }
+
+        function warmLive() {
+            // Vybraný zdroj (výchozí je Česko); když je vybraná jiná země, dotáhne se
+            // po něm i Česko, ale na to už se nečeká.
+            return liveWarmOne(liveQuery()).then(() => {
+                if (liveQuery() !== 'country=cz') return liveWarmOne('country=cz');
+            });
+        }
+
+        function scheduleLiveWarm() {
+            // Když si uživatel kartu stihl otevřít sám, stahuje se jen jednou.
+            const start = () => { if (!liveChannels.length && !liveBusy) warmLive(); };
+            // Až se stránka usadí (katalog, plakáty), ať se start nepere o první obrazovku.
+            if (window.requestIdleCallback) window.requestIdleCallback(start, { timeout: 2500 });
+            else setTimeout(start, 1500);
+        }
+
         async function loadLive() {
+            const warm = liveWarmData(liveQuery());
+            if (warm) {
+                // Data jsou z přednačtení při startu: karta se otevře hned a bez spinneru.
+                try { applyLive(warm); return; } catch (e) { /* prázdná data - zkusí se normální cesta */ }
+            }
             liveState.className = 'results-state show';
             liveState.innerHTML = '<span class="spinner"></span><span class="state-text">Načítám kanály…</span>';
             liveGrid.innerHTML = '';
             liveGrid.hidden = true;
+            liveBusy = true;
             try {
                 // epg=1: server ke kanálům přidá program pro časovou osu a sám je spáruje
                 // s průvodcem, takže prohlížeč nemusí znát žádná pravidla párování.
                 const r = await fetch('/api/live?' + liveQuery() + '&epg=1');
                 const d = await r.json();
                 if (!d.success) throw new Error(d.error || 'Seznam kanálů se nepodařilo načíst');
-                liveChannels = Array.isArray(d.channels) ? d.channels : [];
-                liveGuide = d.guide && typeof d.guide === 'object' ? d.guide : {};
-                if (!liveChannels.length) throw new Error('Seznam je prázdný');
-                renderLive(true);
+                applyLive(d);
             } catch (e) {
                 liveChannels = [];
                 liveState.className = 'results-state show error';
                 liveState.innerHTML = `<span class="state-text">${escapeHtml(e.message)}</span>`;
+            } finally {
+                liveBusy = false;
             }
         }
 
