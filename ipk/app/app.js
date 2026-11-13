@@ -2090,6 +2090,8 @@
       loading(null);
       if (!d || !d.success) throw new Error((d && d.error) || 'Seznam kanálů se nepodařilo načíst');
       state.channels = d.channels || [];
+      // "curated" = ruční žebříček země, "auto" = server pořadí spočítal z EPG a skupin.
+      state.livePopMode = d.popMode || '';
       liveGuide = (d.guide && typeof d.guide === 'object') ? d.guide : {};
       if (!state.channels.length) throw new Error('Seznam je prázdný');
       renderChannels(true);
@@ -2317,13 +2319,15 @@
     // Server posílá u známých stanic pořadí v popularitě země (pop > 0) a řadí je
     // dopředu. Tady se z toho udělají dvě skupiny s popiskem, ať je vidět, kde
     // "nejznámější" končí - jinak by to vypadalo jako náhodné pořadí.
+    // Země bez žebříčku dostanou pořadí spočítané serverem, proto jiný popisek.
+    var popTitle = state.livePopMode === 'auto' ? 'Hlavní kanály v zemi' : 'Nejpopulárnější v zemi';
     var lastPop = items.length && items[0].pop ? 1 : 0;
-    if (lastPop) rows += '<div class="lg-group">Nejpopulárnější v zemi</div>';
+    if (lastPop) rows += '<div class="lg-group">' + popTitle + '</div>';
     for (var i = 0; i < shown.length; i++) {
       var c = shown[i];
       var isPop = c.pop ? 1 : 0;
       if (isPop !== lastPop) {
-        rows += '<div class="lg-group">' + (isPop ? 'Nejpopulárnější v zemi' : 'Další kanály') + '</div>';
+        rows += '<div class="lg-group">' + (isPop ? popTitle : 'Další kanály') + '</div>';
         lastPop = isPop;
       }
       var idx = state.channels.indexOf(c);

@@ -1347,6 +1347,7 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? 
     // zůstanou v pořadí playlistu. pop = 1..N je pořadí, 0 znamená "v žebříčku není".
     // Řadí se stabilně, takže stejně neznámé kanály si drží původní pořadí.
     var popKey = countryCode ?? lang?.Trim().ToLowerInvariant();
+    var popMode = "";
     if (LivePopularity.Has(popKey))
     {
         // Nejdřív jedna varianta od každé stanice (BBC One, ne 17 regionálních feedů
@@ -1370,6 +1371,49 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? 
             else variants.Add(ch with { Pop = rank + 1 });
         }
         channels = main.Concat(variants).Concat(rest).ToList();
+        popMode = "curated";
+    }
+    else if (countryCode is { Length: 2 } && epgService.Enabled)
+    {
+        // Země, kterou kurátorovaný žebříček nezná: pořadí se spočítá z dat, která
+        // máme (LiveAutoRank) - program v guide země, skupina, kvalita, zálohy.
+        // Guide se tím stáhne i pro požadavek bez epg=1, ale drží se v paměti
+        // na Epg:TtlMinutes, takže další požadavky už ho mají zdarma.
+        var autoGuide = await epgService.GetCountryAsync(countryCode, ct);
+        if (autoGuide is not null)
+        {
+            var scored = channels
+                .Select((ch, i) => (
+                    ch,
+                    i,
+                    score: LiveAutoRank.Score(ch.Group, ch.Quality, ch.Alts?.Length ?? 0, ch.Logo,
+                        EpgService.FindChannel(autoGuide, ch.Id, ch.Name)?.Programmes.Count ?? 0)))
+                .ToList();
+
+            var head = new List<LiveChannel>();
+            var tail = new List<LiveChannel>();
+            foreach (var family in scored
+                         .GroupBy(x => LiveAutoRank.Family(x.ch.Name))
+                         .OrderByDescending(g => g.Max(x => x.score)))
+            {
+                var taken = 0;
+                // V rámci rodiny vede nejkratší název: "France 3", ne "France 3 Lorraine".
+                foreach (var m in family
+                             .OrderBy(x => x.ch.Name.Length)
+                             .ThenByDescending(x => x.score)
+                             .ThenBy(x => x.i))
+                {
+                    // Nad 45 bodů znamená "má v guide země program".
+                    if (m.score > 45 && taken < 2) { head.Add(m.ch with { Pop = head.Count + 1 }); taken++; }
+                    else tail.Add(m.ch);
+                }
+            }
+            if (head.Count > 0)
+            {
+                channels = head.Concat(tail).ToList();
+                popMode = "auto";
+            }
+        }
     }
 
     // epg=1 přidá ke kanálům program pro časovou osu. Párování playlistu s guide dělá
@@ -1396,10 +1440,10 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? 
                 .ToArray();
             if (programmes.Length > 0 && !guide.ContainsKey(ch.Name)) guide[ch.Name] = programmes;
         }
-        return Results.Json(new { success = true, source = url, count = channels.Count, popular = channels.Count(c => c.Pop > 0), channels, guide });
+        return Results.Json(new { success = true, source = url, count = channels.Count, popular = channels.Count(c => c.Pop > 0), popMode, channels, guide });
     }
 
-    return Results.Json(new { success = true, source = url, count = channels.Count, popular = channels.Count(c => c.Pop > 0), channels });
+    return Results.Json(new { success = true, source = url, count = channels.Count, popular = channels.Count(c => c.Pop > 0), popMode, channels });
 }).RequireRateLimiting("api");
 
 // ------------------------------------------------------------------ /api/live/countries  (výběr zdroje)
