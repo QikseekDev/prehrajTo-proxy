@@ -67,25 +67,6 @@ Přehled zdrojů obsahu: [docs/SOURCES.md](docs/SOURCES.md).
 | `GET /api/meta?q=&y=` | ČSFD metadata |
 | `GET /api/config` | údržba a stav vypínačů |
 
-## Limity
-
-`/api/*` má token bucket na IP: hledání 5/s, api 6/s, titulky 20/s, náhledy 10/s,
-live/hls 40/s, admin 10/s (burst 3–4×). Překročení vrací `429` + `Retry-After: 20`.
-Hledání se navíc sdílí v cache (30 min) a pouští po 1,6 s, protože prehraj.to limit
-~5 dotazů/10 s vidí ze všech proxy jako jednu IP. Hlavičky (User-Agent, Referer) se
-nekontrolují, aby fungovaly WebView a `curl`.
-
-## Admin panel
-
-`/admin` na .NET backendu – jedna HTML stránka bez buildu. Zapne se `ADMIN_PASSWORD`,
-stav je JSON mimo repo (`ADMIN_STATE_PATH`, jinak `App_Data/`). Umí údržbu, vypínače
-(stahování, živé, relay, více zdrojů, náhledy), zapínání zdrojů, mazání cache, bany IP,
-přehled provozu a správu seznamu proxy. Login vymění heslo za podepsanou HttpOnly cookie,
-každý zápis vyžaduje CSRF token.
-
-Volitelné: `WFLIX_PURGE_TOKEN` (mazání cache na PHP proxy), `WFLIX_GITHUB_TOKEN` +
-`WFLIX_GITHUB_REPO`/`WFLIX_GITHUB_BRANCH` (commit seznamu proxy). PHP self-host panel nemá.
-
 ## Komponenty
 
 - `azure-app/PrehrajtoProxy/` – ASP.NET Core 9 a frontend v `wwwroot/` (vanilla JS)
