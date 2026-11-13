@@ -1870,7 +1870,9 @@
             searchEntries = groupSearchResults(movies);
 
             const seriesCount = searchEntries.filter(e => e.type === 'series').length;
-            resultsInfo.textContent = `Nalezeno ${movies.length} výsledků pro „${query}"`
+            // Počet musí odpovídat kartám, které jsou opravdu na stránce (po seskupení),
+            // ne surovému počtu položek před seskupením.
+            resultsInfo.textContent = `Nalezeno ${czCount(searchEntries.length, 'výsledek', 'výsledky', 'výsledků')} pro „${query}"`
                 + (seriesCount ? ` · ${czCount(seriesCount, 'seriál', 'seriály', 'seriálů')} seskupeno` : '');
             resultsGrid.innerHTML = '';
 
