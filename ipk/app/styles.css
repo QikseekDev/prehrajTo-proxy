@@ -731,3 +731,13 @@ html.no-flex-gap .p-next-actions > * + *{margin-left:.45rem}
 /* TV (IPK/webOS): větší text pro čitelnost na dálku; vyjímky: levý panel, hero/banner, klávesnice a návrhy */
 .webos .main{font-size:1.12em}
 .webos .main .hero,.webos .main .skeys,.webos .main .search-hint{font-size:.893em}
+
+/* Číslo kanálu z ovladače (OSD) a čísla u kanálů v mřížce živého vysílání */
+.ch-osd{
+  position:fixed;top:calc(2rem + env(safe-area-inset-top));right:calc(2.4rem + env(safe-area-inset-right));z-index:95;
+  pointer-events:none;padding:.5rem 1.3rem;border-radius:14px;min-width:6rem;text-align:center;
+  background:rgba(8,9,12,.93);border:1px solid var(--line-strong);color:#fff;
+  font-size:2.2rem;font-weight:800;letter-spacing:.08em;line-height:1.25;
+  font-variant-numeric:tabular-nums;
+}
+.lg-num{flex:none;min-width:1.9rem;text-align:right;font-size:.78rem;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}

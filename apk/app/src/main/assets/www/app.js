@@ -2343,6 +2343,8 @@
     liveGuide = (d.guide && typeof d.guide === 'object') ? d.guide : {};
     if (!state.channels.length) throw new Error('Seznam je prázdný');
     renderChannels(true);
+    // Číslo z ovladače zmáčknuté během načítání se dohraje teď.
+    if (chNumPending) { var pending = chNumPending; chNumPending = 0; tuneChannel(pending); }
   }
 
   /* Kanály, program i pořadí počítá server, takže první otevření karty Živě čeká
@@ -2406,6 +2408,8 @@
       applyLive(d);
     }).catch(function (e) {
       loading(null);
+      chNumPending = 0;
+      hideChOsd();
       state.channels = [];
       liveGuide = {};
       showStateError(st, e.message + ' – zkontroluj adresu serveru a jestli backend /api/live povoluje CORS.', function () { loadLive(); });
@@ -2778,6 +2782,7 @@
       }
       rows += '<div class="lg-row">'
         + '<div class="lg-ch"><button class="f lg-ch-btn" type="button" data-ch="' + idx + '" title="' + esc(c.name) + '">'
+        + '<span class="lg-num">' + (idx + 1) + '</span>'
         + '<span class="lg-logo">'
         + (c.logo ? '<img src="' + esc(c.logo) + '" data-u="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async" crossorigin="anonymous" referrerpolicy="no-referrer">' : '')
         + '<span class="lg-init">' + esc(initials) + '</span></span>'
@@ -3418,10 +3423,89 @@
     });
   }
 
+  /* ------------------------------------------------------------------ *
+   *  Číselník ovladače: čísla kanálů a červené tlačítko = záložka Živě
+   * ------------------------------------------------------------------ */
+  var chNumBuf = '';
+  var chNumTimer = 0;
+  var chOsdTimer = 0;
+  var chNumPending = 0;      // číslo zmáčknuté dřív, než se kanály načetly
+
+  function showChOsd(text, holdMs) {
+    var el = $('chOsd');
+    if (!el) return;
+    el.textContent = text;
+    show(el);
+    clearTimeout(chOsdTimer);
+    if (holdMs) chOsdTimer = setTimeout(function () { hide(el); }, holdMs);
+  }
+  function hideChOsd() { clearTimeout(chOsdTimer); hide($('chOsd')); }
+
+  /* Kanály číslujeme podle pořadí v seznamu, které drží server (1..N).
+     Číslo se ukazuje u kanálu v mřížce i v přehrávači, aby se dalo mačkat poslepu. */
+  function chNumberOf(ch) {
+    var i = state.channels.indexOf(ch);
+    return i < 0 ? 0 : i + 1;
+  }
+
+  function closeAllOverlays() {
+    clearTimeout(chNumTimer); chNumTimer = 0; chNumBuf = '';
+    hideChOsd();
+    if (!$('kbd').hidden) hide($('kbd'));
+    if (!$('player').hidden) closePlayer();
+    if (!$('detail').hidden) closeDetail();
+    if (!$('series').hidden) closeSeriesAndReturn();
+  }
+
+  /* Naladí kanál podle čísla - i z rozjetého filmu (ten se zavře a pozice se uloží). */
+  function tuneChannel(n) {
+    clearTimeout(chNumTimer); chNumTimer = 0; chNumBuf = '';
+    if (!state.channels.length) {
+      // Seznam se ještě nenačetl - číslo si počká a naladí se hned po načtení.
+      chNumPending = n;
+      showChOsd('Kanál ' + n, 2500);
+      if (!liveBusy) loadLive();
+      return;
+    }
+    var ch = state.channels[n - 1];
+    if (!ch) { hideChOsd(); toast('Kanál ' + n + ' tu není'); return; }
+    hideChOsd();
+    closeAllOverlays();
+    if (state.view !== 'live') setView('live');
+    playLive(ch);
+    toast('Kanál ' + n + ' – ' + (ch.name || ''), 2000);
+  }
+
+  function chNumPress(d) {
+    chNumBuf = (chNumBuf + d).slice(-3);
+    clearTimeout(chNumTimer);
+    showChOsd('Kanál ' + chNumBuf);
+    // Dokud by číslo mohlo pokračovat (1 -> 12, 15…), čeká se na další číslici.
+    var longer = false;
+    for (var i = 0; i < state.channels.length; i++) {
+      var s = String(i + 1);
+      if (s.length > chNumBuf.length && s.indexOf(chNumBuf) === 0) { longer = true; break; }
+    }
+    if (!longer) { tuneChannel(parseInt(chNumBuf, 10)); return; }
+    chNumTimer = setTimeout(function () {
+      var n = parseInt(chNumBuf, 10);
+      tuneChannel(n);
+    }, 1600);
+  }
+
+  /* Červené tlačítko ovladače přepne na záložku Živě. */
+  function goLiveTab() {
+    closeAllOverlays();
+    setView('live');
+    if (!state.channels.length && !liveBusy) loadLive();
+    try { focusAfterOverlay(); } catch (e) {}
+  }
+
   function playLive(ch) {
-    player.page = { channel: ch, channelIndex: state.channels.indexOf(ch) };
+    var chIdx = state.channels.indexOf(ch);
+    player.page = { channel: ch, channelIndex: chIdx };
     player.cdn = '';
-    player.title = ch.name || 'Živě';
+    player.title = (chIdx >= 0 ? 'Kanál ' + (chIdx + 1) + ' · ' : '') + (ch.name || 'Živě');
     openPlayer('live', player.title);
     var needsHeaders = !!(ch.ua || ch.referrer);
     player.altIndex = 0;
@@ -3695,6 +3779,22 @@
 
     if (!$('kbd').hidden && kbdPhysicalKey(e)) return;
     var typing = isTextField(e.target) || isTextField(document.activeElement);
+
+    // Červené tlačítko ovladače (webOS 403, Android TV 183) = záložka Živě.
+    if (code === 403 || code === 183 || k === 'ColorF0Red') { e.preventDefault(); goLiveTab(); return; }
+
+    // Číselník ovladače = číslo kanálu. V hledání a v textových polích patří číslice jim.
+    var chDigit = '';
+    if (k && k.length === 1 && k >= '0' && k <= '9') chDigit = k;
+    else if (!k || k === 'Unidentified') {
+      if (code >= 48 && code <= 57) chDigit = String(code - 48);        // webOS / prohlížeč
+      else if (code >= 7 && code <= 16) chDigit = String(code - 7);      // Android TV KEYCODE_0..9
+    }
+    if (chDigit && !typing && state.view !== 'search' && $('kbd').hidden) {
+      e.preventDefault();
+      chNumPress(chDigit);
+      return;
+    }
     if (liveLocked() && (k === 'MediaPause' || k === 'MediaPlayPause' || k === 'Pause' || code === 19 || code === 179)) {
       e.preventDefault(); bumpIdle(); return;   // živé vysílání nejde pozastavit
     }
