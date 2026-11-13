@@ -2022,6 +2022,11 @@
   // Program kanálů pro časovou osu: mapa "název kanálu" -> [{ t, s, e }].
   // Párování s EPG dělá server (/api/live?...&epg=1), takže se tu jen kreslí.
   var liveGuide = {};
+  // TV má 2 GB RAM a slabé CPU: zdroj jako USA má 1500 kanálů a celá mřížka by
+  // znamenala desítky tisíc DOM uzlů a klávesu v řádu desetin sekundy. Řádky se
+  // proto vykreslují po dávkách a další dávka se doplní, až fokus dojede na konec.
+  var LIVE_PAGE = 120;
+  var liveShown = 0;
 
   var LIVE_SOURCES = [
     { id: 'cz', label: 'Česko', q: 'country=cz' },
@@ -2101,10 +2106,16 @@
   /* Časová osa programu: kanály jako řádky, pořady jako bloky na ose 00:00-24:00.
      Když kanál program nemá, dostane blok "Data o programu nejsou k dispozici" -
      neztratí se a pořád se na něj dá kliknout. */
+  var lgPpmCache = 0;
   function lgPpm() {
-    var root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    return root * 0.15;                                  // px na minutu, den má ~3456 px při 16 px
+    if (!lgPpmCache) {
+      var root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      lgPpmCache = root * 0.15;                          // px na minutu, den má ~3456 px při 16 px
+    }
+    return lgPpmCache;
   }
+  // Jiná velikost písma (jiné okno/TV) = jiná osa.
+  window.addEventListener('resize', function () { lgPpmCache = 0; });
   function lgTime(min) {
     var m = Math.max(0, Math.round(min));
     return ('0' + (Math.floor(m / 60) % 24)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2);
@@ -2185,10 +2196,9 @@
 
   // V řádku vybere pořad, který na ose překrývá aktuální blok - při přeskoku na
   // jiný kanál tak zůstane stejný čas.
-  function lgSameTimeBlock(row, cur) {
+  function lgBlockAt(row, target) {
     var blocks = lgRowBlocks(row);
-    if (!blocks.length) return null;
-    var target = cur.offsetLeft + cur.offsetWidth / 2;
+    if (!blocks.length || target === null) return null;
     var best = blocks[0], bestDist = Infinity;
     for (var i = 0; i < blocks.length; i++) {
       var l = blocks[i].offsetLeft, r = l + blocks[i].offsetWidth;
@@ -2197,6 +2207,18 @@
       if (d < bestDist) { bestDist = d; best = blocks[i]; }
     }
     return best;
+  }
+
+  function lgSameTimeBlock(row, cur) {
+    return lgBlockAt(row, cur.offsetLeft + cur.offsetWidth / 2);
+  }
+
+  // Doplní další dávku řádků, když fokus dojede na konec vykreslené části.
+  function lgAppendRows() {
+    var total = liveItems().length;
+    if (liveShown >= total) return false;
+    liveShown = Math.min(total, liveShown + LIVE_PAGE);
+    return true;
   }
 
   // Vrací true, když klávesu zpracoval průvodce sám.
@@ -2214,7 +2236,27 @@
 
     if (k === 'ArrowUp' || k === 'ArrowDown') {
       var nextRow = rows[idx + (k === 'ArrowDown' ? 1 : -1)];
-      if (!nextRow) return true;                        // na kraji seznamu se nic neděje
+      if (!nextRow) {
+        // Došla vykreslená dávka: doplní se další a fokus skočí na stejné místo.
+        if (k === 'ArrowDown' && lgAppendRows()) {
+          var x = onChannel ? null : cur.offsetLeft + cur.offsetWidth / 2;
+          renderChannels(false);
+          // Přímo z DOM, ne přes lgScrollBox(): hned po překreslení ještě nemusí
+          // být znalost velikostí (a lgScrollBox by vrátil null).
+          var gridEl = $('liveGrid');
+          var freshBox = gridEl ? gridEl.querySelector('.lg-scroll') : null;
+          var freshRows = freshBox ? freshBox.querySelectorAll('.lg-row') : [];
+          var freshRow = freshRows[idx + 1];
+          if (freshRow) {
+            var pick = onChannel
+              ? freshRow.querySelector('.lg-ch-btn')
+              : (lgBlockAt(freshRow, x) || freshRow.querySelector('.lg-ch-btn'));
+            lgFocus(pick, freshBox);
+          }
+          return true;
+        }
+        return false;                                   // nahoru na filtry, dolů už nic
+      }
       if (onChannel) lgFocus(nextRow.querySelector('.lg-ch-btn'), box);
       else lgFocus(lgSameTimeBlock(nextRow, cur) || nextRow.querySelector('.lg-ch-btn'), box);
       return true;
@@ -2239,15 +2281,19 @@
     return true;
   }
 
-  function renderChannels(reset) {
-    var st = $('liveState');
-    var items = state.channels.filter(function (c) {
+  function liveItems() {
+    return state.channels.filter(function (c) {
       var tags = c.tags || [];
       if (state.liveFlags.hd && !(c.quality === '1080p' || c.quality === '4k')) return false;
       if (state.liveFlags.noGeo && tags.indexOf('geo') !== -1) return false;
       if (state.liveFlags.only24 && tags.indexOf('not24') !== -1) return false;
       return true;
     });
+  }
+
+  function renderChannels(reset) {
+    var st = $('liveState');
+    var items = liveItems();
     st.className = 'state' + (items.length ? '' : ' show');
     st.textContent = items.length ? '' : 'Takový kanál tu není. Zkus jiný zdroj nebo jiné filtry.';
     var grid = $('liveGrid');
@@ -2265,9 +2311,11 @@
       ticks += '<span class="lg-tick' + (m % 60 === 0 ? ' hour' : '') + '" style="left:' + Math.round(m * ppm) + 'px">' + lgTime(m) + '</span>';
     }
 
+    if (reset || !liveShown) liveShown = Math.min(items.length, LIVE_PAGE);
+    var shown = items.length > liveShown ? items.slice(0, liveShown) : items;
     var rows = '';
-    for (var i = 0; i < items.length; i++) {
-      var c = items[i];
+    for (var i = 0; i < shown.length; i++) {
+      var c = shown[i];
       var idx = state.channels.indexOf(c);
       var initials = lgInitials(c.name);
       var progs = lgProgrammes(c, base);
@@ -2294,7 +2342,7 @@
       rows += '<div class="lg-row">'
         + '<div class="lg-ch"><button class="f lg-ch-btn" type="button" data-ch="' + idx + '" title="' + esc(c.name) + '">'
         + '<span class="lg-logo">'
-        + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '')
+        + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '')
         + '<span class="lg-init">' + esc(initials) + '</span></span>'
         + '<span class="lg-name">' + esc(c.name) + '</span>'
         + '</button></div>'
@@ -2334,16 +2382,20 @@
       else setTimeout(focusFirstChannel, 0);
     }
 
-    var btns = grid.querySelectorAll('[data-ch]');
-    for (var k = 0; k < btns.length; k++) {
-      (function (el) {
-        el.addEventListener('click', function () {
-          var ch = state.channels[parseInt(el.getAttribute('data-ch'), 10)];
-          if (ch) playLive(ch);
-        });
-      })(btns[k]);
-    }
   }
+
+  // Klik na kanál nebo pořad řeší jeden posluchač na mřížce. Vlastní posluchač
+  // na každém z tisíců tlačítek zdržoval vykreslení i uvolňování paměti.
+  (function () {
+    var grid = $('liveGrid');
+    if (!grid) return;
+    grid.addEventListener('click', function (e) {
+      var el = e.target && e.target.closest ? e.target.closest('[data-ch]') : null;
+      if (!el || !grid.contains(el)) return;
+      var ch = state.channels[parseInt(el.getAttribute('data-ch'), 10)];
+      if (ch) playLive(ch);
+    });
+  })();
 
   function liveScrollToNow(smooth) {
     var box = $('liveGrid').querySelector('.lg-scroll');
