@@ -1022,6 +1022,10 @@
   function focusEl(el) {
     if (!el) return;
     if (typeof el.focus === 'function') el.focus();
+    // V průvodci posouváme sami a jen po ose: vycentrování by u názvu kanálu
+    // odscrollovalo celou časovou osu doleva a u pořadu zbytečně ujelo doprostřed.
+    var guideBox = el.closest ? el.closest('.lg-scroll') : null;
+    if (guideBox) { lgReveal(guideBox, el); return; }
     if (el.scrollIntoView) {
       try {
         el.scrollIntoView({ block: 'nearest', inline: 'center', behavior: isTouch ? 'auto' : 'smooth' });
@@ -2133,6 +2137,108 @@
     return out;
   }
 
+  /* Ovládání časové osy dálkovým ovladačem: nahoru/dolů mění kanál (řádek),
+     vlevo/vpravo jen pořady v tom samém řádku - jinak by šipka doprava přeskočila
+     na jiný kanál. Z názvu kanálu vlevo jde doprava do právě běžícího pořadu. */
+  function lgScrollBox() {
+    if (state.view !== 'live') return null;
+    var grid = $('liveGrid');
+    if (!grid || grid.hidden) return null;
+    var box = grid.querySelector('.lg-scroll');
+    return box && isVisible(box) ? box : null;
+  }
+
+  function lgRowBlocks(row) {
+    return row ? row.querySelectorAll('.lg-pg') : [];
+  }
+
+  // Posune osu jen tak, aby byl prvek vidět - kontext (hlavička, sloupec kanálů)
+  // zůstává na místě. Vlevo prvek kryje přilepený sloupec kanálů, proto se s ním počítá.
+  function lgReveal(box, el) {
+    if (!box || !el) return;
+    var row = el.closest ? el.closest('.lg-row') : null;
+    var firstCh = box.querySelector('.lg-ch');
+    var cw = firstCh ? firstCh.offsetWidth : 0;
+    var pad = 10;
+    var isChannel = el.classList && el.classList.contains('lg-ch-btn');
+    if (!isChannel) {
+      var x0 = cw + el.offsetLeft, x1 = x0 + el.offsetWidth;
+      if (x0 < box.scrollLeft + cw + pad) box.scrollLeft = Math.max(0, x0 - cw - pad);
+      else if (x1 > box.scrollLeft + box.clientWidth - pad)
+        box.scrollLeft = Math.min(Math.max(0, box.scrollWidth - box.clientWidth), x1 - box.clientWidth + pad);
+    }
+    if (!row) return;
+    var rows = box.querySelector('.lg-rows');
+    var head = box.querySelector('.lg-head');
+    var top = (rows ? rows.offsetTop : 0) + row.offsetTop;
+    var headH = head ? head.offsetHeight : 0;
+    if (top - headH < box.scrollTop) box.scrollTop = Math.max(0, top - headH);
+    else if (top + row.offsetHeight > box.scrollTop + box.clientHeight)
+      box.scrollTop = top + row.offsetHeight - box.clientHeight;
+  }
+
+  function lgFocus(el, box) {
+    if (!el) return;
+    if (el.focus) el.focus();
+    lgReveal(box || lgScrollBox(), el);
+  }
+
+  // V řádku vybere pořad, který na ose překrývá aktuální blok - při přeskoku na
+  // jiný kanál tak zůstane stejný čas.
+  function lgSameTimeBlock(row, cur) {
+    var blocks = lgRowBlocks(row);
+    if (!blocks.length) return null;
+    var target = cur.offsetLeft + cur.offsetWidth / 2;
+    var best = blocks[0], bestDist = Infinity;
+    for (var i = 0; i < blocks.length; i++) {
+      var l = blocks[i].offsetLeft, r = l + blocks[i].offsetWidth;
+      if (target >= l && target < r) return blocks[i];
+      var d = Math.min(Math.abs(target - l), Math.abs(target - r));
+      if (d < bestDist) { bestDist = d; best = blocks[i]; }
+    }
+    return best;
+  }
+
+  // Vrací true, když klávesu zpracoval průvodce sám.
+  function guideKey(k) {
+    var box = lgScrollBox();
+    if (!box) return false;
+    var cur = currentFocus();
+    if (!cur || !cur.closest) return false;
+    var row = cur.closest('.lg-row');
+    if (!row) return false;
+
+    var rows = box.querySelectorAll('.lg-row');
+    var idx = Array.prototype.indexOf.call(rows, row);
+    var onChannel = cur.classList && cur.classList.contains('lg-ch-btn');
+
+    if (k === 'ArrowUp' || k === 'ArrowDown') {
+      var nextRow = rows[idx + (k === 'ArrowDown' ? 1 : -1)];
+      if (!nextRow) return true;                        // na kraji seznamu se nic neděje
+      if (onChannel) lgFocus(nextRow.querySelector('.lg-ch-btn'), box);
+      else lgFocus(lgSameTimeBlock(nextRow, cur) || nextRow.querySelector('.lg-ch-btn'), box);
+      return true;
+    }
+
+    if (onChannel) {
+      if (k === 'ArrowLeft') return true;               // vlevo od názvu už nic není
+      // doprava z názvu kanálu do pořadu - nejdřív ten, který zrovna běží
+      var blocks = lgRowBlocks(row);
+      if (!blocks.length) return true;
+      lgFocus(row.querySelector('.lg-pg.run') || blocks[0], box);
+      return true;
+    }
+
+    if (k !== 'ArrowLeft' && k !== 'ArrowRight') return false;
+    var list = lgRowBlocks(row);
+    var at = Array.prototype.indexOf.call(list, cur);
+    if (at === -1) return false;
+    if (k === 'ArrowLeft' && at === 0) { lgFocus(row.querySelector('.lg-ch-btn'), box); return true; }
+    // za posledním pořadem řádku zůstat - nikdy neskákat na jiný kanál
+    lgFocus(list[at + (k === 'ArrowRight' ? 1 : -1)], box);
+    return true;
+  }
+
   function renderChannels(reset) {
     var st = $('liveState');
     var items = state.channels.filter(function (c) {
@@ -2182,7 +2288,7 @@
         }
       } else {
         blocks = '<button class="f lg-pg empty" type="button" data-ch="' + idx + '"'
-          + ' title="' + esc(c.name) + ' – program neznáme" style="left:0;width:100%">'
+          + ' title="' + esc(c.name) + ' – program neznáme" style="left:0;width:' + width + 'px">'
           + '<b>Data o programu nejsou k dispozici</b><small>klikni a hraj živě</small></button>';
       }
       rows += '<div class="lg-row">'
@@ -2214,6 +2320,18 @@
     } else if (box) {
       box.scrollLeft = keepLeft;
       box.scrollTop = keepTop;
+    }
+
+    if (reset) {
+      // Fokus startuje na seznamu kanálů vlevo - odtud jde šipkou doprava do
+      // právě běžícího pořadu. Až po vykreslení, kdy už má prvek svou velikost.
+      var focusFirstChannel = function () {
+        if (state.view !== 'live') return;
+        var firstCh = grid.querySelector('.lg-ch-btn');
+        if (firstCh) lgFocus(firstCh, grid.querySelector('.lg-scroll'));
+      };
+      if (window.requestAnimationFrame) requestAnimationFrame(focusFirstChannel);
+      else setTimeout(focusFirstChannel, 0);
     }
 
     var btns = grid.querySelectorAll('[data-ch]');
@@ -3102,6 +3220,7 @@
           if (pFocused === $('pBack') && k === 'ArrowDown') { e.preventDefault(); if($('pBar')&&$('pBar').style.display!=='none') focusEl($('pBar')); else focusEl($('pPlay')); return; }
           if (pFocused === $('pPlay') && k === 'ArrowUp') { e.preventDefault(); if($('pBar')&&$('pBar').style.display!=='none') focusEl($('pBar')); else focusEl($('pBack')); return; }
         }
+        if (!playerOpen && guideKey(k)) { e.preventDefault(); return; }
         var moved;
         if (k === 'ArrowLeft') moved = moveFocus(-1, 0);
         else if (k === 'ArrowRight') moved = moveFocus(1, 0);
