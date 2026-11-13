@@ -71,10 +71,12 @@ jobs:
           SERVER: ${{ secrets.WFLIX_SERVER_COMPUTER_NAME || 'https://site104887.siteasp.net:8172' }}
           USER: ${{ secrets.WFLIX_SERVER_USERNAME || 'site104887' }}
           PASS: ${{ secrets.WFLIX_SERVER_PASSWORD }}
+          PUBLIC_URL: ${{ secrets.WFLIX_PUBLIC_URL || 'https://wflix.runasp.net' }}
         run: |
           ./.github/scripts/deploy-webdeploy.ps1 `
             -SourcePath "$(Get-Location)\publish" `
-            -Site $env:SITE -Server $env:SERVER -User $env:USER -Password $env:PASS
+            -Site $env:SITE -Server $env:SERVER -User $env:USER -Password $env:PASS `
+            -WaitUrl $env:PUBLIC_URL
 
       - name: Verify Wflix runs this commit
         if: steps.wflix.outputs.configured == 'true'
@@ -117,10 +119,12 @@ jobs:
           SERVER: ${{ secrets.WTZI_SERVER_COMPUTER_NAME || 'https://site104437.siteasp.net:8172' }}
           USER: ${{ secrets.WTZI_SERVER_USERNAME || 'site104437' }}
           PASS: ${{ secrets.WTZI_SERVER_PASSWORD }}
+          PUBLIC_URL: ${{ secrets.WTZI_PUBLIC_URL || 'https://wtzi.runasp.net' }}
         run: |
           ./.github/scripts/deploy-webdeploy.ps1 `
             -SourcePath "$(Get-Location)\publish" `
-            -Site $env:SITE -Server $env:SERVER -User $env:USER -Password $env:PASS
+            -Site $env:SITE -Server $env:SERVER -User $env:USER -Password $env:PASS `
+            -WaitUrl $env:PUBLIC_URL
 
       - name: Verify WTZI runs this commit
         if: steps.wtzi.outputs.configured == 'true'
