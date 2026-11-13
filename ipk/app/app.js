@@ -3744,6 +3744,17 @@
     if (Native && typeof Native.backHandled === 'function') Native.backHandled();
   }
 
+  /* Zpět během hledání maže poslední znak; teprve prázdné pole jde ze hledání ven. */
+  function searchBackspace() {
+    if (state.view !== 'search') return false;
+    if (!$('player').hidden || !$('detail').hidden || !$('series').hidden || !$('kbd').hidden) return false;
+    var fld = document.activeElement;
+    if (fld && fld !== document.body && fld !== $('searchInput') && isTextField(fld)) return false;
+    if (!$('searchInput').value) return false;
+    searchKey('__back');
+    return true;
+  }
+
   function goBack() {
     if (closeOverlays()) { notifyBackHandled(); return; }
     if (state.view !== 'home') { setView('home'); focusAfterOverlay(); notifyBackHandled(); return; }
@@ -3775,7 +3786,12 @@
     var code = e.keyCode;
 
     // webOS dálkové ovládání
-    if (code === 461) { e.preventDefault(); goBack(); return; }
+    if (code === 461) {
+      e.preventDefault();
+      if (searchBackspace()) { notifyBackHandled(); return; }
+      goBack();
+      return;
+    }
 
     if (!$('kbd').hidden && kbdPhysicalKey(e)) return;
     var typing = isTextField(e.target) || isTextField(document.activeElement);
@@ -3823,6 +3839,7 @@
       // Backspace je „zpět“ jen mimo textové pole; v poli maže znaky.
       if (k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || (k === 'Backspace' && !typing)) {
         e.preventDefault();
+        if (searchBackspace()) { notifyBackHandled(); return; }
         if (typing && document.activeElement && document.activeElement.blur) document.activeElement.blur();
         goBack();
         return;
