@@ -954,9 +954,84 @@
                 chip ? `<button class="row-more" data-chip="${escapeHtml(chip)}">Prozkoumat vše ${ICON.chevron}</button>` : '');
         }
 
+        // ===== Trailer v billboardu =====
+        // Upoutávka se pustí až po 4 s, kdy je banner opravdu na obrazovce, a jen když ji
+        // k titulu server poslal (iTunes "Preview"). Do té doby se nic nestahuje.
+        // Video leží přesně tam, kde je teď plakát, a plakát zůstává pod ním jako záloha.
+        const HERO_TRAILER_AFTER = 4000;
+        const heroTrailer = { io: null, timer: 0, video: null };
+
+        function stopHeroTrailer() {
+            clearTimeout(heroTrailer.timer);
+            heroTrailer.timer = 0;
+            if (heroTrailer.io) { heroTrailer.io.disconnect(); heroTrailer.io = null; }
+            const v = heroTrailer.video;
+            heroTrailer.video = null;
+            if (!v) return;
+            try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {}
+            v.remove();
+        }
+
+        function playHeroTrailer(heroEl, url) {
+            if (!url || !heroEl.isConnected || heroTrailer.video) return;
+            const v = document.createElement('video');
+            v.className = 'hero-video';
+            v.muted = true;
+            v.defaultMuted = true;
+            v.loop = true;
+            v.playsInline = true;
+            v.preload = 'auto';
+            v.tabIndex = -1;
+            v.setAttribute('muted', '');
+            v.setAttribute('playsinline', '');
+            v.setAttribute('disablepictureinpicture', '');
+            v.setAttribute('aria-hidden', 'true');
+            v.src = url;
+            heroTrailer.video = v;
+            heroEl.appendChild(v);
+            v.addEventListener('loadeddata', () => {
+                if (!v.isConnected) return;
+                v.classList.add('on');
+                heroEl.classList.add('trailer');
+                const p = v.play();
+                if (p && p.catch) p.catch(() => {});
+            }, { once: true });
+            // Když se trailer nepovede (403, timeout), zůstane jen plakát.
+            v.addEventListener('error', () => { if (heroTrailer.video === v) stopHeroTrailer(); }, { once: true });
+        }
+
+        function armHeroTrailer(heroEl, m) {
+            const url = m && m.trailer;
+            if (!url || !heroEl || !('IntersectionObserver' in window)) return;
+            // Datová úspora v prohlížeči = billboard zůstane u plakátu.
+            if (navigator.connection && navigator.connection.saveData) return;
+            heroTrailer.io = new IntersectionObserver(entries => {
+                const e = entries[entries.length - 1];
+                if (e.isIntersecting && e.intersectionRatio >= 0.35) {
+                    const v = heroTrailer.video;
+                    if (v) {   // už načtený: po návratu nahoru jen pokračovat
+                        if (v.paused && v.readyState > 2) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+                        return;
+                    }
+                    if (heroTrailer.timer) return;
+                    heroTrailer.timer = setTimeout(() => {
+                        heroTrailer.timer = 0;
+                        if (heroEl.isConnected) playHeroTrailer(heroEl, url);
+                    }, HERO_TRAILER_AFTER);
+                } else {
+                    // Zmizel z obrazovky dřív než po 4 s -> časovač se ruší a nic se nestahuje.
+                    clearTimeout(heroTrailer.timer);
+                    heroTrailer.timer = 0;
+                    if (heroTrailer.video) { try { heroTrailer.video.pause(); } catch (err) {} }
+                }
+            }, { threshold: [0, 0.35, 0.75] });
+            heroTrailer.io.observe(heroEl);
+        }
+
         function renderHero() {
             const day = Math.floor(Date.now() / 86400000);
             const m = CATALOG[(day + heroOffset) % CATALOG.length];
+            stopHeroTrailer();   // jiný tip / nový katalog = starý trailer i časovač pryč
             document.getElementById('hero').innerHTML = `
                 <div class="hero" style="--hero-bg:${posterGradient(m.t)}">
                     <div class="hero-mark" aria-hidden="true">${escapeHtml(monogram(m.t))}</div>
@@ -991,6 +1066,7 @@
                 };
                 im.src = u;
             });
+            armHeroTrailer(heroEl, m);
         }
 
         // Intro overlay nemá zmizet nad prázdnou stránkou: záložní katalog se vykreslí hned,

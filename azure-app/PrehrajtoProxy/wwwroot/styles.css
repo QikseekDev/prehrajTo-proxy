@@ -452,6 +452,16 @@
         .hero-img.on { opacity: 1; }
         .hero.has-img .hero-mark { display: none; }
 
+        /* Trailer v billboardu: leží přesně tam, kde byl plakát, a objeví se plynule,
+           až když se opravdu přehraje - do té doby (i při chybě) je vidět plakát. */
+        .hero-video {
+            position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%;
+            object-fit: cover; opacity: 0; transition: opacity 0.9s;
+            pointer-events: none; background: #000;
+        }
+        .hero-video.on { opacity: 1; }
+        .hero.trailer .hero-mark { display: none; }
+
         /* ---------- Search results ---------- */
         .results-section, .player-section { display: none; }
         .results-section { padding: 100px 4% 0; }

@@ -1203,10 +1203,33 @@ var CatalogGenres = new Dictionary<string, string[]>(StringComparer.OrdinalIgnor
     ["Romance"] = new[] { "Drama" },
 };
 
+// Trailer k titulu: iTunes RSS posílá u každého filmu v "link" odkaz s title="Preview"
+// (m4v z video-ssl.itunes.apple.com, 640x356, faststart, Range i CORS) - billboard ho pouští sám.
+// "link" umí být objekt i pole, proto obě varianty.
+string PreviewHref(JsonElement e)
+{
+    if (!e.TryGetProperty("link", out var links)) return "";
+    var arr = links.ValueKind == JsonValueKind.Array
+        ? links.EnumerateArray().ToList()
+        : new List<JsonElement> { links };
+    foreach (var l in arr)
+    {
+        if (!l.TryGetProperty("attributes", out var a)) continue;
+        var href = a.TryGetProperty("href", out var h) ? h.GetString() ?? "" : "";
+        if (href.Length == 0) continue;
+        var title = a.TryGetProperty("title", out var ti) ? ti.GetString() ?? "" : "";
+        var type = a.TryGetProperty("type", out var ty) ? ty.GetString() ?? "" : "";
+        if (title.Equals("Preview", StringComparison.OrdinalIgnoreCase)
+            || type.StartsWith("video/", StringComparison.OrdinalIgnoreCase)) return href;
+    }
+    return "";
+}
+
 app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCache cache) =>
 {
     lang = lang == "en" ? "en" : "cz";
-    var key = "catalog|" + lang;
+    // "2" = formát s trailerem (staré položky z cache by ho neměly)
+    var key = "catalog|2|" + lang;
     if (cache.TryGetValue<List<CatalogItem>>(key, out var cached) && cached is { Count: > 0 })
         return Results.Json(new { success = true, lang, count = cached.Count, items = cached });
 
@@ -1249,7 +1272,8 @@ app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCac
                 && gl.GetString() is string gls
                 && CatalogGenres.TryGetValue(gls, out var mapped)) g = mapped;
 
-            items.Add(new CatalogItem(title, year, img, q, g));
+            var trailer = PreviewHref(e);
+            items.Add(new CatalogItem(title, year, img, q, g, trailer.Length > 0 ? trailer : null));
         }
 
         if (items.Count == 0)
@@ -2117,8 +2141,9 @@ app.MapGet("/api/version", (HttpContext ctx) =>
 app.Run();
 
 record ThumbResult(string Thumbnail, string Title, string Url);
-// Položka katalogu pro homepage (iTunes RSS): t=název, y=rok, img=plakát, q=hledací výraz, g=žánry
-record CatalogItem(string T, string Y, string Img, string Q, string[] G);
+// Položka katalogu pro homepage (iTunes RSS): t=název, y=rok, img=plakát, q=hledací výraz, g=žánry,
+// trailer=odkaz na oficiální upoutávku z iTunes (může chybět)
+record CatalogItem(string T, string Y, string Img, string Q, string[] G, string? Trailer = null);
 
 // Alts = záložní streamy z iptv-org API (když playlist URL nefunguje, klient zkusí další).
 record LiveChannel(string Name, string Group, string Logo, string Url, string Id, string Ua, string Referrer, string Quality, string[] Tags, IptvAlt[] Alts, int Pop = 0);
