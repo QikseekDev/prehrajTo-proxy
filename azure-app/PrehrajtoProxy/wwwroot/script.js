@@ -1761,7 +1761,6 @@
             const list = Array.isArray(sources) && sources.length ? sources : MERGE_SOURCES_LINE1;
             const catItem = CATALOG.find(m => m.q === query);
             const seen = new Set();
-            const seenTitles = new Set();
             let answered = 0;
             let okCount = 0;
             let paintQueued = false;
@@ -1790,10 +1789,8 @@
                         okCount++;
                         data.movies.forEach(movie => {
                             const key = movieDedupeKey(movie);
-                            const title = movieDedupeTitle(movie);
-                            if (seen.has(key) || (title && seenTitles.has(title))) return;
+                            if (seen.has(key)) return;
                             seen.add(key);
-                            if (title) seenTitles.add(title);
                             currentResults.push(movie);
                         });
                         queuePaint();
