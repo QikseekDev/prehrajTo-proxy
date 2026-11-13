@@ -265,7 +265,7 @@ patřit nemá. Bez něj `/admin` i celá `/api/admin` vrací `503`.
 | Stahování | `/api/stream?download=1` → `403`; přehrávání přes server funguje dál |
 | Živé vysílání | `/api/live`, `/api/live/countries`, `/api/live/hls` → `503` |
 | HLS relay | jen `/api/live/hls` (seznam kanálů a přímé přehrávání zůstávají) |
-| Více výsledků | `source=all` degraduje na jeden zapnutý zdroj |
+| Více výsledků | `source=all` degraduje na první linii (`line1`) |
 | Náhledy z iTunes | katalog a plakáty z prehraj.to fungují dál |
 
 **Zdroje** – zapnout/vypnout `prehraj.to`, `sledujteto.cz`, `bombuj.si`, `hellspy.to`,
@@ -352,7 +352,7 @@ ASP.NET Core 9.0 aplikace hostovaná na Azure App Service.
     automaticky zkusí `sledujteto` jako fallback a výsledky se sloučí s deduplikací (vypne se `fallback=0`).
     `all` (aliasy `merge`/`both`, experimentální) hledá na `prehraj.to`, `sledujteto`, `bombuj`, `hellspy`, `fastshare`
     a `sdilej` současně (PHP je pouští přes `curl_multi`) a výsledky sloučí s deduplikací. Když jeden zdroj selže, pokračuje se s ostatními; chyba se vrátí jen když selžou všechny.
-    Ve web UI jde zapnout volitelně v Nastavení → Vyhledávání („Více výsledků“).
+    Ve web UI je výchozí vyhledávání „první linie“ (Prehraj.to, HellSpy, FastShare, Sdílej bez Bombuj a Sledujteto); volba „Více výsledků“ v Nastavení přidá i Bombuj a Sledujteto.
     `bombuj` hledá přes `bombuj.si` (autocomplete endpoint z `uvod.php`, dynamicky zjištěný).
     `sledujteto` zkouší API endpointy `https://www.sledujteto.cz/api/web/videos` / `https://sledujteto.cz/api/web/videos`
     (primárně) a `old.sledujteto.cz` jako zálohu, s `page`/`query`/`limit`/`sort=relevance`; běží přes PHP proxy

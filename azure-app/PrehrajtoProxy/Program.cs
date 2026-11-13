@@ -477,10 +477,14 @@ static bool IsAllowedSourcePageUrl(string u) =>
     && (x.Scheme == Uri.UriSchemeHttp || x.Scheme == Uri.UriSchemeHttps)
     && IsAllowedHost(x.Host, "prehraj.to", "bombuj.si", "sledujteto.cz", "hellspy.to", "fastshare.cz", "fastshare.cloud", "sdilej.cz");
 
+// Zdroje "první linie": rychlé výchozí hledání bez bombuj a sledujteto.
+string[] Line1Sources = { "prehrajto", "hellspy", "fastshare", "sdilej" };
+
 static string NormalizeSource(string? s)
 {
-    s = (s ?? "prehrajto").Trim().ToLowerInvariant();
-    return s switch
+    var raw = (s ?? "").Trim().ToLowerInvariant();
+    if (raw.Length == 0) return "line1";
+    return raw switch
     {
         "prehraj" or "prehrajto" or "prehraj.to" => "prehrajto",
         "bombuj" or "bombuj.si" => "bombuj",
@@ -488,6 +492,7 @@ static string NormalizeSource(string? s)
         "hellspy" or "hellspy.to" => "hellspy",
         "fastshare" or "fastshare.cz" or "fastshare.cloud" => "fastshare",
         "sdilej" or "sdilej.cz" => "sdilej",
+        "line1" or "first" or "default" or "defaultline" => "line1",
         "all" or "merge" or "both" or "prehrajto+sledujteto" => "all",
         _ => "prehrajto"
     };
@@ -953,11 +958,28 @@ app.MapGet("/api/search", async (string q, int? page, string? source, string[]? 
     var pg = Math.Clamp(page.GetValueOrDefault(1), 1, Math.Clamp(st.Sources.MaxPage, 1, 50));
     var src = NormalizeSource(source);
 
-    // Vypnutý zdroj se neobsluhuje. "Vše najednou" (source=all) se při vypnutém mergi nebo
-    // chybějícím zdroji degraduje na jeden zapnutý - jinak by source=all vypnuté zdroje stejně obeslal.
-    if (src == "all" && (!st.Flags.MergeSources || st.Sources.Enabled().Length < 3))
-        src = st.Sources.Enabled().FirstOrDefault() ?? "prehrajto";
-    if (!st.Sources.IsEnabled(src))
+    // Složené režimy: line1 = výchozí první linie (bez bombuj/sledujteto), all = všechny zdroje.
+    // "all" je navázané na přepínač MergeSources; "line1" je výchozí vyhledávání.
+    string[]? mergeOnly = null;
+    if (src == "all")
+    {
+        if (!st.Flags.MergeSources)
+            src = "line1"; // merge vypnutý -> použít jen první linii
+        else
+            mergeOnly = st.Sources.Enabled();
+    }
+    if (src == "line1")
+        mergeOnly = Line1Sources.Where(s => st.Sources.IsEnabled(s)).ToArray();
+
+    // Složený režim s méně než 2 zdroji nemá smysl slévat - degraduj na jeden zapnutý.
+    if (mergeOnly != null && mergeOnly.Length < 2)
+    {
+        src = mergeOnly.FirstOrDefault() ?? st.Sources.Enabled().FirstOrDefault() ?? "prehrajto";
+        mergeOnly = null;
+    }
+
+    var isMerge = mergeOnly != null;
+    if (!isMerge && !st.Sources.IsEnabled(src))
         return Results.Json(new
         {
             success = false,
@@ -968,8 +990,11 @@ app.MapGet("/api/search", async (string q, int? page, string? source, string[]? 
 
     // Jen PHP proxy servery, zkoušené postupně - na prehraj.to přímo se nikdy nechodí (datacentrová IP
     // dostane captcha a přímá cesta by přebila výsledky z proxy nulovým počtem).
-    var query = $"action=search&q={Uri.EscapeDataString(q)}&source={Uri.EscapeDataString(src)}" + (pg > 1 ? $"&page={pg}" : "")
-                + (src == "all" ? "&only=" + Uri.EscapeDataString(string.Join(",", st.Sources.Enabled())) : "")
+    // Složené režimy jdou na PHP jako source=all s explicitním seznamem &only=.
+    var proxySource = isMerge ? "all" : src;
+    var onlyParam = isMerge ? string.Join(",", mergeOnly!) : "";
+    var query = $"action=search&q={Uri.EscapeDataString(q)}&source={Uri.EscapeDataString(proxySource)}" + (pg > 1 ? $"&page={pg}" : "")
+                + (isMerge ? "&only=" + Uri.EscapeDataString(onlyParam) : "")
                 + (st.Sources.Fallback ? "" : "&fallback=0");
     var proxies = EffectiveProxies(proxy, proxyPool.Current);
     var sources = OrderedProxies(proxies)
@@ -980,7 +1005,7 @@ app.MapGet("/api/search", async (string q, int? page, string? source, string[]? 
     // se kvůli tomu cache pro běžné diváky vůbec nepoužila a každé hledání šlo na prehraj.to.
     // Stejný dotaz teď obslouží všechny uživatele a při 429 se vrátí i starší uložená odpověď.
     var norm = Regex.Replace(q.ToLowerInvariant(), @"\s+", " ");
-    var cacheKey = "search:" + src + ":" + CacheScope(proxies) + ":" + norm + (pg > 1 ? ":" + pg : "")
+    var cacheKey = "search:" + src + (isMerge ? ":" + onlyParam : "") + ":" + CacheScope(proxies) + ":" + norm + (pg > 1 ? ":" + pg : "")
                    + (st.Sources.Fallback ? "" : ":nofb");
     var (ok, body, errors) = norm.Length <= 100
         ? await CachedFetch(cache, cacheKey, "search", SearchTtl, () => PacedFirstWorking(sources))

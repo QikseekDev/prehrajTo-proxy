@@ -1454,28 +1454,8 @@
             resultsLoading(`Hledám „${query}" …`);
 
             try {
-                if (settings.searchMerge) {
-                    await searchMerged(query);
-                } else {
-                    const { response, data, rateLimited } = await apiJson(
-                        `/api/search?q=${encodeURIComponent(query)}${proxyQS()}`,
-                        { onWait: resultsRateLimited, onRetry: () => resultsLoading(`Hledám „${query}" …`) });
-
-                    if (rateLimited) {
-                        resultsError('Server pořád hlásí příliš mnoho dotazů. Zkus to prosím za chvilku znovu.');
-                    } else if (!data) {
-                        resultsError(`Server nevrátil platnou odpověď (HTTP ${response.status}).`);
-                    } else if (data.success && data.movies && data.movies.length > 0) {
-                        const catItem = CATALOG.find(m => m.q === query);
-                        if (catItem) data.movies = rankMovies(catItem, data.movies);
-                        currentResults = data.movies;
-                        displayResults(data.movies, query);
-                    } else if (data.success) {
-                        resultsEmpty(`Nic jsme nenašli pro „${query}". Zkus jiný název nebo jiný pravopis.`, query);
-                    } else {
-                        resultsError(data.error || 'Chyba při vyhledávání.');
-                    }
-                }
+                const sources = settings.searchMerge ? MERGE_SOURCES_ALL : MERGE_SOURCES_LINE1;
+                await searchMerged(query, sources);
             } catch (error) {
                 console.error('Search error:', error);
                 resultsError(`Chyba připojení: ${error.message}`);
@@ -1622,7 +1602,7 @@
                     if (st.pages >= SERIES_MAX_PAGES) { st.done = true; break; }
 
                     const page = st.pages + 1;
-                    const searchSourceQS = settings.searchMerge ? '&source=all' : '';
+                    const searchSourceQS = settings.searchMerge ? '&source=all' : '&source=line1';
                     const { data, rateLimited } = await apiJson(
                         `/api/search?q=${encodeURIComponent(lastQuery)}&page=${page}${proxyQS()}${searchSourceQS}`,
                         { retries: 1 });
@@ -1759,10 +1739,9 @@
             toggleFavorite(favItemFromEl(fav));
         }, true);
 
-        // Vrstva jedna: všech šest zdrojů se ptá souběžně a karty se dokreslují, jak odpovědi
-        // přicházejí. Když zdroj selže (429, výpadek, vypnutý v adminu), jeho odpověď se zahodí
-        // a ostatní pokračují - hledání kvůli jednomu zdroji nespadne.
-        const MERGE_SOURCES = ['prehrajto', 'sledujteto', 'bombuj', 'hellspy', 'fastshare', 'sdilej'];
+        // Výchozí první linie (bez bombuj a sledujteto); „Více výsledků“ přidá i tyto zdroje.
+        const MERGE_SOURCES_LINE1 = ['prehrajto', 'hellspy', 'fastshare', 'sdilej'];
+        const MERGE_SOURCES_ALL = ['prehrajto', 'sledujteto', 'bombuj', 'hellspy', 'fastshare', 'sdilej'];
 
         function movieDedupeKey(m) {
             const url = String((m && m.url) || '');
@@ -1778,7 +1757,8 @@
                 .toLowerCase();
         }
 
-        async function searchMerged(query) {
+        async function searchMerged(query, sources) {
+            const list = Array.isArray(sources) && sources.length ? sources : MERGE_SOURCES_LINE1;
             const catItem = CATALOG.find(m => m.q === query);
             const seen = new Set();
             const seenTitles = new Set();
@@ -1791,7 +1771,7 @@
                 if (!currentResults.length) return;
                 const movies = catItem ? rankMovies(catItem, currentResults.slice()) : currentResults.slice();
                 displayResults(movies, query);
-                const left = MERGE_SOURCES.length - answered;
+                const left = list.length - answered;
                 if (left > 0) resultsInfo.textContent += ` · načítám další zdroje (${left})…`;
             };
 
@@ -1801,7 +1781,7 @@
                 requestAnimationFrame(paint);
             };
 
-            await Promise.all(MERGE_SOURCES.map(async (src) => {
+            await Promise.all(list.map(async (src) => {
                 try {
                     const { data } = await apiJson(
                         `/api/search?q=${encodeURIComponent(query)}&source=${encodeURIComponent(src)}${proxyQS()}`,
@@ -3410,7 +3390,7 @@
                         <label for="searchMergeToggle">Více výsledků</label>
                         <label class="switch"><input type="checkbox" id="searchMergeToggle"><span></span></label>
                     </div>
-                    <div class="set-hint">Vypnuto (výchozí): hledá se na Prehraj.to a Sledujteto se použije jen jako záloha při chybě nebo prázdném výsledku. Zapnuto (experimentální): hledá se na Prehraj.to, Sledujteto a Bombuj najednou a výsledky se sloučí bez duplicit. Když jeden zdroj selže, použijí se ostatní; chyba se zobrazí jen když selžou všechny.</div>
+                    <div class="set-hint">Vypnuto (výchozí): hledá se na Prehraj.to, HellSpy, FastShare a Sdílej najednou (bez Bombuj a Sledujteto). Zapnuto: přidají se i Bombuj a Sledujteto. Když jeden zdroj selže, použijí se ostatní; chyba se zobrazí jen když selžou všechny.</div>
 
                     <h2>Titulky</h2>
                     <div class="set-row">

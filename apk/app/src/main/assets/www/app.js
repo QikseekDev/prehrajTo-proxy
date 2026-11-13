@@ -80,7 +80,7 @@
     live: 'cz',        // výchozí zdroj živého vysílání
     subSize: 'm',      // velikost titulků (m | l | xl)
     subBg: 'dark',     // pozadí titulků (dark | light | none)
-    searchMerge: false // Experimental: Více výsledků (source=all), tolerantní k výpadku zdroje
+    searchMerge: false // Výchozí: první linie (bez bombuj/sledujteto); zapnuto = všechny zdroje
   };
 
   function loadSettings() {
@@ -1454,7 +1454,7 @@
     st.className = 'state show';
     st.textContent = 'Hledám „' + q + '“ …';
     if (!quiet) loading('Hledám „' + q + '“ …');
-    return apiJson('/api/search?q=' + encodeURIComponent(q) + (settings.searchMerge ? '&source=all' : '')).then(function (d) {
+    return apiJson('/api/search?q=' + encodeURIComponent(q) + (settings.searchMerge ? '&source=all' : '&source=line1')).then(function (d) {
       if (!quiet) loading(null);
       if (token !== searchToken) return;          // mezitím se psalo dál
       if (!d) { showStateError(st, 'Server nevrátil platnou odpověď.'); return; }
@@ -1809,7 +1809,7 @@
     if (token !== seriesToken || !state.series) return;
     if (page > SERIES_MAX_PAGES) { setSeriesNote(null); return; }
     setSeriesNote('Načítám další díly…');
-    apiJson('/api/search?q=' + encodeURIComponent(state.seriesQuery) + '&page=' + page + (settings.searchMerge ? '&source=all' : '')).then(function (d) {
+    apiJson('/api/search?q=' + encodeURIComponent(state.seriesQuery) + '&page=' + page + (settings.searchMerge ? '&source=all' : '&source=line1')).then(function (d) {
       if (token !== seriesToken || !state.series) return;
       var movies = (d && d.success && d.movies) ? d.movies : [];
       if (!movies.length) { setSeriesNote('Další díly už nejsou.'); return; }
@@ -1915,7 +1915,7 @@
     var seriesFirst = !!(opts && opts.seriesFirst);
     var fromLibrary = !!(opts && opts.from === 'library');
     loading('Hledám „' + q + '“ …');
-    apiJson('/api/search?q=' + encodeURIComponent(q) + (settings.searchMerge ? '&source=all' : '')).then(function (d) {
+    apiJson('/api/search?q=' + encodeURIComponent(q) + (settings.searchMerge ? '&source=all' : '&source=line1')).then(function (d) {
       loading(null);
       if (!d || !d.success || !(d.movies || []).length) {
         toast('Pro „' + q + '“ prehraj.to nic nenašel.');
@@ -2732,7 +2732,7 @@
       + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setDirect">' + (settings.direct ? 'Zapnuto' : 'Vypnuto') + '</button></div>'
       + '</div>'
       + '<div class="set-row">'
-      + '  <div class="lab"><b>Více výsledků</b><span>Experimentální: hledá na Prehraj.to, Sledujteto a Bombuj najednou. Když jeden zdroj selže, použijí se ostatní; chyba jen když selžou všechny.</span></div>'
+      + '  <div class="lab"><b>Více výsledků</b><span>Vypnuto: hledá na Prehraj.to, HellSpy, FastShare a Sdílej (bez Bombuj a Sledujteto). Zapnuto: přidá i Bombuj a Sledujteto. Když jeden zdroj selže, použijí se ostatní.</span></div>'
       + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setSearchMerge">' + (settings.searchMerge ? 'Zapnuto' : 'Vypnuto') + '</button></div>'
       + '</div>'
       + '<div class="set-row">'

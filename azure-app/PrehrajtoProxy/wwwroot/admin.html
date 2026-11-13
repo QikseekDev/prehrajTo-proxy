@@ -475,7 +475,7 @@
                 <label class="check"><input type="checkbox" id="fDownloads"><span>Stahování<span class="hint">/api/stream?download=1 → 403. Přehrávání zůstává funkční.</span></span></label>
                 <label class="check"><input type="checkbox" id="fLive"><span>Živé vysílání<span class="hint">/api/live a /api/live/hls → 503.</span></span></label>
                 <label class="check"><input type="checkbox" id="fLiveRelay"><span>HLS relay<span class="hint">Jen relay; seznam kanálů a přímé přehrávání zůstávají.</span></span></label>
-                <label class="check"><input type="checkbox" id="fMerge"><span>Více výsledků (source=all)<span class="hint">Vypnuto → hledá se jen jeden zapnutý zdroj.</span></span></label>
+                <label class="check"><input type="checkbox" id="fMerge"><span>Více výsledků (source=all)<span class="hint">Vypnuto → hledá se jen první linie (bez Bombuj a Sledujteto).</span></span></label>
                 <label class="check"><input type="checkbox" id="fItunes"><span>Náhledy z iTunes<span class="hint">Katalog a plakáty z prehraj.to fungují dál.</span></span></label>
               </div>
             </div>
@@ -543,8 +543,8 @@
               <div class="grid">
                 <label class="check"><input type="checkbox" id="sPrehrajto"><span>prehraj.to<span class="hint">Výchozí zdroj, citlivější na rate limit.</span></span></label>
                 <label class="check"><input type="checkbox" id="sSledujteto"><span>sledujteto.cz<span class="hint">Fallback při prázdném výsledku nebo chybě.</span></span></label>
-                <label class="check"><input type="checkbox" id="sBombuj"><span>bombuj.si<span class="hint">Využitý zejména v režimu „Více výsledků“.</span></span></label>
-                <label class="check"><input type="checkbox" id="sHellspy"><span>hellspy.to<span class="hint">Veřejné api.hellspy.to/gw/, bez účtu. Účastní se „Více výsledků“.</span></span></label>
+                <label class="check"><input type="checkbox" id="sBombuj"><span>bombuj.si<span class="hint">Přidává se v režimu „Více výsledků“ (mimo první linii).</span></span></label>
+                <label class="check"><input type="checkbox" id="sHellspy"><span>hellspy.to<span class="hint">Veřejné api.hellspy.to/gw/, bez účtu. Součást první linie i „Více výsledků“.</span></span></label>
                 <label class="check"><input type="checkbox" id="sFastshare"><span>fastshare.cz<span class="hint">Veřejné hledání přes api_kodi.php, bez účtu.</span></span></label>
                 <label class="check"><input type="checkbox" id="sSdilej"><span>sdilej.cz<span class="hint">Stejné api_kodi.php jako FastShare (společný katalog).</span></span></label>
                 <label class="check"><input type="checkbox" id="sFallback"><span>Automatický fallback<span class="hint">prehrajto → sledujteto při chybě nebo prázdném výsledku.</span></span></label>
