@@ -959,21 +959,10 @@
         // k titulu server poslal (iTunes "Preview"). Do té doby se nic nestahuje.
         // Video leží přesně tam, kde je teď plakát, a plakát zůstává pod ním jako záloha.
         // Bez tlačítka: prohlížeč zvuk bez gesta většinou blokuje, takže se zkusí pustit
-        // se zvukem a při blokaci se tiše spadne na ztlumené přehrání; po prvním kliknutí/
-        // dotyku/klávese uživatele se běžící trailer odtlumí.
+        // se zvukem a při blokaci se tiše spadne na ztlumené přehrání.
+        // Jakákoli interakce uživatele (klik, klávesa, dotyk, scroll, přepnutí) trailer navždy zastaví.
         const HERO_TRAILER_AFTER = 4000;
-        const heroTrailer = { io: null, timer: 0, video: null, sound: false, expandTimer: 0, expanded: false };
-
-        function unmuteHeroTrailer() {
-            heroTrailer.sound = true;
-            const v = heroTrailer.video;
-            if (!v) return;
-            v.muted = false;
-            v.removeAttribute('muted');
-            v.volume = 1;
-        }
-        ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
-            document.addEventListener(ev, unmuteHeroTrailer, { passive: true }));
+        const heroTrailer = { io: null, timer: 0, video: null, blocked: false, expandTimer: 0, expanded: false };
 
         function collapseHeroTrailer() {
             clearTimeout(heroTrailer.expandTimer);
@@ -998,8 +987,20 @@
             v.remove();
         }
 
+        // Jakákoli interakce uživatele trailer zastaví (a už ho znovu nespustí pro tento tip).
+        function userStopHeroTrailer() {
+            if (heroTrailer.blocked && !heroTrailer.video && !heroTrailer.timer) return;
+            heroTrailer.blocked = true;
+            stopHeroTrailer();
+        }
+        ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(ev =>
+            document.addEventListener(ev, userStopHeroTrailer, { passive: true, capture: true }));
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) userStopHeroTrailer();
+        });
+
         function playHeroTrailer(heroEl, url) {
-            if (!url || !heroEl.isConnected || heroTrailer.video) return;
+            if (heroTrailer.blocked || !url || !heroEl.isConnected || heroTrailer.video) return;
             const v = document.createElement('video');
             v.className = 'hero-video';
             // pro autoplay začít vždy ztlumeně, zvuk se případně pustí hned po startu/gestu
@@ -1040,20 +1041,14 @@
             };
             v.addEventListener('playing', reveal, { once: true });
             const tryPlay = () => {
-                if (!v.isConnected) return;
-                // zvuk jen když už proběhlo gesto, jinak jistota ztlumeného autoplaye
-                if (heroTrailer.sound) {
-                    v.muted = false;
-                    v.removeAttribute('muted');
-                    v.volume = 1;
-                } else {
-                    v.muted = true;
-                    v.setAttribute('muted', '');
-                }
+                if (!v.isConnected || heroTrailer.blocked) return;
+                // zkusit se zvukem; prohlížeč bez gesta většinou zablokuje -> spadnout na ztlumené
+                v.muted = false;
+                v.removeAttribute('muted');
+                v.volume = 1;
                 const p = v.play();
                 if (p && p.catch) p.catch(() => {
-                    if (!v.isConnected) return;
-                    // se zvukem to prohlížeč zablokoval -> spadnout na ztlumené přehrání
+                    if (!v.isConnected || heroTrailer.blocked) return;
                     if (!v.muted) {
                         v.muted = true;
                         v.setAttribute('muted', '');
@@ -1061,7 +1056,6 @@
                         if (q && q.catch) q.catch(() => {});
                         return;
                     }
-                    // ani ztlumené se nepustilo -> raději zůstat na plakátu
                     stopHeroTrailer();
                 });
             };
@@ -1076,7 +1070,7 @@
 
         function armHeroTrailer(heroEl, m) {
             const url = m && m.trailer;
-            if (!url || !heroEl) return;
+            if (heroTrailer.blocked || !url || !heroEl) return;
             // Datová úspora v prohlížeči = billboard zůstane u plakátu.
             if (navigator.connection && navigator.connection.saveData) return;
 
@@ -1089,9 +1083,9 @@
             };
 
             const tryStartTimer = () => {
+                if (heroTrailer.blocked) return;
                 const v = heroTrailer.video;
-                if (v) {   // už načtený: po návratu nahoru jen pokračovat (případně se zvukem)
-                    if (heroTrailer.sound && v.muted) { v.muted = false; v.removeAttribute('muted'); v.volume = 1; }
+                if (v) {   // už načtený: po návratu nahoru jen pokračovat
                     if (v.paused && v.readyState >= 2) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
                     return;
                 }
@@ -1103,7 +1097,7 @@
                 if (heroTrailer.timer) return;
                 heroTrailer.timer = setTimeout(() => {
                     heroTrailer.timer = 0;
-                    if (!heroTrailer.video && heroEl.isConnected && isVisibleEnough()) playHeroTrailer(heroEl, url);
+                    if (!heroTrailer.blocked && !heroTrailer.video && heroEl.isConnected && isVisibleEnough()) playHeroTrailer(heroEl, url);
                 }, HERO_TRAILER_AFTER);
             };
 
@@ -1146,6 +1140,7 @@
         function renderHero() {
             const m = heroPick();
             if (!m) return;
+            heroTrailer.blocked = false; // nový tip = nový pokus o trailer
             stopHeroTrailer();   // jiný tip / nový katalog = starý trailer i časovač pryč
             document.getElementById('hero').innerHTML = `
                 <div class="hero" style="--hero-bg:${posterGradient(m.t)}">
@@ -1471,6 +1466,8 @@
             pageSection.style.display = 'none';
             liveSection.style.display = 'none';
             livePlayerSection.style.display = 'none';
+            // trailer v billboardu nesmí hrát mimo domovskou sekci / po přepnutí
+            if (section !== 'placeholder') userStopHeroTrailer();
             // živé vysílání nesmí hrát na pozadí, když se přepne jinam
             if (section !== 'livePlayer') stopLive();
             liveBtn.classList.toggle('active', section === 'live' || section === 'livePlayer');
