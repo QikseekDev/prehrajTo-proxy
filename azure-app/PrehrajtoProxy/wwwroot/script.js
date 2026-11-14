@@ -3155,6 +3155,14 @@
                 // HEVC (H.265) v M2TS hls.js nepřehraje v žádném prohlížeči - nemá smysl
                 // zkoušet jinou adresu ani server, řekneme to rovnou.
                 if (typeof data.reason === 'string' && /HEVC/i.test(data.reason)) {
+                    // Záložní adresa z iptv-org bývá v H.264, takže se zkusí dřív než to vzdáme.
+                    const h264Alt = nextAltUrl();
+                    if (h264Alt) {
+                        showLiveError('Zkouším záložní adresu kanálu…');
+                        hls.loadSource(h264Alt);
+                        hls.startLoad();
+                        return;
+                    }
                     showLiveError('Kanál vysílá v HEVC (H.265), který prohlížeč přehrát neumí. Zkus jiný kanál.');
                     hls.destroy();
                     if (liveHls === hls) liveHls = null;
