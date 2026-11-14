@@ -15,6 +15,7 @@
         const liveState = document.getElementById('liveState');
         const liveSource = document.getElementById('liveSource');
         const liveFilter = document.getElementById('liveFilter');
+        const liveCard = document.getElementById('liveCard');
         const liveVideo = document.getElementById('liveVideo');
         const liveNow = document.getElementById('liveNow');
         const liveError = document.getElementById('liveError');
@@ -2670,7 +2671,7 @@
         function liveWarmOne(key) {
             if (!key || liveWarmBusy || liveWarmData(key)) return Promise.resolve();
             liveWarmBusy = true;
-            return fetch('/api/live?' + key + '&epg=1', { cache: 'no-store' })
+            return fetch('/api/live?' + key + '&epg=1&desc=1', { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
                 .then(d => {
                     if (d && d.success && Array.isArray(d.channels) && d.channels.length) liveWarm = { key, data: d, t: Date.now() };
@@ -2709,7 +2710,8 @@
             try {
                 // epg=1: server ke kanálům přidá program pro časovou osu a sám je spáruje
                 // s průvodcem, takže prohlížeč nemusí znát žádná pravidla párování.
-                const r = await fetch('/api/live?' + liveQuery() + '&epg=1');
+                // epg=1 = program na osu, desc=1 = popis pořadu do karty nad průvodcem.
+                const r = await fetch('/api/live?' + liveQuery() + '&epg=1&desc=1');
                 const d = await r.json();
                 if (!d.success) throw new Error(d.error || 'Seznam kanálů se nepodařilo načíst');
                 applyLive(d);
@@ -2750,16 +2752,123 @@
             const list = liveGuide[channel.name];
             if (!Array.isArray(list)) return [];
             const out = [];
-            for (const p of list) {
+            for (let idx = 0; idx < list.length; idx++) {
+                const p = list[idx];
                 const from = lgOffset(p.s);
                 const to = lgOffset(p.e);
                 if (from == null || to == null || to <= from) continue;
                 const a = Math.max(0, from);
                 const b = Math.min(LG_DAY, to);
                 if (b - a < 1) continue;
-                out.push({ title: p.t || 'Bez názvu', from, to, a, b });
+                out.push({ i: idx, title: p.t || 'Bez názvu', from, to, a, b });
             }
             return out;
+        }
+
+        // ===== Karta o pořadu nad průvodcem =====
+        // Přepíná se podle toho, co má divák pod myší nebo na čem stojí Tabem, ale
+        // až po chvíli - rychlý přejezd myší přes průvodce nic nemění. Když se
+        // popis nevejde (tři tečky na konci), klik na kartu ho rozbalí celý.
+        const LIVE_CARD_DELAY = 1100;
+        let liveCardTimer = 0;
+
+        function liveCardClock(v) {
+            const d = new Date(v);
+            if (Number.isNaN(d.getTime())) return '--:--';
+            return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+        }
+
+        function liveCardTarget(el) {
+            if (!el || !el.dataset) return null;
+            const ch = liveChannels[Number(el.dataset.live)];
+            if (!ch) return null;
+            const pg = el.dataset.pg;
+            return { ch, pg: pg === undefined ? null : Number(pg) };
+        }
+
+        function liveCardSchedule(ch, pg) {
+            clearTimeout(liveCardTimer);
+            liveCardTimer = setTimeout(() => renderLiveCard(ch, pg), LIVE_CARD_DELAY);
+        }
+
+        function liveCardCancel() { clearTimeout(liveCardTimer); }
+
+        function renderLiveCard(channel, progIndex) {
+            if (!liveCard || !channel) return;
+            const list = Array.isArray(liveGuide[channel.name]) ? liveGuide[channel.name] : [];
+            const now = Date.now();
+            let p = (progIndex != null && list[progIndex]) ? list[progIndex] : null;
+            if (!p) {
+                for (const item of list) {
+                    const s = new Date(item.s).getTime(), e = new Date(item.e).getTime();
+                    if (s <= now && now < e) { p = item; break; }
+                }
+            }
+
+            const head = `<span class="lg-logo pcard-logo">`
+                + (channel.logo ? `<img src="${escapeHtml(channel.logo)}" data-u="${escapeHtml(channel.logo)}" alt="" crossorigin="anonymous" referrerpolicy="no-referrer">` : '')
+                + `<span class="lg-init">${escapeHtml(initials(channel.name))}</span></span>`
+                + `<div class="pcard-main"><div class="pcard-head">`
+                + `<span class="pcard-chan">${escapeHtml(channel.name)}</span>`;
+
+            liveCard.classList.remove('expanded', 'is-clamped');
+            liveCard.removeAttribute('role');
+            liveCard.removeAttribute('tabindex');
+            liveCard.removeAttribute('aria-label');
+
+            if (!p) {
+                liveCard.innerHTML = head
+                    + `</div><h3 class="pcard-title muted">Data o programu nejsou k dispozici</h3>`
+                    + `<div class="pcard-next">Kanál jde přehrát živě.</div></div>`;
+                liveCard.hidden = false;
+                livePaintLogos(liveCard);
+                return;
+            }
+
+            const s = new Date(p.s).getTime(), e = new Date(p.e).getTime();
+            const total = Math.max(60000, e - s);
+            const mins = Math.max(1, Math.round(total / 60000));
+            const running = s <= now && now < e;
+            let badge, note;
+            if (running) {
+                badge = '<span class="pcard-badge now">Teď</span>';
+                note = 'zbývá ' + Math.max(1, Math.round((e - now) / 60000)) + ' min';
+            } else if (s > now) {
+                badge = `<span class="pcard-badge">Za ${Math.max(1, Math.round((s - now) / 60000))} min</span>`;
+                note = mins + ' min';
+            } else {
+                badge = '<span class="pcard-badge">Odvysíláno</span>';
+                note = 'skončilo ' + liveCardClock(p.e) + ' · ' + mins + ' min';
+            }
+
+            let next = null;
+            for (const item of list) {
+                const ns = new Date(item.s).getTime();
+                if (ns < e) continue;
+                if (!next || ns < new Date(next.s).getTime()) next = item;
+            }
+
+            const pct = running ? Math.min(100, Math.max(0, Math.round((now - s) / total * 100))) : 0;
+            liveCard.innerHTML = head
+                + badge
+                + `<span class="pcard-time">${liveCardClock(p.s)}–${liveCardClock(p.e)}</span>`
+                + `<span class="pcard-note">${escapeHtml(note)}</span>`
+                + `</div><h3 class="pcard-title">${escapeHtml(p.t || 'Bez názvu')}</h3>`
+                + (running ? `<div class="pcard-bar"><i style="width:${pct}%"></i></div>` : '')
+                + (p.d ? `<p class="pcard-desc">${escapeHtml(p.d)}</p>` : '')
+                + (next ? `<div class="pcard-next">Následuje ${liveCardClock(next.s)}–${liveCardClock(next.e)} · ${escapeHtml(next.t || 'Bez názvu')}</div>` : '')
+                + '</div>';
+            liveCard.hidden = false;
+            livePaintLogos(liveCard);
+
+            // Tři tečky na konci = popis se do řádků nevešel; klik ho rozbalí celý.
+            const desc = liveCard.querySelector('.pcard-desc');
+            if (desc && desc.scrollHeight > desc.clientHeight + 1) {
+                liveCard.classList.add('is-clamped');
+                liveCard.setAttribute('role', 'button');
+                liveCard.setAttribute('tabindex', '0');
+                liveCard.setAttribute('aria-label', 'Zobrazit celý popis pořadu');
+            }
         }
 
         function renderLive(reset) {
@@ -2779,7 +2888,7 @@
             liveState.className = 'results-state' + (items.length ? '' : ' show empty');
             liveState.innerHTML = items.length ? '' : '<span class="state-text">Takový kanál tu není. Zkus jiný název nebo jiný zdroj.</span>';
             liveGrid.hidden = items.length === 0;
-            if (!items.length) { liveGrid.innerHTML = ''; return; }
+            if (!items.length) { liveGrid.innerHTML = ''; if (liveCard) liveCard.hidden = true; return; }
 
             if (!lgDayStart) {
                 const day = new Date();
@@ -2802,7 +2911,7 @@
                         const running = p.from <= nowMin && nowMin < p.to;
                         const state = running ? 'run' : p.to <= nowMin ? 'past' : 'fut';
                         const done = running ? Math.round((nowMin - p.from) / (p.to - p.from) * 100) : 0;
-                        return `<button type="button" class="lg-pg ${state}" data-live="${i}"
+                        return `<button type="button" class="lg-pg ${state}" data-live="${i}" data-pg="${p.i}"
                             style="left:${p.a * LG_PPM}px;width:${Math.max(16, (p.b - p.a) * LG_PPM - 2)}px"
                             title="${escapeHtml(p.title)} · ${lgTime(p.from)}–${lgTime(p.to)}"><b>${escapeHtml(p.title)}</b><small>${lgTime(p.from)}–${lgTime(p.to)}</small>${done ? `<i class="lg-prog" style="width:${Math.min(100, done)}%"></i>` : ''}</button>`;
                     }).join('')
@@ -2829,6 +2938,8 @@
                 + (rest ? `<button type="button" class="live-more" id="liveMore">Zobrazit další (${rest})</button>` : '');
 
             livePaintLogos(liveGrid);
+            // Výchozí stav karty: pořad, který právě běží na prvním kanálu seznamu.
+            if (reset && items.length) renderLiveCard(items[0].c, null);
 
             if (reset) {
                 // Až po layoutu: v tu chvíli už .lg-scroll zná svou šířku. Když se sekce
@@ -2902,6 +3013,7 @@
             stopLive();
             liveChannel = ch;
             setNowPlayingLive(ch);
+            renderLiveCard(ch, null);
 
             // Kanál, který vyžaduje konkrétní User-Agent nebo Referer (#EXTVLCOPT), prohlížeč
             // napřímo nepřehraje - hlavičky u <video> nastavit nelze. Takový jde vždy přes relay.
@@ -3736,6 +3848,37 @@
             if (!card) return;
             playLive(liveChannels[Number(card.dataset.live)]);
         });
+        // Karta o pořadu: myš i Tab, ale přepne se až po chvíli, aby rychlý
+        // přejezd přes průvodce nic neměnil.
+        const liveCardHover = e => {
+            const el = e.target.closest ? e.target.closest('[data-live]') : null;
+            if (!el || !liveGrid.contains(el)) return;
+            const hit = liveCardTarget(el);
+            if (hit) liveCardSchedule(hit.ch, hit.pg);
+        };
+        liveGrid.addEventListener('mouseover', liveCardHover);
+        liveGrid.addEventListener('focusin', liveCardHover);
+        liveGrid.addEventListener('mouseout', e => {
+            const el = e.target.closest ? e.target.closest('[data-live]') : null;
+            if (!el) return;
+            if (e.relatedTarget && el.contains(e.relatedTarget)) return;
+            liveCardCancel();
+        });
+        if (liveCard) {
+            const liveCardToggle = () => {
+                if (!liveCard.classList.contains('is-clamped')) return;
+                liveCard.classList.toggle('expanded');
+                liveCard.setAttribute('aria-label', liveCard.classList.contains('expanded')
+                    ? 'Skrýt popis pořadu' : 'Zobrazit celý popis pořadu');
+            };
+            liveCard.addEventListener('click', liveCardToggle);
+            liveCard.addEventListener('keydown', e => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                if (!liveCard.classList.contains('is-clamped')) return;
+                e.preventDefault();
+                liveCardToggle();
+            });
+        }
         const liveNowBtn = document.getElementById('liveNowBtn');
         if (liveNowBtn) liveNowBtn.addEventListener('click', () => liveScrollToNow(true));
 

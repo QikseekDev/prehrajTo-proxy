@@ -286,6 +286,15 @@ body.touch .card:active .art{transform:scale(.985)}
   .lc-title{font-size:1rem}
   .lc-desc{font-size:.8rem;-webkit-line-clamp:2}
 }
+/* TV (dálkový ovladač): celá karta i popis větší, čitelné z gauče. */
+body:not(.touch) .live-card{padding:1rem 1.2rem;gap:1.1rem}
+body:not(.touch) .live-card .lc-logo{width:4.4rem;height:3.2rem}
+body:not(.touch) .lc-title{font-size:1.5rem}
+body:not(.touch) .lc-head{font-size:.84rem}
+body:not(.touch) .lc-desc{font-size:1rem;line-height:1.5;-webkit-line-clamp:4;max-width:70rem}
+body:not(.touch) .lc-next{font-size:.86rem}
+/* Mobil: popis pořadu nemá smysl - na dotyku se karta nepřepíná fokusem. */
+body.touch .lc-desc{display:none}
 .live-guide[hidden]{display:none}
 .live-guide{--lg-cw:14rem;--lg-rh:4.4rem;padding:0 var(--gutter) 2.4rem}
 .lg-scroll{overflow:auto;max-height:calc(100vh - 16rem);min-height:14rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);scrollbar-width:none;-ms-overflow-style:none;scroll-behavior:auto}
