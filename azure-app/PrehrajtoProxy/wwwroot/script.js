@@ -2760,7 +2760,8 @@
                 const a = Math.max(0, from);
                 const b = Math.min(LG_DAY, to);
                 if (b - a < 1) continue;
-                out.push({ i: idx, title: p.t || 'Bez názvu', from, to, a, b });
+                out.push({ i: idx, title: p.t || 'Bez názvu', from, to, a, b,
+                    sMs: lgDayStart + from * 60000, eMs: lgDayStart + to * 60000 });
             }
             return out;
         }
@@ -2821,6 +2822,7 @@
                     + `</div><h3 class="pcard-title muted">Data o programu nejsou k dispozici</h3>`
                     + `<div class="pcard-next">Kanál jde přehrát živě.</div></div>`;
                 liveCard.hidden = false;
+                liveCardCurrent = { ch: channel, p: null };
                 livePaintLogos(liveCard);
                 return;
             }
@@ -2851,14 +2853,16 @@
             const pct = running ? Math.min(100, Math.max(0, Math.round((now - s) / total * 100))) : 0;
             liveCard.innerHTML = head
                 + badge
-                + `<span class="pcard-time">${liveCardClock(p.s)}–${liveCardClock(p.e)}</span>`
                 + `<span class="pcard-note">${escapeHtml(note)}</span>`
                 + `</div><h3 class="pcard-title">${escapeHtml(p.t || 'Bez názvu')}</h3>`
-                + (running ? `<div class="pcard-bar"><i style="width:${pct}%"></i></div>` : '')
+                + `<div class="pcard-times"><span class="pcard-time">${liveCardClock(p.s)}</span>`
+                + `<span class="pcard-bar"><i style="width:${pct}%"></i></span>`
+                + `<span class="pcard-time">${liveCardClock(p.e)}</span></div>`
                 + (p.d ? `<p class="pcard-desc">${escapeHtml(p.d)}</p>` : '')
                 + (next ? `<div class="pcard-next">Následuje ${liveCardClock(next.s)}–${liveCardClock(next.e)} · ${escapeHtml(next.t || 'Bez názvu')}</div>` : '')
                 + '</div>';
             liveCard.hidden = false;
+            liveCardCurrent = { ch: channel, p };
             livePaintLogos(liveCard);
 
             // Tři tečky na konci = popis se do řádků nevešel; klik ho rozbalí celý.
@@ -2869,6 +2873,61 @@
                 liveCard.setAttribute('tabindex', '0');
                 liveCard.setAttribute('aria-label', 'Zobrazit celý popis pořadu');
             }
+        }
+
+        // Co karta zrovna ukazuje - podle toho se posouvá čára a zbývající čas.
+        let liveCardCurrent = null;
+
+        function liveCardTick() {
+            if (!liveCardCurrent || !liveCardCurrent.ch || !liveCard || liveCard.hidden) return;
+            const list = Array.isArray(liveGuide[liveCardCurrent.ch.name]) ? liveGuide[liveCardCurrent.ch.name] : [];
+            const now = Date.now();
+            const cur = list.find(item => new Date(item.s).getTime() <= now && now < new Date(item.e).getTime()) || null;
+            const shown = liveCardCurrent.p;
+            if (cur && shown && cur.s === shown.s) {
+                // Stejný pořad: jen posunout čáru a zbývající minuty, popis zůstane.
+                const s = new Date(cur.s).getTime(), e = new Date(cur.e).getTime();
+                const pct = Math.min(100, Math.max(0, Math.round((now - s) / Math.max(60000, e - s) * 100)));
+                const bar = liveCard.querySelector('.pcard-bar i');
+                if (bar) bar.style.width = pct + '%';
+                const note = liveCard.querySelector('.pcard-note');
+                if (note) note.textContent = 'zbývá ' + Math.max(1, Math.round((e - now) / 60000)) + ' min';
+                return;
+            }
+            if (shown && new Date(shown.s).getTime() > now) return;   // budoucí pořad se nemění
+            renderLiveCard(liveCardCurrent.ch, cur ? list.indexOf(cur) : null);
+        }
+
+        // Jednou za půl minuty: červená čára na ose i na kartě se posune sama,
+        // takže se nemusí přepínat jinam a zpátky.
+        function liveTick() {
+            if (liveSection.style.display !== 'block') return;
+            if (!liveGrid || liveGrid.hidden) return;
+            const nowMs = Date.now();
+            const now = new Date(nowMs);
+            const nowMin = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+            const line = liveGrid.querySelector('.lg-now');
+            if (line) line.style.left = `calc(var(--lg-cw) + ${nowMin * LG_PPM}px)`;
+            liveGrid.querySelectorAll('.lg-pg[data-s]').forEach(el => {
+                const s = Number(el.dataset.s), e = Number(el.dataset.e);
+                if (!s || !e) return;
+                const running = s <= nowMs && nowMs < e;
+                el.classList.toggle('run', running);
+                el.classList.toggle('past', e <= nowMs);
+                el.classList.toggle('fut', s > nowMs);
+                let prog = el.querySelector('.lg-prog');
+                if (running) {
+                    if (!prog) {
+                        prog = document.createElement('i');
+                        prog.className = 'lg-prog';
+                        el.appendChild(prog);
+                    }
+                    prog.style.width = Math.min(100, Math.round((nowMs - s) / Math.max(60000, e - s) * 100)) + '%';
+                } else if (prog) {
+                    prog.remove();
+                }
+            });
+            liveCardTick();
         }
 
         function renderLive(reset) {
@@ -2911,7 +2970,7 @@
                         const running = p.from <= nowMin && nowMin < p.to;
                         const state = running ? 'run' : p.to <= nowMin ? 'past' : 'fut';
                         const done = running ? Math.round((nowMin - p.from) / (p.to - p.from) * 100) : 0;
-                        return `<button type="button" class="lg-pg ${state}" data-live="${i}" data-pg="${p.i}"
+                        return `<button type="button" class="lg-pg ${state}" data-live="${i}" data-pg="${p.i}" data-s="${p.sMs}" data-e="${p.eMs}"
                             style="left:${p.a * LG_PPM}px;width:${Math.max(16, (p.b - p.a) * LG_PPM - 2)}px"
                             title="${escapeHtml(p.title)} · ${lgTime(p.from)}–${lgTime(p.to)}"><b>${escapeHtml(p.title)}</b><small>${lgTime(p.from)}–${lgTime(p.to)}</small>${done ? `<i class="lg-prog" style="width:${Math.min(100, done)}%"></i>` : ''}</button>`;
                     }).join('')
@@ -3881,6 +3940,8 @@
         }
         const liveNowBtn = document.getElementById('liveNowBtn');
         if (liveNowBtn) liveNowBtn.addEventListener('click', () => liveScrollToNow(true));
+        // Červená čára i průběh pořadu se posouvají samy (a karta s nimi).
+        setInterval(liveTick, 30000);
 
         // ===== Stav služby (/api/health) overlay =====
         function formatHealthValue(v) {

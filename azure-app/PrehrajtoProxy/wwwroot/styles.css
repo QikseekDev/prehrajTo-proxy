@@ -819,7 +819,9 @@
             font-size: 11px; font-weight: 700; color: var(--text-dim); white-space: nowrap;
         }
         .pcard-badge.now { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
-        .pcard-time { color: var(--text-dim); font-weight: 600; white-space: nowrap; }
+        .pcard-times { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; max-width: 640px; }
+        .pcard-times .pcard-bar { flex: 1 1 auto; margin: 0; max-width: none; }
+        .pcard-time { font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
         .pcard-note { white-space: nowrap; }
         .pcard-title { margin: 4px 0 6px; font-size: 18px; font-weight: 700; line-height: 1.25; color: var(--text); }
         .pcard-title.muted { color: var(--muted); font-weight: 600; font-size: var(--fs-sm); }

@@ -2305,6 +2305,71 @@
     return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
   }
 
+  // Co karta ukazuje - podle toho se posouvá čára a zbývající čas.
+  var liveCardState = null;
+  var liveHoverTimer = 0;
+
+  // Jednou za půl minuty: červená čára na ose i na kartě se posune sama,
+  // takže se nemusí přepínat jinam a zpátky.
+  function liveCardTick() {
+    if (!liveCardState || !liveCardState.ch) return;
+    var card = $('liveCard');
+    if (!card || card.hidden) return;
+    var list = liveGuide[liveCardState.ch.name] || [];
+    var now = Date.now();
+    var cur = null, i;
+    for (i = 0; i < list.length; i++) {
+      var s = new Date(list[i].s).getTime(), e = new Date(list[i].e).getTime();
+      if (s <= now && now < e) { cur = list[i]; break; }
+    }
+    var shown = liveCardState.prog;
+    if (cur && shown && cur.s === shown.s) {
+      // Stejný pořad: jen posunout čáru a zbývající minuty (rozbalený popis zůstane).
+      var s2 = new Date(cur.s).getTime(), e2 = new Date(cur.e).getTime();
+      var pct = Math.min(100, Math.max(0, Math.round((now - s2) / Math.max(60000, e2 - s2) * 100)));
+      var bar = card.querySelector('.lc-bar i');
+      if (bar) bar.style.width = pct + '%';
+      var note = card.querySelector('.lc-note');
+      if (note) note.textContent = 'zbývá ' + Math.max(1, Math.round((e2 - now) / 60000)) + ' min';
+      return;
+    }
+    if (shown && new Date(shown.s).getTime() > now) return;      // budoucí pořad se nemění
+    liveCardShow(liveCardState.ch, cur ? list.indexOf(cur) : null);
+  }
+
+  function liveTick() {
+    if (state.view !== 'live') return;
+    var grid = $('liveGrid');
+    if (!grid || grid.hidden) return;
+    var now = Date.now();
+    var d = new Date(now);
+    var nowMin = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+    var line = grid.querySelector('.lg-now');
+    if (line) line.style.left = 'calc(var(--lg-cw) + ' + Math.round(nowMin * lgPpm()) + 'px)';
+    var blocks = grid.querySelectorAll('.lg-pg[data-s]');
+    for (var i = 0; i < blocks.length; i++) {
+      var el = blocks[i];
+      var s = parseInt(el.getAttribute('data-s'), 10), e = parseInt(el.getAttribute('data-e'), 10);
+      if (!s || !e) continue;
+      var running = s <= now && now < e;
+      el.classList.toggle('run', running);
+      el.classList.toggle('past', e <= now);
+      el.classList.toggle('fut', s > now);
+      var prog = el.querySelector('.lg-prog');
+      if (running) {
+        if (!prog) {
+          prog = document.createElement('i');
+          prog.className = 'lg-prog';
+          el.appendChild(prog);
+        }
+        prog.style.width = Math.min(100, Math.round((now - s) / Math.max(60000, e - s) * 100)) + '%';
+      } else if (prog && prog.parentNode) {
+        prog.parentNode.removeChild(prog);
+      }
+    }
+    liveCardTick();
+  }
+
   function liveCardShow(ch, progIndex) {
     var card = $('liveCard');
     if (!card || !ch) return;
@@ -2328,6 +2393,7 @@
       card.innerHTML = head + '</div><h2 class="lc-title muted">Data o programu nejsou k dispozici</h2>'
         + '<div class="lc-next">Kanál jde přehrát živě.</div></div>';
       card.hidden = false;
+      liveCardState = { ch: ch, prog: null };
       return;
     }
 
@@ -2357,14 +2423,16 @@
     var pct = running ? Math.min(100, Math.max(0, Math.round((now - s) / total * 100))) : 0;
     card.innerHTML = head
       + badge
-      + '<span class="lc-time">' + lcClock(p.s) + '–' + lcClock(p.e) + '</span>'
       + '<span class="lc-note">' + esc(note) + '</span>'
       + '</div><h2 class="lc-title">' + esc(p.t || 'Bez názvu') + '</h2>'
-      + (running ? '<div class="lc-bar"><i style="width:' + pct + '%"></i></div>' : '')
+      + '<div class="lc-times"><span class="lc-time">' + lcClock(p.s) + '</span>'
+      + '<span class="lc-bar"><i style="width:' + pct + '%"></i></span>'
+      + '<span class="lc-time">' + lcClock(p.e) + '</span></div>'
       + (p.d ? '<p class="lc-desc">' + esc(p.d) + '</p>' : '')
       + (next ? '<div class="lc-next">Následuje ' + lcClock(next.s) + '–' + lcClock(next.e) + ' · ' + esc(next.t || 'Bez názvu') + '</div>' : '')
       + '</div>';
     card.hidden = false;
+    liveCardState = { ch: ch, prog: p };
     lgPaintLogos(card);
   }
 
@@ -2605,7 +2673,8 @@
       if (from === null || to === null || to <= from) continue;
       var a = Math.max(0, from), b = Math.min(1440, to);
       if (b - a < 1) continue;
-      out.push({ i: i, title: p.t || 'Bez názvu', from: from, to: to, a: a, b: b });
+      out.push({ i: i, title: p.t || 'Bez názvu', from: from, to: to, a: a, b: b,
+        sMs: base + from * 60000, eMs: base + to * 60000 });
     }
     return out;
   }
@@ -2803,6 +2872,7 @@
           var w = Math.max(16, Math.round((pr.b - pr.a) * ppm) - 2);
           var done = running ? Math.min(100, Math.round((nowMin - pr.from) / (pr.to - pr.from) * 100)) : 0;
           blocks += '<button class="f lg-pg' + cls + '" type="button" data-ch="' + idx + '" data-pg="' + pr.i + '"'
+            + ' data-s="' + pr.sMs + '" data-e="' + pr.eMs + '"'
             + ' title="' + esc(pr.title) + ' · ' + lgTime(pr.from) + '–' + lgTime(pr.to) + '"'
             + ' style="left:' + Math.round(pr.a * ppm) + 'px;width:' + w + 'px">'
             + '<b>' + esc(pr.title) + '</b><small>' + lgTime(pr.from) + '–' + lgTime(pr.to) + '</small>'
@@ -2875,6 +2945,19 @@
       var ch = state.channels[parseInt(el.getAttribute('data-ch'), 10)];
       if (ch) playLive(ch);
     });
+    // Magic remote posílá i pohyb kurzoru: karta se přepne až po 1,5 s nad
+    // pořadem, aby přejezd kurzorem přes průvodce nic neměnil.
+    grid.addEventListener('mouseover', function (e) {
+      var el = e.target && e.target.closest ? e.target.closest('[data-ch]') : null;
+      if (!el || !grid.contains(el)) return;
+      var ch = state.channels[parseInt(el.getAttribute('data-ch'), 10)];
+      if (!ch) return;
+      var pg = el.getAttribute('data-pg');
+      var idx = pg === null ? null : parseInt(pg, 10);
+      clearTimeout(liveHoverTimer);
+      liveHoverTimer = setTimeout(function () { liveCardShow(ch, idx); }, 1500);
+    });
+    grid.addEventListener('mouseout', function () { clearTimeout(liveHoverTimer); });
     // Fokus na dálkovém ovladači: karta nahoře ukazuje pořad, který je označený.
     grid.addEventListener('focusin', function (e) {
       var el = e.target && e.target.closest ? e.target.closest('[data-ch]') : null;
@@ -4419,6 +4502,8 @@
 
     var liveNowBtn = $('liveNowBtn');
     if (liveNowBtn) liveNowBtn.addEventListener('click', function () { liveScrollToNow(true); });
+    // Červená čára i průběh pořadu se posouvají samy (a karta s nimi).
+    setInterval(liveTick, 30000);
     renderSettings();
     var _hd=$('health'); if(_hd){_hd.hidden=true; try{_hd.style.display='none';}catch(_){}} 
 
