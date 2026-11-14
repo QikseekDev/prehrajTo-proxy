@@ -3594,26 +3594,67 @@
   }
 
   /* OSD čísla kanálu: nahoře napsané číslo, pod ním seznam kanálů, na které
-     se dá přepnout - první řádek je ten, kam se po chvíli skočí. */
-  function showChOsd(buf, holdMs) {
+     se dá přepnout. Seznam bere fokus, takže se dá vybrat D-padem i ukázat
+     myší; OK nebo klik přepne hned, bez čekání na odklad. */
+  var chOsdMatches = [];
+  var chOsdSel = 0;
+
+  function chOsdRows() {
+    var p = chOsdParts();
+    return (p && p.list) ? p.list.querySelectorAll('.cho-row') : [];
+  }
+
+  function chOsdOpen() { var el = $('chOsd'); return !!(el && !el.hidden) && chOsdRows().length > 0; }
+
+  function chOsdSelect(i, focus) {
+    var rows = chOsdRows();
+    if (!rows.length) return;
+    chOsdSel = (i + rows.length) % rows.length;
+    for (var j = 0; j < rows.length; j++) rows[j].classList.toggle('sel', j === chOsdSel);
+    if (focus) {
+      try { rows[chOsdSel].focus(); } catch (e) {}
+    }
+  }
+
+  /* Ruční výběr v OSD: odklad přepnutí se zruší a seznam zůstane otevřený,
+     dokud se nevybere OK/klikem (nebo se sám nezavře po delší chvíli). */
+  function chOsdHold() {
+    clearTimeout(chNumTimer); chNumTimer = 0;
+    clearTimeout(chOsdTimer);
+    if (!$('chOsd') || $('chOsd').hidden) return;
+    chOsdTimer = setTimeout(function () { hideChOsd(); }, 8000);
+  }
+
+  function showChOsd(buf, holdMs, takeFocus) {
     var p = chOsdParts();
     if (!p) return;
     p.num.textContent = String(buf == null ? '' : buf);
-    var nums = chNumMatches(buf), html = '';
-    for (var i = 0; i < nums.length; i++) {
-      var ch = state.channels[nums[i] - 1];
+    chOsdMatches = chNumMatches(buf);
+    if (chOsdSel > chOsdMatches.length - 1) chOsdSel = 0;
+    var html = '';
+    for (var i = 0; i < chOsdMatches.length; i++) {
+      var n = chOsdMatches[i], ch = state.channels[n - 1];
       if (!ch) continue;
-      html += '<div class="cho-row' + (i === 0 ? ' sel' : '') + '">'
+      html += '<button class="f cho-row' + (i === chOsdSel ? ' sel' : '') + '" type="button" data-n="' + n + '">'
         + chLogoHtml(ch)
-        + '<span class="cho-num">' + nums[i] + '</span>'
-        + '<span class="cho-name">' + esc(ch.name) + '</span></div>';
+        + '<span class="cho-num">' + n + '</span>'
+        + '<span class="cho-name">' + esc(ch.name) + '</span></button>';
     }
     p.list.innerHTML = html;
     show(p.el);
     clearTimeout(chOsdTimer);
     if (holdMs) chOsdTimer = setTimeout(function () { hide(p.el); }, holdMs);
+    if (takeFocus) chOsdSelect(chOsdSel, true);
   }
-  function hideChOsd() { clearTimeout(chOsdTimer); hide($('chOsd')); }
+
+  function hideChOsd() {
+    clearTimeout(chOsdTimer);
+    try {
+      var a = document.activeElement;
+      if (a && a.classList && a.classList.contains('cho-row')) a.blur();
+    } catch (e) {}
+    hide($('chOsd'));
+  }
 
   /* Na jaké číslo se napsané číslice přepnou: přesná shoda, jinak první kanál,
      který napsanými číslicemi začíná ("1" -> 1, "12" -> 12). */
@@ -3735,12 +3776,21 @@
     showChOsd(n, 2200);
   }
 
+  /* Přepnutí na kanál vybraný v OSD (OK, klik nebo šipky a OK). */
+  function chOsdTune(n) {
+    chOsdHold();
+    chNumBuf = '';
+    hideChOsd();
+    tuneChannel(n);
+  }
+
   function chNumPress(d) {
     chNumBuf = (chNumBuf + d).slice(-3);
     clearTimeout(chNumTimer);
+    chOsdSel = 0;
     // Ukáže se celé napsané číslo a kanály, na které se dá přepnout; k přepnutí
     // dojde až CH_NUM_WAIT po poslední číslici (každá další číslice odklad resetuje).
-    showChOsd(chNumBuf, CH_NUM_WAIT + 1200);
+    showChOsd(chNumBuf, CH_NUM_WAIT + 1200, true);
     chNumTimer = setTimeout(function () {
       chNumTimer = 0;
       tuneChannel(chNumTarget(chNumBuf));
@@ -4045,6 +4095,7 @@
     // webOS dálkové ovládání
     if (code === 461) {
       e.preventDefault();
+      if (chOsdOpen()) { chOsdHold(); chNumBuf = ''; hideChOsd(); return; }
       if (searchBackspace()) { notifyBackHandled(); return; }
       goBack();
       return;
@@ -4079,6 +4130,24 @@
       e.preventDefault();
       chNumPress(chDigit);
       return;
+    }
+
+    // Otevřené OSD číselníku: šipky vybírají kanál, OK přepne hned.
+    if (chOsdOpen() && !typing) {
+      if (k === 'ArrowDown' || k === 'ArrowRight' || code === 40 || code === 39) {
+        e.preventDefault(); chOsdHold(); chOsdSelect(chOsdSel + 1, true); return;
+      }
+      if (k === 'ArrowUp' || k === 'ArrowLeft' || code === 38 || code === 37) {
+        e.preventDefault(); chOsdHold(); chOsdSelect(chOsdSel - 1, true); return;
+      }
+      if (k === 'Enter' || code === 13) {
+        e.preventDefault();
+        chOsdTune(chOsdMatches[chOsdSel]);
+        return;
+      }
+      if (k === 'Escape' || k === 'GoBack' || k === 'BrowserBack') {
+        e.preventDefault(); chOsdHold(); chNumBuf = ''; hideChOsd(); return;
+      }
     }
     if (liveLocked() && (k === 'MediaPause' || k === 'MediaPlayPause' || k === 'Pause' || code === 19 || code === 179)) {
       e.preventDefault(); bumpIdle(); return;   // živé vysílání nejde pozastavit
@@ -4638,6 +4707,24 @@
 
     document.addEventListener('mousemove', function () { if (!$('player').hidden) bumpIdle(); });
 
+    var osdBox = $('chOsd');
+    if (osdBox) {
+      osdBox.addEventListener('click', function (e) {
+        var t = e.target;
+        while (t && t !== this && !(t.getAttribute && t.getAttribute('data-n') !== null)) t = t.parentNode;
+        if (!t || t === this) return;
+        chOsdTune(parseInt(t.getAttribute('data-n'), 10) || 0);
+      });
+      osdBox.addEventListener('mouseover', function (e) {
+        var t = e.target;
+        while (t && t !== this && !(t.getAttribute && t.getAttribute('data-n') !== null)) t = t.parentNode;
+        if (!t || t === this) return;
+        var i = chOsdMatches.indexOf(parseInt(t.getAttribute('data-n'), 10));
+        if (i < 0 || i === chOsdSel) return;
+        chOsdHold();
+        chOsdSelect(i, false);
+      });
+    }
     var clBox = $('chList');
     if (clBox) clBox.addEventListener('click', function (e) { if (e.target === clBox) hideChList(); });
     var clRows = $('chListRows');
