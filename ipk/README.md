@@ -69,7 +69,7 @@ Změna adresy: **Nastavení → Server → Změnit**.
 | Přetáčení vpřed/vzad | skok o 10 s (u filmů) |
 | Červené tlačítko | záložka Živě |
 | Zelené tlačítko | seznam kanálů (číslo, název, co právě běží); šipkami výběr, OK přepne, znovu zelené nebo Zpět zavře |
-| Číslice | číslo kanálu: v OSD je celé napsané číslo a seznam kanálů, na které se dá přepnout; seznam bere fokus, takže šipkami nebo myší vybereš jiný kanál a OK/klik přepne hned, jinak se přepne 4 s po poslední číslici |
+| Číslice | číslo kanálu: v OSD je celé napsané číslo a seznam kanálů, na které se dá přepnout; seznam bere fokus, takže šipkami nebo myší vybereš jiný kanál a OK/klik přepne hned, jinak se přepne 2 s po poslední číslici |
 | Šipky v přehrávači | ←/→ skok o 10 s, ↑/↓ přesun mezi ovládacími prvky |
 
 Fokus je vždy vidět (bílý rám + modrý obrys), ovládání přehrávače se po 5 s nečinnosti schová.

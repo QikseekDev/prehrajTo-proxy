@@ -3560,7 +3560,7 @@
   var chNumPending = 0;      // číslo zmáčknuté dřív, než se kanály načetly
 
   // Přepínání až po poslední číslici, aby šlo napsat i dvojciferné číslo.
-  var CH_NUM_WAIT = 4000;
+  var CH_NUM_WAIT = 2000;
 
   function chOsdParts() {
     var el = $('chOsd');
