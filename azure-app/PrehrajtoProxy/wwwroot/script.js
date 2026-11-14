@@ -3082,6 +3082,9 @@
             // napřímo nepřehraje - hlavičky u <video> nastavit nelze. Takový jde vždy přes relay.
             const needsHeaders = !!(ch.ua || ch.referrer);
             const relayUrl = liveRelayUrl(ch);
+            // Kanál z http:// na https:// stránce prohlížeč zablokuje jako mixed content -
+            // přímé přehrání nemá smysl zkoušet, jde se rovnou přes server.
+            const mixedContent = location.protocol === 'https:' && /^http:/i.test(ch.url || '');
 
             // Server ke kanálu přidá záložní adresy z iptv-org API (ch.alts), protože playlist
             // nese jen jeden stream. Mrtvá adresa je u IPTV běžná věc, takže se zkusí další
@@ -3094,7 +3097,7 @@
 
             // Safari/iOS umí HLS nativně a CORS u videa neřeší - tam je přímé přehrání nejlepší.
             // Vypnuté přímé přehrávání znamená server od začátku.
-            const useRelay = needsHeaders || !directPreferred();
+            const useRelay = needsHeaders || mixedContent || !directPreferred();
             if (!useRelay && liveVideo.canPlayType('application/vnd.apple.mpegurl')) {
                 liveVideo.src = ch.url;
                 liveVideo.play().catch(() => {});
@@ -3146,8 +3149,11 @@
                 // CORS nebo zdroj, který prohlížeči nevrátí playlist. Nejdřív zkusíme přímé
                 // přehrání jednou znovu; když selže i to, přepneme pro tenhle kanál na server.
                 // Nastavení zůstává zapnuté, další kanál zkusí CDN znovu.
-                if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !relayed) {
-                    if (directRetries++ < 1) { hls.startLoad(); return; }
+                // Jakákoli fatální chyba přímého přehrání (CORS, mixed content, zdroj bez
+                // playlistu) znamená přejít na server: Firefox hlásí zablokovaný http zdroj
+                // jinou chybou než Chrome, takže se nečeká jen na NETWORK_ERROR.
+                if (!relayed) {
+                    if (data.type === Hls.ErrorTypes.NETWORK_ERROR && directRetries++ < 1) { hls.startLoad(); return; }
                     relayed = true;
                     showLiveError('Přímé přehrávání selhalo, přepínám na server…');
                     hls.loadSource(relayUrl);
