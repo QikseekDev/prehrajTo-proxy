@@ -1507,6 +1507,7 @@
                     <p>Když má soubor titulky, objeví se pod přehrávačem nabídka „Titulky“ s volbami Vypnuto a jazyky. Načítá je server, takže fungují i u zdrojů, které je prohlížeči přímo nedovolí. Ne každý soubor titulky má – český dabing bývá bez nich.</p>
                     <h2>Přehrávač a klávesy</h2>
                     <p>Klávesnicí: <b>mezerník</b> přehrát/pauza, <b>← →</b> posun o 10 sekund, <b>↑ ↓</b> hlasitost, <b>F</b> celá obrazovka. Tlačítko <b>Obraz v obraze</b> pošle video do malého okna nad ostatními aplikacemi (Chrome a Edge; jinde ho najdeš v ovládání videa). Tlačítko <b>Přehrát na TV</b> otevře možnosti: Chromecast (Chrome, Edge), AirPlay (Safari, iPhone, LG webOS) nebo odkaz, který otevřeš v prohlížeči na jakékoli TV. Video se do TV posílá přes Wi-Fi, Bluetooth na to nestačí.</p>
+                    <p>V Živě jde kanál přepnout i klávesnicí: napiš <b>číslo kanálu</b> (v OSD se ukáže celé číslo a kanály, na které se dá přepnout) a po 2 sekundách se přepne, nebo hned Enterem. <b>Hvězdička (*)</b> otevře seznam všech kanálů – šipkami vybereš, Enterem přepneš. V hledání a ve formulářích číslice patří poli, ne kanálům.</p>
                     <p>Velikost a pozadí titulků se nastavují v Nastavení (avatar vpravo nahoře).</p>
                     <h2>Knihovna: historie a oblíbené</h2>
                     <p>Odkaz <b>Knihovna</b> v liště ukazuje dvě sekce: <b>Pokračovat ve sledování</b> (rozkoukané filmy a díly, odkud se naváže tam, kde jsi skončil) a <b>Oblíbené</b>. Hvězdička na kartě nebo u přehrávače titul přidá či odebere z oblíbených. Rozkoukaný záznam se sám smaže, když je do konce méně než 2 minuty. Vše se ukládá jen v tvém prohlížeči.</p>
@@ -2652,6 +2653,9 @@
             liveGuide = d.guide && typeof d.guide === 'object' ? d.guide : {};
             if (!liveChannels.length) throw new Error('Seznam je prázdný');
             renderLive(true);
+            // Cislo zmacknute behem nacitani se dohraje, az jsou kanaly.
+            if (chPending) { const pn = chPending; chPending = 0; setTimeout(() => chTune(pn), 0); }
+            if (chListPending) { chListPending = false; setTimeout(showChList, 0); }
         }
 
         // Kanály, program i pořadí počítá server, takže první otevření karty Živě čeká
@@ -3565,6 +3569,7 @@
             const el = document.activeElement;
             if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
             if (document.pictureInPictureElement) return;   // v PiP okně patří klávesy jemu
+            if (chOsdOpen()) return;                        // vyber v OSD ma prednost
             if (e.key === ' ') {
                 // Mezerník na tlačítku má aktivovat to tlačítko, ne přehrávání.
                 if (el && (el.tagName === 'BUTTON' || el.tagName === 'A')) return;
@@ -4543,3 +4548,234 @@
                 .catch(() => { /* self-host bez /api/config */ });
         })();
 
+
+        /* ===== Číslo kanálu z klávesnice a seznam kanálů na hvězdičku =====
+           Číslice mimo textová pole rozsvítí OSD: nahoře napsané číslo, pod ním
+           kanály, které mu odpovídají. Přepne se 2 s po poslední číslici, nebo
+           hned Enterem/kliknutím. Hvězdička otevře seznam všech kanálů. */
+        const chOsdEl = document.getElementById('chOsd');
+        const chOsdNumEl = chOsdEl.querySelector('.ch-osd-num');
+        const chOsdListEl = chOsdEl.querySelector('.ch-osd-list');
+        const chListEl = document.getElementById('chList');
+        const chListRowsEl = document.getElementById('chListRows');
+        const chListSubEl = document.getElementById('chListSub');
+        const CH_NUM_WAIT = 2000;
+        let chNumBuf = '', chNumTimer = 0, chOsdTimer = 0, chOsdSel = 0, chOsdMatches = [];
+        let chPending = 0, chListSel = 0, chListPending = false;
+
+        function chOsdOpen() { return !chOsdEl.hidden && chOsdMatches.length > 0; }
+
+        function chInTextField(el) {
+            return !!el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+        }
+
+        function chLogoHtml(c) {
+            return `<span class="lg-logo cho-logo">`
+                + (c.logo ? `<img src="${escapeHtml(c.logo)}" data-u="${escapeHtml(c.logo)}" alt="" loading="lazy" crossorigin="anonymous" referrerpolicy="no-referrer">` : '')
+                + `<span class="lg-init">${escapeHtml(initials(c.name || ''))}</span></span>`;
+        }
+
+        // Čísla kanálů odpovídající napsaným číslicím: přesná shoda první,
+        // pak kanály, které napsanými číslicemi začínají ("1" -> 1, 10, 11…).
+        function chNumMatches(buf) {
+            const out = [];
+            const n = parseInt(buf, 10);
+            if (!buf || !isFinite(n) || n < 1) return out;
+            if (liveChannels[n - 1]) out.push(n);
+            for (let i = 0; i < liveChannels.length && out.length < 6; i++) {
+                const num = i + 1;
+                if (num !== n && String(num).indexOf(buf) === 0) out.push(num);
+            }
+            return out;
+        }
+
+        function chNumTarget(buf) {
+            const n = parseInt(buf, 10);
+            if (!buf || !isFinite(n) || n < 1) return 0;
+            if (liveChannels[n - 1]) return n;
+            for (let i = 0; i < liveChannels.length; i++) {
+                if (String(i + 1).indexOf(buf) === 0) return i + 1;
+            }
+            return n;
+        }
+
+        function hideChOsd() {
+            clearTimeout(chOsdTimer);
+            try {
+                const a = document.activeElement;
+                if (a && a.classList && a.classList.contains('cho-row')) a.blur();
+            } catch (e) {}
+            chOsdEl.hidden = true;
+        }
+
+        function chOsdSelect(i) {
+            const rows = chOsdListEl.querySelectorAll('.cho-row');
+            if (!rows.length) return;
+            chOsdSel = (i + rows.length) % rows.length;
+            rows.forEach((r, j) => r.classList.toggle('sel', j === chOsdSel));
+        }
+
+        function chOsdHold() {
+            clearTimeout(chNumTimer); chNumTimer = 0;
+            clearTimeout(chOsdTimer);
+            if (chOsdEl.hidden) return;
+            chOsdTimer = setTimeout(hideChOsd, 8000);
+        }
+
+        function chOsdRender(buf, holdMs) {
+            chOsdNumEl.textContent = buf == null ? '' : buf;
+            chOsdMatches = chNumMatches(buf);
+            if (chOsdSel > chOsdMatches.length - 1) chOsdSel = 0;
+            chOsdListEl.innerHTML = chOsdMatches.map((n, i) => {
+                const c = liveChannels[n - 1];
+                if (!c) return '';
+                return `<button type="button" class="cho-row${i === chOsdSel ? ' sel' : ''}" data-n="${n}">`
+                    + chLogoHtml(c)
+                    + `<span class="cho-num">${n}</span>`
+                    + `<span class="cho-name">${escapeHtml(c.name || '')}</span></button>`;
+            }).join('');
+            chOsdEl.hidden = false;
+            clearTimeout(chOsdTimer);
+            if (holdMs) chOsdTimer = setTimeout(hideChOsd, holdMs);
+        }
+
+        function chTune(n) {
+            clearTimeout(chNumTimer); chNumTimer = 0;
+            chNumBuf = '';
+            hideChOsd();
+            chListEl.hidden = true;
+            if (!n) return;
+            if (!liveChannels.length) {
+                chPending = n;
+                if (!liveBusy) loadLive();
+                return;
+            }
+            const ch = liveChannels[n - 1];
+            if (!ch) return;
+            chListSel = n - 1;
+            playLive(ch);
+        }
+
+        function chNumPress(d) {
+            chNumBuf = (chNumBuf + d).slice(-3);
+            clearTimeout(chNumTimer);
+            chOsdSel = 0;
+            if (!liveChannels.length && !liveBusy) loadLive();
+            chOsdRender(chNumBuf, CH_NUM_WAIT + 1200);
+            chNumTimer = setTimeout(() => { chNumTimer = 0; chTune(chNumTarget(chNumBuf)); }, CH_NUM_WAIT);
+        }
+
+        function chListScroll() {
+            const sel = chListRowsEl.querySelector('.cl-row.sel');
+            if (sel) sel.scrollIntoView({ block: 'nearest' });
+        }
+
+        function chListRender() {
+            const now = Date.now();
+            chListRowsEl.innerHTML = liveChannels.map((c, i) => {
+                const list = Array.isArray(liveGuide[c.name]) ? liveGuide[c.name] : [];
+                let cur = '';
+                for (const p of list) {
+                    if (new Date(p.s).getTime() <= now && now < new Date(p.e).getTime()) { cur = p.t || ''; break; }
+                }
+                return `<button type="button" class="cl-row${i === chListSel ? ' sel' : ''}" data-i="${i}">`
+                    + `<span class="cl-num">${i + 1}</span>`
+                    + chLogoHtml(c)
+                    + `<span class="cl-name">${escapeHtml(c.name || '')}</span>`
+                    + `<span class="cl-now">${escapeHtml(cur || 'Žádné informace')}</span></button>`;
+            }).join('');
+            chListSubEl.textContent = liveChannels.length + ' kanálů';
+            chListScroll();
+        }
+
+        function showChList() {
+            if (!liveChannels.length) {
+                // Seznam se jeste nacita - otevre se hned po nacteni.
+                chListPending = true;
+                if (!liveBusy) loadLive();
+                return;
+            }
+            chListPending = false;
+            if (chListSel > liveChannels.length - 1) chListSel = 0;
+            chListRender();
+            chListEl.hidden = false;
+        }
+
+        function hideChList() { chListEl.hidden = true; }
+
+        function chListSelect(i) {
+            const rows = chListRowsEl.querySelectorAll('.cl-row');
+            if (!rows.length) return;
+            chListSel = (i + rows.length) % rows.length;
+            rows.forEach((r, j) => r.classList.toggle('sel', j === chListSel));
+            chListScroll();
+        }
+
+        chOsdListEl.addEventListener('click', (e) => {
+            const row = e.target.closest('.cho-row');
+            if (row) chTune(parseInt(row.dataset.n, 10));
+        });
+        chOsdListEl.addEventListener('mouseover', (e) => {
+            const row = e.target.closest('.cho-row');
+            if (!row) return;
+            const i = chOsdMatches.indexOf(parseInt(row.dataset.n, 10));
+            if (i < 0 || i === chOsdSel) return;
+            chOsdHold();
+            chOsdSelect(i);
+        });
+        chListRowsEl.addEventListener('click', (e) => {
+            const row = e.target.closest('.cl-row');
+            if (!row) return;
+            chListSel = parseInt(row.dataset.i, 10) || 0;
+            chTune(chListSel + 1);
+        });
+        chListRowsEl.addEventListener('mouseover', (e) => {
+            const row = e.target.closest('.cl-row');
+            if (!row) return;
+            const i = parseInt(row.dataset.i, 10) || 0;
+            if (i !== chListSel) chListSelect(i);
+        });
+        chListEl.addEventListener('click', (e) => { if (e.target === chListEl) hideChList(); });
+
+        // Číslice a hvězdička platí mimo textová pole; v seznamu i v OSD pak
+        // šipky vybírají a Enter přepne.
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (chInTextField(document.activeElement)) return;              // hledání a formuláře patří jim
+            if (document.querySelector('.cast-dlg:not([hidden])')) return;  // otevřený dialog má přednost
+            const k = e.key;
+
+            if (!chListEl.hidden) {
+                if (k === 'ArrowDown' || k === 'ArrowUp') {
+                    e.preventDefault(); e.stopPropagation();
+                    chListSelect(chListSel + (k === 'ArrowDown' ? 1 : -1));
+                    return;
+                }
+                if (k === 'Enter') { e.preventDefault(); e.stopPropagation(); chTune(chListSel + 1); return; }
+                if (k === 'Escape' || k === '*') { e.preventDefault(); e.stopPropagation(); hideChList(); return; }
+            }
+
+            if (chOsdOpen()) {
+                if (k === 'ArrowDown' || k === 'ArrowUp') {
+                    e.preventDefault(); e.stopPropagation();
+                    chOsdHold();
+                    chOsdSelect(chOsdSel + (k === 'ArrowDown' ? 1 : -1));
+                    return;
+                }
+                if (k === 'Enter') { e.preventDefault(); e.stopPropagation(); chTune(chOsdMatches[chOsdSel]); return; }
+                if (k === 'Escape') { e.preventDefault(); e.stopPropagation(); chNumBuf = ''; hideChOsd(); return; }
+            }
+
+            if (k === '*') {
+                e.preventDefault(); e.stopPropagation();
+                chNumBuf = ''; hideChOsd();
+                showChList();
+                return;
+            }
+
+            const liveVisible = liveSection.style.display === 'block' || livePlayerSection.style.display === 'block';
+            if (liveVisible && k && k.length === 1 && k >= '0' && k <= '9') {
+                e.preventDefault(); e.stopPropagation();
+                chNumPress(k);
+            }
+        }, true);

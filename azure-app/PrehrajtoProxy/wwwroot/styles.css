@@ -1366,3 +1366,69 @@
             .row-scroll, .chips { scroll-behavior: auto; }
             .search-spinner, .spinner { animation-duration: 1.4s; }
         }
+
+        /* ===== Číslo kanálu z klávesnice a seznam kanálů (hvězdička) ===== */
+        .ch-osd {
+            position: fixed; left: var(--gutter); top: 19vh; z-index: 90;
+            width: min(30rem, 44vw); color: var(--text); pointer-events: none;
+        }
+        .ch-osd[hidden] { display: none; }
+        .ch-osd-num {
+            font-family: var(--font-display); font-size: 3.4rem; line-height: 1;
+            margin: 0 0 10px 2px; text-shadow: var(--shadow-2);
+            font-variant-numeric: tabular-nums;
+        }
+        .cho-row {
+            display: flex; align-items: center; width: 100%; height: 42px; padding: 0 12px;
+            border: 0; border-radius: var(--r-md); cursor: pointer; pointer-events: auto;
+            text-align: left; font: inherit; font-size: var(--fs-md); color: var(--paper-dim);
+            background: rgba(14,14,16,0.84);
+        }
+        .cho-row + .cho-row { margin-top: 2px; }
+        .cho-row > * + * { margin-left: 10px; }
+        .cho-row.sel { background: #bfe0f2; color: #0d141c; }
+        .cho-num {
+            min-width: 2rem; text-align: right; font-size: var(--fs-sm);
+            color: var(--muted); font-variant-numeric: tabular-nums;
+        }
+        .cho-row.sel .cho-num { color: #2a3a4a; }
+        .cho-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cho-logo { width: 30px; height: 24px; }
+
+        .ch-list {
+            position: fixed; inset: 0; z-index: 91; display: flex;
+            background: rgba(0,0,0,0.5);
+        }
+        .ch-list[hidden] { display: none; }
+        .cl-panel {
+            display: flex; flex-direction: column; height: 100%;
+            width: min(46rem, 66vw); padding: 6vh 0 24px var(--gutter);
+            background: linear-gradient(90deg, rgba(14,14,16,0.97) 84%, rgba(14,14,16,0.9));
+            color: var(--text);
+        }
+        .cl-title { font-family: var(--font-display); font-size: var(--fs-2xl); font-weight: 700; }
+        .cl-sub { margin-top: 4px; font-size: var(--fs-sm); color: var(--muted); }
+        .cl-rows { flex: 1; margin-top: 14px; overflow-y: auto; padding-right: 20px; scrollbar-width: thin; }
+        .cl-row {
+            display: flex; align-items: center; width: 100%; height: 46px; padding: 0 12px;
+            border: 0; border-radius: var(--r-md); cursor: pointer; text-align: left;
+            font: inherit; font-size: var(--fs-md); color: var(--paper-dim); background: none;
+        }
+        .cl-row > * + * { margin-left: 12px; }
+        .cl-row.sel { background: #bfe0f2; color: #0d141c; }
+        .cl-row.sel .cl-num, .cl-row.sel .cl-now { color: #2a3a4a; }
+        .cl-num {
+            min-width: 2rem; text-align: right; font-size: var(--fs-sm);
+            color: var(--muted); font-variant-numeric: tabular-nums;
+        }
+        .cl-logo { width: 30px; height: 24px; }
+        .cl-name { flex: 0 1 auto; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cl-now {
+            flex: 1 1 auto; min-width: 0; color: var(--muted); font-size: var(--fs-sm);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        @media (max-width: 720px) {
+            .ch-osd { width: min(22rem, 76vw); top: 12vh; }
+            .ch-osd-num { font-size: 2.6rem; }
+            .cl-panel { width: 88vw; }
+        }
