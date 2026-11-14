@@ -3559,59 +3559,64 @@
   var chOsdTimer = 0;
   var chNumPending = 0;      // číslo zmáčknuté dřív, než se kanály načetly
 
-  // Prepinani az po posledni cislice, aby slo napsat i dvojciferne cislo.
+  // Přepínání až po poslední číslici, aby šlo napsat i dvojciferné číslo.
   var CH_NUM_WAIT = 4000;
 
   function chOsdParts() {
     var el = $('chOsd');
     if (!el) return null;
-    var num = el.querySelector('.ch-osd-num');
-    if (!num) {
-      el.innerHTML = '<span class="ch-osd-num"></span>'
-        + '<span class="ch-osd-ch" hidden><span class="lg-logo ch-osd-logo">'
-        + '<img alt="" decoding="async" referrerpolicy="no-referrer"><span class="lg-init"></span></span>'
-        + '<span class="ch-osd-name"></span></span>';
-      num = el.querySelector('.ch-osd-num');
-    }
     return {
       el: el,
-      num: num,
-      row: el.querySelector('.ch-osd-ch'),
-      logo: el.querySelector('.ch-osd-logo'),
-      img: el.querySelector('.ch-osd-logo img'),
-      init: el.querySelector('.ch-osd-logo .lg-init'),
-      name: el.querySelector('.ch-osd-name')
+      num: el.querySelector('.ch-osd-num'),
+      list: el.querySelector('.ch-osd-list')
     };
   }
 
-  /* OSD cisla kanalu: nahore napsane cislo, pod nim logo a nazev kanalu,
-     na ktery se prepne - stejne jako u televize. Bez kanalu jen cislo. */
-  function showChOsd(num, holdMs, ch, chNo) {
+  /* Čísla kanálů, která odpovídají napsaným číslicím: přesná shoda první,
+     pak kanály, které napsanými číslicemi začínají ("1" -> 1, 10, 11...).
+     Vypadá to jako u televize: velké číslo a pod ním seznam kanálů. */
+  function chNumMatches(buf) {
+    var out = [], n = parseInt(buf, 10);
+    if (!buf || !isFinite(n) || n < 1) return out;
+    if (state.channels[n - 1]) out.push(n);
+    for (var i = 0; i < state.channels.length && out.length < 6; i++) {
+      var num = i + 1;
+      if (num === n) continue;
+      if (String(num).indexOf(buf) === 0) out.push(num);
+    }
+    return out;
+  }
+
+  function chLogoHtml(ch) {
+    return '<span class="lg-logo cho-logo">'
+      + (ch.logo ? '<img src="' + esc(ch.logo) + '" alt="" decoding="async" crossorigin="anonymous" referrerpolicy="no-referrer">' : '')
+      + '<span class="lg-init">' + esc(lgInitials(ch.name)) + '</span></span>';
+  }
+
+  /* OSD čísla kanálu: nahoře napsané číslo, pod ním seznam kanálů, na které
+     se dá přepnout - první řádek je ten, kam se po chvíli skočí. */
+  function showChOsd(buf, holdMs) {
     var p = chOsdParts();
     if (!p) return;
-    p.num.textContent = String(num == null ? '' : num);
-    if (ch) {
-      p.init.textContent = lgInitials(ch.name);
-      if (ch.logo) {
-        p.img.src = ch.logo;
-        p.logo.className = 'lg-logo ch-osd-logo has-logo';
-      } else {
-        p.img.removeAttribute('src');
-        p.logo.className = 'lg-logo ch-osd-logo';
-      }
-      p.name.textContent = ch.name || ('Kanál ' + chNo);
-      p.row.hidden = false;
-    } else {
-      p.row.hidden = true;
+    p.num.textContent = String(buf == null ? '' : buf);
+    var nums = chNumMatches(buf), html = '';
+    for (var i = 0; i < nums.length; i++) {
+      var ch = state.channels[nums[i] - 1];
+      if (!ch) continue;
+      html += '<div class="cho-row' + (i === 0 ? ' sel' : '') + '">'
+        + chLogoHtml(ch)
+        + '<span class="cho-num">' + nums[i] + '</span>'
+        + '<span class="cho-name">' + esc(ch.name) + '</span></div>';
     }
+    p.list.innerHTML = html;
     show(p.el);
     clearTimeout(chOsdTimer);
     if (holdMs) chOsdTimer = setTimeout(function () { hide(p.el); }, holdMs);
   }
   function hideChOsd() { clearTimeout(chOsdTimer); hide($('chOsd')); }
 
-  /* Na jake cislo se napsane cislice prepnou: presna shoda, jinak prvni kanal,
-     ktery napsanymi cislicemi zacina ("1" -> 1, "12" -> 12). */
+  /* Na jaké číslo se napsané číslice přepnou: přesná shoda, jinak první kanál,
+     který napsanými číslicemi začíná ("1" -> 1, "12" -> 12). */
   function chNumTarget(buf) {
     var n = parseInt(buf, 10);
     if (!buf || !isFinite(n) || n < 1) return 0;
@@ -3620,6 +3625,75 @@
       if (String(i + 1).indexOf(buf) === 0) return i + 1;
     }
     return n;
+  }
+
+  /* Seznam kanálů na zelené tlačítko (jako LIST u televize): číslo, logo,
+     název a co právě běží. Šipky vybírají, OK přepne, zelené/Back zavře. */
+  var chListSel = 0;
+
+  function chListOpen() { var el = $('chList'); return !!(el && !el.hidden); }
+  function hideChList() { hide($('chList')); }
+
+  function chListScroll() {
+    var rows = $('chListRows');
+    if (!rows) return;
+    var el = rows.querySelector('.cl-row.sel');
+    if (!el) return;
+    var top = el.offsetTop, h = rows.clientHeight, eh = el.offsetHeight;
+    if (top < rows.scrollTop) rows.scrollTop = top;
+    else if (top + eh > rows.scrollTop + h) rows.scrollTop = top + eh - h;
+  }
+
+  function chListRender() {
+    var rows = $('chListRows');
+    if (!rows) return;
+    var now = Date.now(), html = '';
+    for (var i = 0; i < state.channels.length; i++) {
+      var ch = state.channels[i], cur = '';
+      var list = liveGuide[ch.name] || [];
+      for (var j = 0; j < list.length; j++) {
+        if (new Date(list[j].s).getTime() <= now && now < new Date(list[j].e).getTime()) { cur = list[j].t || ''; break; }
+      }
+      html += '<button class="f cl-row' + (i === chListSel ? ' sel' : '') + '" type="button" data-i="' + i + '">'
+        + '<span class="cl-num">' + (i + 1) + '</span>'
+        + chLogoHtml(ch)
+        + '<span class="cl-name">' + esc(ch.name) + '</span>'
+        + '<span class="cl-now">' + esc(cur || 'Žádné informace') + '</span></button>';
+    }
+    rows.innerHTML = html;
+    var sub = $('chListSub');
+    if (sub) sub.textContent = state.channels.length + ' kanálů';
+    chListScroll();
+  }
+
+  function showChList() {
+    var box = $('chList');
+    if (!box) return;
+    if (!state.channels.length) {
+      if (!liveBusy) loadLive();
+      toast('Kanály se načítají…');
+      return;
+    }
+    if (chListSel > state.channels.length - 1) chListSel = 0;
+    chListRender();
+    box.hidden = false;
+    chListScroll();
+  }
+
+  function chListMove(d) {
+    if (!state.channels.length) return;
+    chListSel = (chListSel + d + state.channels.length) % state.channels.length;
+    var rows = $('chListRows');
+    if (!rows) return;
+    var all = rows.querySelectorAll('.cl-row');
+    for (var i = 0; i < all.length; i++) all[i].classList.toggle('sel', i === chListSel);
+    chListScroll();
+  }
+
+  function chListTune() {
+    var n = chListSel + 1;
+    hideChList();
+    tuneChannel(n);
   }
 
   /* Kanály číslujeme podle pořadí v seznamu, které drží server (1..N).
@@ -3632,6 +3706,7 @@
   function closeAllOverlays() {
     clearTimeout(chNumTimer); chNumTimer = 0; chNumBuf = '';
     hideChOsd();
+    hideChList();
     if (!$('kbd').hidden) hide($('kbd'));
     if (!$('player').hidden) closePlayer();
     if (!$('detail').hidden) closeDetail();
@@ -3644,7 +3719,7 @@
     var typed = chNumBuf;
     chNumBuf = '';
     if (!state.channels.length) {
-      // Seznam jeste neni nacteny - cislo si pocka a naladi se po nacteni.
+      // Seznam se ještě nenačetl - číslo si počká a naladí se po načtení.
       chNumPending = n;
       showChOsd(typed || String(n), 3000);
       if (!liveBusy) loadLive();
@@ -3652,21 +3727,20 @@
     }
     var ch = state.channels[n - 1];
     if (!ch) { hideChOsd(); toast('Kanál ' + n + ' tu není'); return; }
+    chListSel = n - 1;
     closeAllOverlays();
     if (state.view !== 'live') setView('live');
     playLive(ch);
-    // Prepnuti potvrdi stejne OSD: cislo, logo a nazev kanalu, kam se skocilo.
-    showChOsd(n, 2200, ch, n);
+    // Přepnutí potvrdí stejné OSD: číslo a název kanálu, kam se skočilo.
+    showChOsd(n, 2200);
   }
 
   function chNumPress(d) {
     chNumBuf = (chNumBuf + d).slice(-3);
     clearTimeout(chNumTimer);
-    var target = chNumTarget(chNumBuf);
-    var ch = target ? state.channels[target - 1] : null;
-    // Ukaze se cele napsane cislo a kanal, na ktery se prepne; k prepnuti dojde
-    // az CH_NUM_WAIT po posledni cislice (kazda dalsi cislice odklad resetuje).
-    showChOsd(chNumBuf, CH_NUM_WAIT + 1200, ch, target);
+    // Ukáže se celé napsané číslo a kanály, na které se dá přepnout; k přepnutí
+    // dojde až CH_NUM_WAIT po poslední číslici (každá další číslice odklad resetuje).
+    showChOsd(chNumBuf, CH_NUM_WAIT + 1200);
     chNumTimer = setTimeout(function () {
       chNumTimer = 0;
       tuneChannel(chNumTarget(chNumBuf));
@@ -3981,6 +4055,18 @@
 
     // Červené tlačítko ovladače (webOS 403, Android TV 183) = záložka Živě.
     if (code === 403 || code === 183 || k === 'ColorF0Red') { e.preventDefault(); goLiveTab(); return; }
+
+    // Zelené tlačítko ovladače (webOS 404) = seznam kanálů, jako LIST u televize.
+    if (code === 404 || k === 'ColorF1Green') {
+      e.preventDefault();
+      if (chListOpen()) hideChList(); else { chNumBuf = ''; hideChOsd(); showChList(); }
+      return;
+    }
+    if (chListOpen() && !typing) {
+      if (k === 'ArrowDown' || code === 40) { e.preventDefault(); chListMove(1); return; }
+      if (k === 'ArrowUp' || code === 38) { e.preventDefault(); chListMove(-1); return; }
+      if (k === 'Enter' || code === 13) { e.preventDefault(); chListTune(); return; }
+    }
 
     // Číselník ovladače = číslo kanálu. V hledání a v textových polích patří číslice jim.
     var chDigit = '';
@@ -4552,6 +4638,29 @@
 
     document.addEventListener('mousemove', function () { if (!$('player').hidden) bumpIdle(); });
 
+    var clBox = $('chList');
+    if (clBox) clBox.addEventListener('click', function (e) { if (e.target === clBox) hideChList(); });
+    var clRows = $('chListRows');
+    if (clRows) {
+      clRows.addEventListener('click', function (e) {
+        var t = e.target;
+        while (t && t !== this && !(t.getAttribute && t.getAttribute('data-i') !== null)) t = t.parentNode;
+        if (!t || t === this) return;
+        chListSel = parseInt(t.getAttribute('data-i'), 10) || 0;
+        chListTune();
+      });
+      clRows.addEventListener('mouseover', function (e) {
+        var t = e.target;
+        while (t && t !== this && !(t.getAttribute && t.getAttribute('data-i') !== null)) t = t.parentNode;
+        if (!t || t === this) return;
+        var i = parseInt(t.getAttribute('data-i'), 10) || 0;
+        if (i === chListSel) return;
+        chListSel = i;
+        var all = this.querySelectorAll('.cl-row');
+        for (var j = 0; j < all.length; j++) all[j].classList.toggle('sel', j === i);
+      });
+      clRows.addEventListener('wheel', function () { /* seznam se posouva sam */ }, { passive: true });
+    }
     var liveNowBtn = $('liveNowBtn');
     if (liveNowBtn) liveNowBtn.addEventListener('click', function () { liveScrollToNow(true); });
     // Červená čára i průběh pořadu se posouvají samy (a karta s nimi).

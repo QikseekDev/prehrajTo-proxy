@@ -373,11 +373,16 @@
   </div>
 
   <div id="chOsd" class="ch-osd" hidden aria-live="polite">
-    <span class="ch-osd-num"></span>
-    <span class="ch-osd-ch" hidden>
-      <span class="lg-logo ch-osd-logo"><img alt="" decoding="async" referrerpolicy="no-referrer"><span class="lg-init"></span></span>
-      <span class="ch-osd-name"></span>
-    </span>
+    <div class="ch-osd-num"></div>
+    <div class="ch-osd-list"></div>
+  </div>
+  <div id="chList" class="ch-list" hidden aria-live="polite">
+    <div class="cl-panel">
+      <div class="cl-title">Kanály</div>
+      <div class="cl-sub" id="chListSub"></div>
+      <div class="cl-tabs"><span class="on">Nyní</span></div>
+      <div class="cl-rows" id="chListRows"></div>
+    </div>
   </div>
   <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
   <div id="loading" class="loading" hidden role="status" aria-live="polite"><span class="spinner"></span><span id="loadingText">Načítám…</span></div>
