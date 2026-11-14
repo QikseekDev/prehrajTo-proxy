@@ -4773,8 +4773,8 @@
                 return;
             }
 
-            const liveVisible = liveSection.style.display === 'block' || livePlayerSection.style.display === 'block';
-            if (liveVisible && k && k.length === 1 && k >= '0' && k <= '9') {
+            // Cislo kanalu plati vsude na webu - z Domu, z hledani i z prehravace.
+            if (k && k.length === 1 && k >= '0' && k <= '9') {
                 e.preventDefault(); e.stopPropagation();
                 chNumPress(k);
             }
