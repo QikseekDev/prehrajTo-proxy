@@ -1295,7 +1295,7 @@ app.MapGet("/api/catalog", async (string? lang, IHttpClientFactory f, IMemoryCac
 //   ?country=cz   -> https://iptv-org.github.io/iptv/countries/cz.m3u (když selže, streams/cz.m3u)
 //   ?lang=ces     -> https://iptv-org.github.io/iptv/languages/ces.m3u
 //   ?custom=<i>   -> "Prehraj:LivePlaylists" z konfigurace
-app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? epg, IHttpClientFactory f, IMemoryCache cache, EpgService epgService, IptvOrgApi iptv, CancellationToken ct) =>
+app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? epg, int? desc, IHttpClientFactory f, IMemoryCache cache, EpgService epgService, IptvOrgApi iptv, CancellationToken ct) =>
 {
     if (!adminStore.Current.Flags.Live)
         return Results.Json(new { success = false, error = "Živé vysílání je dočasně vypnuté." }, statusCode: 503);
@@ -1447,6 +1447,9 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? 
         var countryGuide = countryCode is { Length: 2 } ? await epgService.GetCountryAsync(countryCode, ct) : null;
         var from = DateTimeOffset.UtcNow.AddHours(-16);
         var to = DateTimeOffset.UtcNow.AddHours(26);
+        // desc=1 posílá i popis pořadu (co se v něm děje) - klienti ho ukazují v kartě
+        // o pořadu. Web ho nežádá, pro stovky pořadů by byl JSON zbytečně velký.
+        var withDesc = desc is 1;
         var guide = new Dictionary<string, object[]>(StringComparer.Ordinal);
         foreach (var ch in channels)
         {
@@ -1455,7 +1458,7 @@ app.MapGet("/api/live", async (string? country, string? lang, int? custom, int? 
                 ?? EpgService.FindChannel(countryGuide, ch.Id, ch.Name, from, to);
             if (matched is null) continue;
             var programmes = EpgService.Programmes(matched, from, to)
-                .Select(p => (object)new { t = p.Title, s = p.Start, e = p.Stop })
+                .Select(p => (object)new { t = p.Title, s = p.Start, e = p.Stop, d = withDesc ? p.Description : null })
                 .ToArray();
             if (programmes.Length > 0 && !guide.ContainsKey(ch.Name)) guide[ch.Name] = programmes;
         }

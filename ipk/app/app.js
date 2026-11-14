@@ -986,8 +986,6 @@
     seriesFrom: 'results', // odkud se seriál otevřel (results | library)
     seriesQuery: '',    // dotaz, kterým se dotahují další stránky
     channels: [],
-    liveFilter: 'cz',
-    liveFlags: { hd: false, noGeo: false, only24: false },
     detail: null
   };
 
@@ -2290,49 +2288,84 @@
     { id: 'uk', label: 'VB', q: 'country=uk' }
   ];
 
-  function renderLiveChips() {
-    var html = '';
-    for (var i = 0; i < LIVE_SOURCES.length; i++) {
-      var s = LIVE_SOURCES[i];
-      html += '<button class="f chip' + (state.liveFilter === s.id ? ' active' : '') + '" type="button" data-live-src="' + s.id + '">' + esc(s.label) + '</button>';
-    }
-    html += '<span class="chip-sep" aria-hidden="true"></span>';
-    html += '<button class="f chip' + (state.liveFlags.hd ? ' active' : '') + '" type="button" data-live-flag="hd">1080p</button>';
-    html += '<button class="f chip' + (state.liveFlags.noGeo ? ' active' : '') + '" type="button" data-live-flag="noGeo">Bez geo bloku</button>';
-    html += '<button class="f chip' + (state.liveFlags.only24 ? ' active' : '') + '" type="button" data-live-flag="only24">Jen 24/7</button>';
-    var box = $('liveChips');
-    box.innerHTML = html;
-    var srcs = box.querySelectorAll('[data-live-src]');
-    for (var a = 0; a < srcs.length; a++) {
-      (function (el) {
-        el.addEventListener('click', function () {
-          var id = el.getAttribute('data-live-src');
-          if (state.liveFilter === id) return;
-          state.liveFilter = id;
-          settings.live = id;
-          saveSettings();
-          state.channels = [];
-          renderLiveChips();
-          loadLive();
-        });
-      })(srcs[a]);
-    }
-    var flags = box.querySelectorAll('[data-live-flag]');
-    for (var b = 0; b < flags.length; b++) {
-      (function (el) {
-        el.addEventListener('click', function () {
-          var f = el.getAttribute('data-live-flag');
-          state.liveFlags[f] = !state.liveFlags[f];
-          renderLiveChips();
-          renderChannels();
-        });
-      })(flags[b]);
-    }
-  }
-
+  // Zdroj kanálů i jazyk živého vysílání se vybírají v Nastavení, takže karta
+  // Živě nemá nahoře žádný výběr ani filtry - jen kartu o pořadu a průvodce.
   function sourceQuery(id) {
     for (var i = 0; i < LIVE_SOURCES.length; i++) if (LIVE_SOURCES[i].id === id) return LIVE_SOURCES[i].q;
     return 'country=cz';
+  }
+
+  /* Karta o pořadu nad průvodcem (jako v Oneplay): co běží nebo co je označené,
+     odkdy dokdy, kolik zbývá a co následuje. Bere se z programu, který server
+     posílá u /api/live?...&epg=1 - stejná data jako bloky na ose, takže se nic
+     dalšího nestahuje. Na TV ji mění fokus, na mobilu klepnutí. */
+  function lcClock(v) {
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return '--:--';
+    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+
+  function liveCardShow(ch, progIndex) {
+    var card = $('liveCard');
+    if (!card || !ch) return;
+    var list = liveGuide[ch.name] || [];
+    var now = Date.now();
+    var p = null, i;
+    if (progIndex !== null && progIndex !== undefined && list[progIndex]) p = list[progIndex];
+    if (!p) {
+      // Bez konkrétního pořadu (klepnutí na kanál) se ukáže ten, co právě běží.
+      for (i = 0; i < list.length; i++) {
+        if (new Date(list[i].s).getTime() <= now && now < new Date(list[i].e).getTime()) { p = list[i]; break; }
+      }
+    }
+
+    var head = '<span class="lg-logo lc-logo">'
+      + (ch.logo ? '<img src="' + esc(ch.logo) + '" data-u="' + esc(ch.logo) + '" alt="" decoding="async" crossorigin="anonymous" referrerpolicy="no-referrer">' : '')
+      + '<span class="lg-init">' + esc(lgInitials(ch.name)) + '</span></span>'
+      + '<div class="lc-main"><div class="lc-head"><span class="lc-chan">' + esc(ch.name) + '</span>';
+
+    if (!p) {
+      card.innerHTML = head + '</div><h2 class="lc-title muted">Data o programu nejsou k dispozici</h2>'
+        + '<div class="lc-next">Kanál jde přehrát živě.</div></div>';
+      card.hidden = false;
+      return;
+    }
+
+    var s = new Date(p.s).getTime(), e = new Date(p.e).getTime();
+    var total = Math.max(60000, e - s);
+    var mins = Math.max(1, Math.round(total / 60000));
+    var running = s <= now && now < e;
+    var badge, note;
+    if (running) {
+      badge = '<span class="lc-badge now">Teď</span>';
+      note = 'zbývá ' + Math.max(1, Math.round((e - now) / 60000)) + ' min';
+    } else if (s > now) {
+      badge = '<span class="lc-badge">Za ' + Math.max(1, Math.round((s - now) / 60000)) + ' min</span>';
+      note = mins + ' min';
+    } else {
+      badge = '<span class="lc-badge">Odvysíláno</span>';
+      note = 'skončilo ' + lcClock(p.e) + ' · ' + mins + ' min';
+    }
+
+    var next = null;
+    for (i = 0; i < list.length; i++) {
+      var ns = new Date(list[i].s).getTime();
+      if (ns < e) continue;
+      if (!next || ns < new Date(next.s).getTime()) next = list[i];
+    }
+
+    var pct = running ? Math.min(100, Math.max(0, Math.round((now - s) / total * 100))) : 0;
+    card.innerHTML = head
+      + badge
+      + '<span class="lc-time">' + lcClock(p.s) + '–' + lcClock(p.e) + '</span>'
+      + '<span class="lc-note">' + esc(note) + '</span>'
+      + '</div><h2 class="lc-title">' + esc(p.t || 'Bez názvu') + '</h2>'
+      + (running ? '<div class="lc-bar"><i style="width:' + pct + '%"></i></div>' : '')
+      + (p.d ? '<p class="lc-desc">' + esc(p.d) + '</p>' : '')
+      + (next ? '<div class="lc-next">Následuje ' + lcClock(next.s) + '–' + lcClock(next.e) + ' · ' + esc(next.t || 'Bez názvu') + '</div>' : '')
+      + '</div>';
+    card.hidden = false;
+    lgPaintLogos(card);
   }
 
   function applyLive(d) {
@@ -2363,7 +2396,7 @@
   function liveWarmOne(key) {
     if (!key || liveWarmBusy || liveWarmData(key)) return Promise.resolve();
     liveWarmBusy = true;
-    return apiJson('/api/live?' + key + '&epg=1', 35000).then(function (d) {
+    return apiJson('/api/live?' + key + '&epg=1&desc=1', 35000).then(function (d) {
       if (d && d.success && d.channels && d.channels.length) liveWarm = { key: key, data: d, t: Date.now() };
     }).catch(function () {
       // na pozadí je to jen zrychlení - když to selže, normální cesta to zkusí znovu
@@ -2373,8 +2406,8 @@
   function warmLive() {
     // Vybraný zdroj (výchozí je Česko); když je vybraná jiná země, dotáhne se po
     // něm i Česko, ale na to už se nečeká.
-    return liveWarmOne(sourceQuery(state.liveFilter)).then(function () {
-      if (state.liveFilter !== 'cz') return liveWarmOne('country=cz');
+    return liveWarmOne(sourceQuery(settings.live)).then(function () {
+      if (settings.live !== 'cz') return liveWarmOne('country=cz');
     });
   }
 
@@ -2389,7 +2422,7 @@
 
   function loadLive() {
     var st = $('liveState');
-    var warm = liveWarmData(sourceQuery(state.liveFilter));
+    var warm = liveWarmData(sourceQuery(settings.live));
     if (warm) {
       // Data jsou z přednačtení při startu: karta se otevře hned a bez spinneru.
       try {
@@ -2401,7 +2434,8 @@
     st.textContent = 'Načítám kanály…';
     loading('Načítám kanály…');
     liveBusy = true;
-    return apiJson('/api/live?' + sourceQuery(state.liveFilter) + '&epg=1', 35000).then(function (d) {
+    // epg=1 = program na osu, desc=1 = popis pořadu do karty nad průvodcem.
+    return apiJson('/api/live?' + sourceQuery(settings.live) + '&epg=1&desc=1', 35000).then(function (d) {
       loading(null);
       if (!d || !d.success) throw new Error((d && d.error) || 'Seznam kanálů se nepodařilo načíst');
       applyLive(d);
@@ -2571,7 +2605,7 @@
       if (from === null || to === null || to <= from) continue;
       var a = Math.max(0, from), b = Math.min(1440, to);
       if (b - a < 1) continue;
-      out.push({ title: p.t || 'Bez názvu', from: from, to: to, a: a, b: b });
+      out.push({ i: i, title: p.t || 'Bez názvu', from: from, to: to, a: a, b: b });
     }
     return out;
   }
@@ -2709,23 +2743,24 @@
     return true;
   }
 
+  // Filtry (1080p, bez geo bloku, 24/7) tu nejsou - kanály se berou tak, jak je
+  // pro zvolený zdroj vrátí server.
   function liveItems() {
-    return state.channels.filter(function (c) {
-      var tags = c.tags || [];
-      if (state.liveFlags.hd && !(c.quality === '1080p' || c.quality === '4k')) return false;
-      if (state.liveFlags.noGeo && tags.indexOf('geo') !== -1) return false;
-      if (state.liveFlags.only24 && tags.indexOf('not24') !== -1) return false;
-      return true;
-    });
+    return state.channels;
   }
 
   function renderChannels(reset) {
     var st = $('liveState');
     var items = liveItems();
     st.className = 'state' + (items.length ? '' : ' show');
-    st.textContent = items.length ? '' : 'Takový kanál tu není. Zkus jiný zdroj nebo jiné filtry.';
+    st.textContent = items.length ? '' : 'Zatím žádné kanály. Zdroj se mění v Nastavení.';
     var grid = $('liveGrid');
-    if (!items.length) { grid.innerHTML = ''; grid.hidden = true; return; }
+    if (!items.length) {
+      grid.innerHTML = '';
+      grid.hidden = true;
+      if ($('liveCard')) $('liveCard').hidden = true;
+      return;
+    }
     grid.hidden = false;
 
     var base = lgMidnight();
@@ -2767,7 +2802,7 @@
           var cls = running ? ' run' : (pr.to <= nowMin ? ' past' : ' fut');
           var w = Math.max(16, Math.round((pr.b - pr.a) * ppm) - 2);
           var done = running ? Math.min(100, Math.round((nowMin - pr.from) / (pr.to - pr.from) * 100)) : 0;
-          blocks += '<button class="f lg-pg' + cls + '" type="button" data-ch="' + idx + '"'
+          blocks += '<button class="f lg-pg' + cls + '" type="button" data-ch="' + idx + '" data-pg="' + pr.i + '"'
             + ' title="' + esc(pr.title) + ' · ' + lgTime(pr.from) + '–' + lgTime(pr.to) + '"'
             + ' style="left:' + Math.round(pr.a * ppm) + 'px;width:' + w + 'px">'
             + '<b>' + esc(pr.title) + '</b><small>' + lgTime(pr.from) + '–' + lgTime(pr.to) + '</small>'
@@ -2801,6 +2836,8 @@
       + '</div></div>';
 
     lgPaintLogos(grid);
+    // Výchozí stav karty: pořad, který právě běží na prvním kanálu seznamu.
+    if (reset) liveCardShow(items[0], null);
 
     var box = grid.querySelector('.lg-scroll');
     if (reset) {
@@ -2837,6 +2874,15 @@
       if (!el || !grid.contains(el)) return;
       var ch = state.channels[parseInt(el.getAttribute('data-ch'), 10)];
       if (ch) playLive(ch);
+    });
+    // Fokus na dálkovém ovladači: karta nahoře ukazuje pořad, který je označený.
+    grid.addEventListener('focusin', function (e) {
+      var el = e.target && e.target.closest ? e.target.closest('[data-ch]') : null;
+      if (!el || !grid.contains(el)) return;
+      var ch = state.channels[parseInt(el.getAttribute('data-ch'), 10)];
+      if (!ch) return;
+      var pg = el.getAttribute('data-pg');
+      liveCardShow(ch, pg === null ? null : parseInt(pg, 10));
     });
   })();
 
@@ -3502,6 +3548,7 @@
 
   function playLive(ch) {
     var chIdx = state.channels.indexOf(ch);
+    liveCardShow(ch, null);
     player.page = { channel: ch, channelIndex: chIdx };
     player.cdn = '';
     player.title = (chIdx >= 0 ? 'Kanál ' + (chIdx + 1) + ' · ' : '') + (ch.name || 'Živě');
@@ -3613,9 +3660,11 @@
       saveSettings();
       renderSettings();
       focusEl($('setLive'));
-      state.liveFilter = settings.live;
+      // Nový zdroj = nový seznam i program; karta Živě se dotáhne při otevření.
       state.channels = [];
-      renderLiveChips();
+      liveGuide = {};
+      if ($('liveCard')) $('liveCard').hidden = true;
+      if (state.view === 'live') loadLive();
     });
     $('setSubSize').addEventListener('click', function () {
       settings.subSize = cycleIn(CUE_SIZES, settings.subSize);
@@ -4101,9 +4150,7 @@
 
   function startApp() {
     show($('shell'));
-    renderLiveChips();
     renderSettings();
-    if (settings.live) state.liveFilter = settings.live;
     if (isOffline()) {
       openLibraryView('Bez připojení – otevírám knihovnu');
       return;
@@ -4370,7 +4417,6 @@
 
     document.addEventListener('mousemove', function () { if (!$('player').hidden) bumpIdle(); });
 
-    renderLiveChips();
     var liveNowBtn = $('liveNowBtn');
     if (liveNowBtn) liveNowBtn.addEventListener('click', function () { liveScrollToNow(true); });
     renderSettings();

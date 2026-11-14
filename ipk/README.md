@@ -87,7 +87,9 @@ Fokus je vždy vidět (bílý rám + modrý obrys), ovládání přehrávače se
 - **Živě** – `/api/live?epg=1` (iptv-org: Česko, Čeština, Slovensko, USA, VB) jako časová
   osa 00:00–24:00: řádek na kanál, pořady z EPG jako bloky, červená linka „teď“ a tlačítko
   Teď; kanál bez programu má blok „Data o programu nejsou k dispozici“ a pořád jde přehrát.
-  Filtry 1080p / bez geo bloku / jen 24-7, HLS přes `hls.js`, relay `/api/live/hls` pro
+  Zdroj kanálů (země/jazyk) se vybírá v Nastavení, proto karta Živě žádný výběr ani filtry
+  nemá – místo nich je nad průvodcem karta o pořadu: co běží nebo co je označené fokusem,
+  odkdy dokdy, kolik zbývá a co následuje. HLS přes `hls.js`, relay `/api/live/hls` pro
   kanály, které chtějí vlastní User-Agent nebo Referer.
 - **Nastavení** – server, přímé přehrávání, jazyk katalogu, výchozí zdroj živého vysílání,
   test spojení.

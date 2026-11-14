@@ -64,8 +64,10 @@ Stejná adresa se používá pro všechno: katalog, hledání, přehrávání, t
 - **Živé vysílání** – `/api/live?epg=1` (iptv-org: Česko, Čeština, Slovensko, USA, VB) jako
   časová osa 00:00–24:00: řádek na kanál, pořady z EPG jako bloky, červená linka „teď“
   a tlačítko Teď. Kanál bez programu má blok „Data o programu nejsou k dispozici“ a pořád
-  jde přehrát. Filtry 1080p / bez geo bloku / jen 24-7. HLS hraje `hls.js`, kanály s vlastním
-  User-Agentem nebo Refererem jdou vždy přes relay `/api/live/hls`.
+  jde přehrát. Zdroj kanálů (země/jazyk) se vybírá v Nastavení, takže karta Živě žádný výběr
+  ani filtry nemá – nad průvodcem je karta o pořadu (odkdy dokdy, kolik zbývá, co následuje),
+  která se na TV mění podle fokusu. HLS hraje `hls.js`, kanály s vlastním User-Agentem nebo
+  Refererem jdou vždy přes relay `/api/live/hls`.
 - **Stahování offline** – v detailu filmu tlačítko *Stáhnout offline* (vedle *Přehrát* a
   *Do oblíbených*). Video se stáhne přes `/api/stream?download=1` do soukromého úložiště
   aplikace (`files/offline`, přes most `WflixNative.offlineStart`) a přehraje se z `file://`,

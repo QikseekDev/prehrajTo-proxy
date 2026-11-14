@@ -245,19 +245,47 @@ body.touch .card:active .art{transform:scale(.985)}
 /* ==========================================================================
    Živě
    ========================================================================== */
-.chips{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
 .chip{
   min-height:2.2rem;padding:0 .85rem;border-radius:999px;border:1px solid var(--line-strong);
   font-size:.84rem;font-weight:600;color:var(--text-2);background:rgba(255,255,255,.02);
 }
 .chip:hover{color:var(--text);border-color:var(--text-2);background:rgba(255,255,255,.04)}
 .chip.active{background:var(--text);border-color:var(--text);color:#0e0e10}
-.chip-sep{align-self:center;width:1px;height:1.4rem;margin:0 .35rem;background:var(--line-strong)}
 /* ---------- Časová osa programu (Živě) ---------- */
 /* Kanály jako řádky, pořady jako bloky na ose 00:00-24:00. Kanál bez programu
    dostane prázdný blok s hláškou, takže se v seznamu neztratí. */
 .live-bar{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.2rem var(--gutter) .7rem}
 .live-hint{font-size:.72rem;color:var(--muted)}
+/* ---------- Karta o pořadu nad průvodcem ---------- */
+/* Jako v Oneplay: co právě běží (nebo co je označené), odkdy dokdy, kolik zbývá
+   a co následuje. Na TV se obsah mění podle fokusu, na mobilu podle klepnutí. */
+.live-card{
+  display:flex;align-items:flex-start;gap:.9rem;
+  margin:0 var(--gutter) .8rem;padding:.8rem .95rem;
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);
+}
+/* Logo má stejný základ jako v průvodci (.lg-logo), jen jinou velikost -
+   proto vyšší specificita, aby ho pozdější pravidlo nepřepsalo. */
+.live-card .lc-logo{width:3.4rem;height:2.6rem;border-radius:3px;padding:.18rem}
+.live-card .lc-logo .lg-init{font-size:.85rem}
+.lc-main{min-width:0;flex:1 1 auto}
+.lc-head{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.76rem;color:var(--muted);line-height:1.5}
+.lc-chan{font-weight:700;color:var(--text-2);letter-spacing:.03em;text-transform:uppercase}
+.lc-badge{padding:.02rem .45rem;border-radius:999px;border:1px solid var(--line-strong);font-size:.68rem;font-weight:700;color:var(--text-2);white-space:nowrap}
+.lc-badge.now{background:rgba(227,50,41,.16);border-color:var(--accent);color:var(--text)}
+.lc-time{color:var(--text-2);font-weight:600;white-space:nowrap}
+.lc-note{white-space:nowrap}
+.lc-title{margin:.2rem 0 .3rem;font-size:1.15rem;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lc-title.muted{color:var(--muted);font-weight:500;font-size:.98rem}
+.lc-desc{margin:.1rem 0 .35rem;font-size:.86rem;line-height:1.5;color:var(--text-2);max-width:56rem;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.lc-bar{height:3px;border-radius:999px;background:var(--surface-3);overflow:hidden;margin:.1rem 0 .4rem;max-width:34rem}
+.lc-bar i{display:block;height:100%;background:var(--accent)}
+.lc-next{font-size:.78rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:900px){
+  .live-card .lc-logo{width:2.6rem;height:2rem}
+  .lc-title{font-size:1rem}
+  .lc-desc{font-size:.8rem;-webkit-line-clamp:2}
+}
 .live-guide[hidden]{display:none}
 .live-guide{--lg-cw:14rem;--lg-rh:4.4rem;padding:0 var(--gutter) 2.4rem}
 .lg-scroll{overflow:auto;max-height:calc(100vh - 16rem);min-height:14rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);scrollbar-width:none;-ms-overflow-style:none;scroll-behavior:auto}
@@ -727,6 +755,8 @@ html.no-flex-gap .state .health-inline > * + *{margin-left:.5rem}
 html.no-flex-gap .p-next > * + *{margin-top:.55rem}
 html.no-flex-gap .p-next-bar > * + *{margin-left:1rem}
 html.no-flex-gap .p-next-actions > * + *{margin-left:.45rem}
+html.no-flex-gap .live-card > * + *{margin-left:.9rem}
+html.no-flex-gap .lc-head > * + *{margin-left:.5rem}
 
 /* TV (IPK/webOS): větší text pro čitelnost na dálku; vyjímky: levý panel, hero/banner, klávesnice a návrhy */
 .webos .main{font-size:1.12em}
