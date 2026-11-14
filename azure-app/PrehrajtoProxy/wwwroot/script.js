@@ -3152,6 +3152,14 @@
                 // Jakákoli fatální chyba přímého přehrání (CORS, mixed content, zdroj bez
                 // playlistu) znamená přejít na server: Firefox hlásí zablokovaný http zdroj
                 // jinou chybou než Chrome, takže se nečeká jen na NETWORK_ERROR.
+                // HEVC (H.265) v M2TS hls.js nepřehraje v žádném prohlížeči - nemá smysl
+                // zkoušet jinou adresu ani server, řekneme to rovnou.
+                if (typeof data.reason === 'string' && /HEVC/i.test(data.reason)) {
+                    showLiveError('Kanál vysílá v HEVC (H.265), který prohlížeč přehrát neumí. Zkus jiný kanál.');
+                    hls.destroy();
+                    if (liveHls === hls) liveHls = null;
+                    return;
+                }
                 if (!relayed) {
                     if (data.type === Hls.ErrorTypes.NETWORK_ERROR && directRetries++ < 1) { hls.startLoad(); return; }
                     relayed = true;
