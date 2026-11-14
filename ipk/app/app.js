@@ -1213,6 +1213,7 @@
    * ------------------------------------------------------------------ */
   function setView(name) {
     state.view = name;
+    if (name !== 'home') userStopHeroTrailer();
     var views = document.querySelectorAll('.view');
     for (var i = 0; i < views.length; i++) views[i].classList.remove('active');
     var v = $('view-' + name);
@@ -1241,19 +1242,7 @@
 
   /* ===== Trailer v hero (billboardu) ===== */
   var HERO_TRAILER_AFTER = 4000;
-  var heroTrailer = { io: null, timer: 0, video: null, sound: false, cleanup: null, expandTimer: 0, expanded: false };
-
-  function unmuteHeroTrailer() {
-    heroTrailer.sound = true;
-    var v = heroTrailer.video;
-    if (!v) return;
-    v.muted = false;
-    try { v.removeAttribute('muted'); } catch (e) {}
-    v.volume = 1;
-  }
-  ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) {
-    document.addEventListener(ev, unmuteHeroTrailer, { passive: true });
-  });
+  var heroTrailer = { io: null, timer: 0, video: null, blocked: false, cleanup: null, expandTimer: 0, expanded: false };
 
   function collapseHeroTrailer() {
     clearTimeout(heroTrailer.expandTimer);
@@ -1280,8 +1269,21 @@
     if (v.parentNode) v.parentNode.removeChild(v);
   }
 
+  // Jakákoli interakce uživatele trailer zastaví (a už ho znovu nespustí pro tento tip).
+  function userStopHeroTrailer() {
+    if (heroTrailer.blocked && !heroTrailer.video && !heroTrailer.timer) return;
+    heroTrailer.blocked = true;
+    stopHeroTrailer();
+  }
+  ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(function (ev) {
+    document.addEventListener(ev, userStopHeroTrailer, { passive: true, capture: true });
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) userStopHeroTrailer();
+  });
+
   function playHeroTrailer(heroEl, url) {
-    if (!url || !heroEl || !heroEl.isConnected || heroTrailer.video) return;
+    if (heroTrailer.blocked || !url || !heroEl || !heroEl.isConnected || heroTrailer.video) return;
     var v = document.createElement('video');
     v.className = 'hero-video';
     v.muted = true;
@@ -1324,18 +1326,14 @@
     };
     v.addEventListener('playing', reveal, { once: false });
     var tryPlay = function () {
-      if (!v.isConnected) return;
-      if (heroTrailer.sound) {
-        v.muted = false;
-        try { v.removeAttribute('muted'); } catch (e) {}
-        v.volume = 1;
-      } else {
-        v.muted = true;
-        v.setAttribute('muted', '');
-      }
+      if (!v.isConnected || heroTrailer.blocked) return;
+      // zkusit se zvukem; bez gesta prohlížeč zablokuje -> spadnout na ztlumené
+      v.muted = false;
+      try { v.removeAttribute('muted'); } catch (e) {}
+      v.volume = 1;
       var p = v.play();
       if (p && p.catch) p.catch(function () {
-        if (!v.isConnected) return;
+        if (!v.isConnected || heroTrailer.blocked) return;
         if (!v.muted) {
           v.muted = true;
           v.setAttribute('muted', '');
@@ -1354,7 +1352,7 @@
 
   function armHeroTrailer(heroEl, it) {
     var url = it && (it.trailer || it.Trailer || it.preview || it.previewUrl);
-    if (!url || !heroEl) return;
+    if (heroTrailer.blocked || !url || !heroEl) return;
     try { if (navigator.connection && navigator.connection.saveData) return; } catch (e) {}
     var isVisibleEnough = function () {
       if (!heroEl.isConnected) return false;
@@ -1364,9 +1362,9 @@
       return visible >= Math.min(r.height, vh) * 0.3 && r.bottom > 0 && r.top < vh;
     };
     var tryStartTimer = function () {
+      if (heroTrailer.blocked) return;
       var v = heroTrailer.video;
       if (v) {
-        if (heroTrailer.sound && v.muted) { v.muted = false; try { v.removeAttribute('muted'); } catch (e) {} v.volume = 1; }
         if (v.paused && v.readyState >= 2) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
         return;
       }
@@ -1374,7 +1372,7 @@
       if (heroTrailer.timer) return;
       heroTrailer.timer = setTimeout(function () {
         heroTrailer.timer = 0;
-        if (!heroTrailer.video && heroEl.isConnected && isVisibleEnough()) playHeroTrailer(heroEl, url);
+        if (!heroTrailer.blocked && !heroTrailer.video && heroEl.isConnected && isVisibleEnough()) playHeroTrailer(heroEl, url);
       }, HERO_TRAILER_AFTER);
     };
     var onVisChange = function () {
@@ -1410,9 +1408,10 @@
 
   function renderHero() {
     var list = state.catalog;
-    if (!list.length) { stopHeroTrailer(); $('hero').innerHTML = ''; return; }
+    if (!list.length) { heroTrailer.blocked = false; stopHeroTrailer(); $('hero').innerHTML = ''; return; }
     var it = heroPickItem();
     if (!it) it = list[state.heroIndex % list.length];
+    heroTrailer.blocked = false; // nový tip = nový pokus o trailer
     stopHeroTrailer();
     var g = itemGenres(it);
     var img = itemImg(it);
