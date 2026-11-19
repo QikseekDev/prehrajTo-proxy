@@ -1984,8 +1984,8 @@
         }, true);
 
         // Výchozí první linie (bez bombuj a sledujteto); „Více výsledků“ přidá i tyto zdroje.
-        const MERGE_SOURCES_LINE1 = ['prehrajto', 'hellspy', 'fastshare', 'sdilej'];
-        const MERGE_SOURCES_ALL = ['prehrajto', 'sledujteto', 'bombuj', 'hellspy', 'fastshare', 'sdilej'];
+        const MERGE_SOURCES_LINE1 = ['prehrajto', 'hellspy', 'fastshare'];
+        const MERGE_SOURCES_ALL = ['prehrajto', 'sledujteto', 'bombuj', 'hellspy', 'fastshare'];
 
         function movieDedupeKey(m) {
             const url = String((m && m.url) || '');
@@ -4075,7 +4075,7 @@
                         <label for="searchMergeToggle">Více výsledků</label>
                         <label class="switch"><input type="checkbox" id="searchMergeToggle"><span></span></label>
                     </div>
-                    <div class="set-hint">Vypnuto (výchozí): hledá se na Prehraj.to, HellSpy, FastShare a Sdílej najednou (bez Bombuj a Sledujteto). Zapnuto: přidají se i Bombuj a Sledujteto. Když jeden zdroj selže, použijí se ostatní; chyba se zobrazí jen když selžou všechny.</div>
+                    <div class="set-hint">Vypnuto (výchozí): hledá se na Prehraj.to, HellSpy a FastShare najednou (bez Bombuj a Sledujteto). Zapnuto: přidají se i Bombuj a Sledujteto. Když jeden zdroj selže, použijí se ostatní; chyba se zobrazí jen když selžou všechny.</div>
 
                     <h2>Titulky</h2>
                     <div class="set-row">

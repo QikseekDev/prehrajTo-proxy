@@ -97,7 +97,6 @@ function wflixSource($s) {
         'sledujteto' => 'sledujteto', 'sledujteto.cz' => 'sledujteto', 'old.sledujteto.cz' => 'sledujteto',
         'hellspy' => 'hellspy', 'hellspy.to' => 'hellspy',
         'fastshare' => 'fastshare', 'fastshare.cz' => 'fastshare', 'fastshare.cloud' => 'fastshare',
-        'sdilej' => 'sdilej', 'sdilej.cz' => 'sdilej',
         'all' => 'all', 'merge' => 'all', 'both' => 'all', 'prehrajto+sledujteto' => 'all',
     ];
     return isset($map[$s]) ? $map[$s] : 'prehrajto';
@@ -112,7 +111,6 @@ function wflixAllowedSourceUrl($source, $url) {
     if ($source === 'sledujteto') return $host === 'sledujteto.cz' || substr($host, -14) === '.sledujteto.cz';
     if ($source === 'hellspy') return $host === 'hellspy.to' || substr($host, -11) === '.hellspy.to';
     if ($source === 'fastshare') return $host === 'fastshare.cz' || substr($host, -13) === '.fastshare.cz' || $host === 'fastshare.cloud' || substr($host, -16) === '.fastshare.cloud';
-    if ($source === 'sdilej') return $host === 'sdilej.cz' || substr($host, -10) === '.sdilej.cz';
     return false;
 }
 
@@ -415,20 +413,18 @@ function searchHellspy($query, $page = 1) {
 }
 
 /**
- * FastShare a Sdilej.cz - stejné `api_kodi.php` a stejný katalog pod dvěma značkami.
+ * FastShare - veřejné `api_kodi.php`.
  * Hledání je veřejné (bez účtu), stahování může účet vyžadovat. `download_url` vede
- * přímo na soubor (fastshare: *.fastshare.cloud, sdilej: sdilej_profi.php), takže
- * resolveSourceVideo() nic dalšího scrapovat nemusí.
+ * přímo na soubor (*.fastshare.cloud), takže resolveSourceVideo() nic dalšího scrapovat nemusí.
  */
-function fastshareSearchUrl($query, $page, $provider) {
-    $host = ($provider === 'sdilej') ? 'sdilej.cz' : 'fastshare.cz';
-    return 'https://' . $host . '/api/api_kodi.php?process=search&term=' . rawurlencode($query)
+function fastshareSearchUrl($query, $page) {
+    return 'https://fastshare.cz/api/api_kodi.php?process=search&term=' . rawurlencode($query)
         . '&pagination=' . max(1, (int)$page) . '&adult=false';
 }
 
-function parseFastshareBody($body, $provider) {
+function parseFastshareBody($body) {
     $d = json_decode((string)$body, true);
-    if (!is_array($d)) return ['error' => wflixSourceLabel($provider) . ': neplatná odpověď', 'movies' => []];
+    if (!is_array($d)) return ['error' => 'FastShare: neplatná odpověď', 'movies' => []];
     $files = (isset($d['search']['file']) && is_array($d['search']['file'])) ? $d['search']['file'] : [];
     $movies = [];
     foreach ($files as $f) {
@@ -446,7 +442,7 @@ function parseFastshareBody($body, $provider) {
             'title' => $title,
             'thumbnail' => isset($f['thumbnail']) ? trim((string)$f['thumbnail']) : '',
             'year' => $year,
-            'source' => $provider,
+            'source' => 'fastshare',
         ];
         if (count($movies) >= 30) break;
     }
@@ -454,19 +450,18 @@ function parseFastshareBody($body, $provider) {
 }
 
 function wflixSourceLabel($source) {
-    $labels = ['prehrajto' => 'Prehraj.to', 'sledujteto' => 'Sledujteto', 'bombuj' => 'Bombuj', 'hellspy' => 'HellSpy', 'fastshare' => 'FastShare', 'sdilej' => 'Sdilej.cz'];
+    $labels = ['prehrajto' => 'Prehraj.to', 'sledujteto' => 'Sledujteto', 'bombuj' => 'Bombuj', 'hellspy' => 'HellSpy', 'fastshare' => 'FastShare'];
     return isset($labels[$source]) ? $labels[$source] : $source;
 }
 
-function searchFastshare($query, $page = 1, $provider = 'fastshare') {
-    $host = ($provider === 'sdilej') ? 'sdilej.cz' : 'fastshare.cz';
-    list($c, $body, $e) = wflixHttpGet(fastshareSearchUrl($query, $page, $provider), 15, [
+function searchFastshare($query, $page = 1) {
+    list($c, $body, $e) = wflixHttpGet(fastshareSearchUrl($query, $page), 15, [
         'Accept: application/json, text/plain, */*',
-        'Referer: https://' . $host . '/',
+        'Referer: https://fastshare.cz/',
     ]);
-    if ($e) return ['error' => wflixSourceLabel($provider) . ': ' . $e, 'movies' => []];
-    if ($c < 200 || $c >= 300) return ['error' => wflixSourceLabel($provider) . ' HTTP: ' . $c, 'status' => $c, 'movies' => []];
-    return parseFastshareBody($body, $provider);
+    if ($e) return ['error' => 'FastShare: ' . $e, 'movies' => []];
+    if ($c < 200 || $c >= 300) return ['error' => 'FastShare HTTP: ' . $c, 'status' => $c, 'movies' => []];
+    return parseFastshareBody($body);
 }
 
 function searchAll($query, $page = 1) {
@@ -513,8 +508,7 @@ function searchAll($query, $page = 1) {
     // Vrstva jedna: veřejná JSON rozhraní dalších katalogů. Bez účtu, takže jdou vždy.
     $extra = [
         'hellspy' => 'https://api.hellspy.to/gw/search?query=' . rawurlencode($query) . '&limit=40',
-        'fastshare' => fastshareSearchUrl($query, $page, 'fastshare'),
-        'sdilej' => fastshareSearchUrl($query, $page, 'sdilej'),
+        'fastshare' => fastshareSearchUrl($query, $page),
     ];
     $extraHandles = [];
     foreach ($extra as $key => $extraUrl) {
@@ -546,7 +540,7 @@ function searchAll($query, $page = 1) {
         elseif ($extraCode === 429) $extraResults[$key] = ['error' => wflixSourceLabel($key) . ': HTTP 429', 'status' => 429, 'movies' => []];
         elseif ($extraCode < 200 || $extraCode >= 300) $extraResults[$key] = ['error' => wflixSourceLabel($key) . ' HTTP: ' . $extraCode, 'status' => $extraCode, 'movies' => []];
         elseif ($key === 'hellspy') $extraResults[$key] = parseHellspyBody($extraBody);
-        else $extraResults[$key] = parseFastshareBody($extraBody, $key);
+        else $extraResults[$key] = parseFastshareBody($extraBody);
     }
     curl_close($ch1); curl_close($ch2); curl_close($ch3); curl_multi_close($mh);
 
@@ -636,7 +630,7 @@ function searchAll($query, $page = 1) {
     }
     $merged = wflixDedupMovies($allMovies);
     $err = (!empty($merged) || empty($errs)) ? null : implode(' | ', $errs);
-    return ['error' => $err, 'status' => $r1['status'] ?? 0, 'movies' => $merged, 'sources' => ['prehrajto', 'sledujteto', 'bombuj', 'hellspy', 'fastshare', 'sdilej']];
+    return ['error' => $err, 'status' => $r1['status'] ?? 0, 'movies' => $merged, 'sources' => ['prehrajto', 'sledujteto', 'bombuj', 'hellspy', 'fastshare']];
 }
 
 function resolveSourceVideo($source, $url) {
@@ -689,7 +683,7 @@ function resolveSourceVideo($source, $url) {
             'hint' => $link ? null : 'HellSpy nevrátil odkaz na soubor (může být 429, smazaný soubor nebo změna API).',
         ];
     }
-    if ($source === 'fastshare' || $source === 'sdilej') {
+    if ($source === 'fastshare') {
         // api_kodi.php vrací download_url rovnou na soubor; u některých souborů ale
         // přehrání vyžaduje přihlášený účet, pak se místo dat načte přihlašovací stránka.
         return [
@@ -742,7 +736,7 @@ function handleSearch($source = 'prehrajto') {
         echo json_encode([
             'success' => false,
             'error' => 'Missing search query (q parameter)',
-            'usage' => 'index.php?action=search&q=matrix&source=prehrajto|bombuj|sledujteto|hellspy|fastshare|sdilej|all'
+            'usage' => 'index.php?action=search&q=matrix&source=prehrajto|bombuj|sledujteto|hellspy|fastshare|all'
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -761,8 +755,8 @@ function handleSearch($source = 'prehrajto') {
         $r = searchSledujteto($query, $page);
     } elseif ($source === 'hellspy') {
         $r = searchHellspy($query, $page);
-    } elseif ($source === 'fastshare' || $source === 'sdilej') {
-        $r = searchFastshare($query, $page, $source);
+    } elseif ($source === 'fastshare') {
+        $r = searchFastshare($query, $page);
     } elseif ($source === 'all') {
         $r = searchAll($query, $page);
         $fallbackUsed = 'all';
@@ -1214,7 +1208,7 @@ function handleVideo($source = 'prehrajto') {
         echo json_encode([
             'success' => false,
             'error' => 'Missing url parameter',
-            'usage' => 'index.php?url=https://prehraj.to/video/...&source=prehrajto|bombuj|sledujteto|hellspy|fastshare|sdilej'
+            'usage' => 'index.php?url=https://prehraj.to/video/...&source=prehrajto|bombuj|sledujteto|hellspy|fastshare'
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -1228,7 +1222,6 @@ function handleVideo($source = 'prehrajto') {
         elseif ($host === 'sledujteto.cz' || substr($host, -14) === '.sledujteto.cz') $inferred = 'sledujteto';
         elseif ($host === 'hellspy.to' || substr($host, -11) === '.hellspy.to') $inferred = 'hellspy';
         elseif ($host === 'fastshare.cz' || substr($host, -13) === '.fastshare.cz' || substr($host, -16) === '.fastshare.cloud') $inferred = 'fastshare';
-        elseif ($host === 'sdilej.cz' || substr($host, -10) === '.sdilej.cz') $inferred = 'sdilej';
         elseif ($host === 'prehraj.to' || substr($host, -11) === '.prehraj.to') $inferred = 'prehrajto';
         if (!wflixAllowedSourceUrl($inferred, $url)) {
             echo json_encode([

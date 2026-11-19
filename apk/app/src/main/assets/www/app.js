@@ -3853,7 +3853,7 @@
       + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setDirect">' + (settings.direct ? 'Zapnuto' : 'Vypnuto') + '</button></div>'
       + '</div>'
       + '<div class="set-row">'
-      + '  <div class="lab"><b>Více výsledků</b><span>Vypnuto: hledá na Prehraj.to, HellSpy, FastShare a Sdílej (bez Bombuj a Sledujteto). Zapnuto: přidá i Bombuj a Sledujteto. Když jeden zdroj selže, použijí se ostatní.</span></div>'
+      + '  <div class="lab"><b>Více výsledků</b><span>Vypnuto: hledá na Prehraj.to, HellSpy a FastShare (bez Bombuj a Sledujteto). Zapnuto: přidá i Bombuj a Sledujteto. Když jeden zdroj selže, použijí se ostatní.</span></div>'
       + '  <div class="set-actions"><button class="f btn ghost" type="button" id="setSearchMerge">' + (settings.searchMerge ? 'Zapnuto' : 'Vypnuto') + '</button></div>'
       + '</div>'
       + '<div class="set-row">'
