@@ -471,10 +471,10 @@ static bool IsAllowedHost(string host, params string[] domains) =>
 static bool IsAllowedSourcePageUrl(string u) =>
     Uri.TryCreate(u, UriKind.Absolute, out var x)
     && (x.Scheme == Uri.UriSchemeHttp || x.Scheme == Uri.UriSchemeHttps)
-    && IsAllowedHost(x.Host, "prehraj.to", "bombuj.si", "sledujteto.cz", "hellspy.to", "fastshare.cz", "fastshare.cloud", "sdilej.cz");
+    && IsAllowedHost(x.Host, "prehraj.to", "bombuj.si", "sledujteto.cz", "hellspy.to", "fastshare.cz", "fastshare.cloud");
 
 // Zdroje "první linie": rychlé výchozí hledání bez bombuj a sledujteto.
-string[] Line1Sources = { "prehrajto", "hellspy", "fastshare", "sdilej" };
+string[] Line1Sources = { "prehrajto", "hellspy", "fastshare" };
 
 static string NormalizeSource(string? s)
 {
@@ -487,7 +487,6 @@ static string NormalizeSource(string? s)
         "sledujteto" or "sledujteto.cz" or "old.sledujteto.cz" => "sledujteto",
         "hellspy" or "hellspy.to" => "hellspy",
         "fastshare" or "fastshare.cz" or "fastshare.cloud" => "fastshare",
-        "sdilej" or "sdilej.cz" => "sdilej",
         "line1" or "first" or "default" or "defaultline" => "line1",
         "all" or "merge" or "both" or "prehrajto+sledujteto" => "all",
         _ => "prehrajto"
@@ -1772,7 +1771,6 @@ app.MapGet("/api/proxy", async (string url, string? source, string[]? proxy, IHt
         else if (IsAllowedHost(u.Host, "sledujteto.cz")) src = "sledujteto";
         else if (IsAllowedHost(u.Host, "hellspy.to")) src = "hellspy";
         else if (IsAllowedHost(u.Host, "fastshare.cz", "fastshare.cloud")) src = "fastshare";
-        else if (IsAllowedHost(u.Host, "sdilej.cz")) src = "sdilej";
         else if (IsAllowedHost(u.Host, "prehraj.to")) src = "prehrajto";
     }
     // Vypnutý zdroj se neobsluhuje ani tady - jinak by se dal obejít /api/search a přehrávat dál.
@@ -1786,7 +1784,7 @@ app.MapGet("/api/proxy", async (string url, string? source, string[]? proxy, IHt
             enabled = adminStore.Current.Sources.Enabled(),
         }, statusCode: 400);
     if (!IsAllowedSourcePageUrl(url))
-        return Results.BadRequest(new { success = false, error = "URL must be from a supported source (prehraj.to, bombuj.si, sledujteto.cz, hellspy.to, fastshare.cz, sdilej.cz)" });
+        return Results.BadRequest(new { success = false, error = "URL must be from a supported source (prehraj.to, bombuj.si, sledujteto.cz, hellspy.to, fastshare.cz)" });
 
     // Jen PHP proxy servery, zkoušené postupně. 2xx s normální odpovědí = vyhrává;
     // 429/403/5xx nebo {"success":false} = prohra a bere se další zdroj.
@@ -1825,7 +1823,6 @@ static string? SourceFromUrl(string url)
     if (IsAllowedHost(u.Host, "sledujteto.cz")) return "sledujteto";
     if (IsAllowedHost(u.Host, "hellspy.to")) return "hellspy";
     if (IsAllowedHost(u.Host, "fastshare.cz", "fastshare.cloud")) return "fastshare";
-    if (IsAllowedHost(u.Host, "sdilej.cz")) return "sdilej";
     if (IsAllowedHost(u.Host, "prehraj.to")) return "prehrajto";
     return null;
 }

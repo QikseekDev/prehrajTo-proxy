@@ -49,8 +49,6 @@ public sealed class SourcesConfig
     public bool Hellspy { get; set; } = true;
     /// <summary>FastShare - veřejné hledání přes api_kodi.php.</summary>
     public bool Fastshare { get; set; } = true;
-    /// <summary>Sdilej.cz - stejné api_kodi.php jako FastShare.</summary>
-    public bool Sdilej { get; set; } = true;
     /// <summary>Automatický fallback prehrajto -> sledujteto při prázdném výsledku/chybě.</summary>
     public bool Fallback { get; set; } = true;
     /// <summary>Nejvyšší stránka, kterou /api/search pustí (1-50).</summary>
@@ -63,7 +61,6 @@ public sealed class SourcesConfig
         Bombuj ? "bombuj" : null,
         Hellspy ? "hellspy" : null,
         Fastshare ? "fastshare" : null,
-        Sdilej ? "sdilej" : null,
     }.Where(x => x != null).Select(x => x!).ToArray();
 
     public bool IsEnabled(string source) => source switch
@@ -76,7 +73,6 @@ public sealed class SourcesConfig
         "bombuj" => Bombuj,
         "hellspy" => Hellspy,
         "fastshare" => Fastshare,
-        "sdilej" => Sdilej,
         _ => false,
     };
 }

@@ -546,7 +546,6 @@
                 <label class="check"><input type="checkbox" id="sBombuj"><span>bombuj.si<span class="hint">Přidává se v režimu „Více výsledků“ (mimo první linii).</span></span></label>
                 <label class="check"><input type="checkbox" id="sHellspy"><span>hellspy.to<span class="hint">Veřejné api.hellspy.to/gw/, bez účtu. Součást první linie i „Více výsledků“.</span></span></label>
                 <label class="check"><input type="checkbox" id="sFastshare"><span>fastshare.cz<span class="hint">Veřejné hledání přes api_kodi.php, bez účtu.</span></span></label>
-                <label class="check"><input type="checkbox" id="sSdilej"><span>sdilej.cz<span class="hint">Stejné api_kodi.php jako FastShare (společný katalog).</span></span></label>
                 <label class="check"><input type="checkbox" id="sFallback"><span>Automatický fallback<span class="hint">prehrajto → sledujteto při chybě nebo prázdném výsledku.</span></span></label>
               </div>
               <div class="row">
@@ -1358,7 +1357,6 @@
     $('sBombuj').checked = src.bombuj !== false;
     $('sHellspy').checked = src.hellspy !== false;
     $('sFastshare').checked = src.fastshare !== false;
-    $('sSdilej').checked = src.sdilej !== false;
     $('sFallback').checked = src.fallback !== false;
     $('sMaxPage').value = src.maxPage || 50;
 
@@ -1668,7 +1666,7 @@
     $('saveSources').addEventListener('click', function () {
       var n = parseInt($('sMaxPage').value, 10);
       if (!(n >= 1 && n <= 50)) { msg('Max. stránka musí být 1–50.', false); return; }
-      var anyOn = ['sPrehrajto', 'sSledujteto', 'sBombuj', 'sHellspy', 'sFastshare', 'sSdilej'].some(function (id) { return $(id).checked; });
+      var anyOn = ['sPrehrajto', 'sSledujteto', 'sBombuj', 'sHellspy', 'sFastshare'].some(function (id) { return $(id).checked; });
       if (!anyOn && !confirm('Všechny zdroje jsou vypnuté – hledání přestane fungovat. Pokračovat?')) return;
       post('/api/admin/sources', {
         prehrajto: $('sPrehrajto').checked,
@@ -1676,7 +1674,6 @@
         bombuj: $('sBombuj').checked,
         hellspy: $('sHellspy').checked,
         fastshare: $('sFastshare').checked,
-        sdilej: $('sSdilej').checked,
         fallback: $('sFallback').checked,
         maxPage: n
       }, 'Zdroje uloženy.');
@@ -1937,7 +1934,7 @@
     { title: 'Stav a diagnostika', hint: 'přehled a metriky', run: function () { setView('overview'); } },
     { title: 'Provoz a latence', hint: 'graf, poslední požadavky', run: function () { setView('traffic'); refreshTraffic(); } },
     { title: 'Vypínače', hint: 'funkce a režimy dostupnosti', run: function () { setView('flags'); } },
-    { title: 'Zdroje', hint: 'prehrajto, sledujteto, bombuj, hellspy, fastshare, sdilej', run: function () { setView('sources'); } },
+    { title: 'Zdroje', hint: 'prehrajto, sledujteto, bombuj, hellspy, fastshare', run: function () { setView('sources'); } },
     { title: 'Cache', hint: 'pročištění', run: function () { setView('cache'); } },
     { title: 'Proxy servery', hint: 'seznam a test', run: function () { setView('proxies'); } },
     { title: 'Návštěvníci', hint: 'kdo je na webu', run: function () { setView('visitors'); } },

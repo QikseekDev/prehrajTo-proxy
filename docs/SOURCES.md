@@ -1,7 +1,7 @@
 # Zdroje obsahu: co appka umí a co je jen katalog
 
-Wflix umí šest webů: **prehraj.to** (přes PHP proxy), **bombuj.si**, **sledujteto.cz**,
-**hellspy.to**, **fastshare.cz** a **sdilej.cz**. Všechny kromě prehraj.to jedou přes
+Wflix umí pět webů: **prehraj.to** (přes PHP proxy), **bombuj.si**, **sledujteto.cz**,
+**hellspy.to** a **fastshare.cz**. Všechny kromě prehraj.to jedou přes
 veřejná JSON rozhraní a jsou součástí „vrstvy jedna“ – hledají se souběžně při
 „Více výsledků“ (`source=all`), žádný z nich není fallback jiného.
 
@@ -21,8 +21,7 @@ dokument je jejich katalog: co to je, jaký má veřejný web a co by zapojení 
 | Sledujteto | `sledujteto.cz` | `/api/web/videos` | bez účtu pro hledání, Premium pro plné přehrávání | **podporováno** – `searchSledujteto` |
 | Bombuj | `bombuj.si` | autocomplete z `uvod.php` | bez účtu | **podporováno** – `searchBombuj` |
 | HellSpy | `hellspy.to` | `api.hellspy.to/gw/search`, `gw/video/<id>/<hash>/download` (302) | bez účtu a tokenu | **podporováno** – `searchHellspy`, `parseHellspyBody`; při 429 se zdroj přeskočí |
-| FastShare | `fastshare.cz` | `api/api_kodi.php?process=search` | hledání bez účtu, přehrávání někdy s účtem | **podporováno** – `searchFastshare(..., 'fastshare')` |
-| Sdilej.cz | `sdilej.cz` | stejné `api/api_kodi.php` (společný katalog) | jako FastShare | **podporováno** – `searchFastshare(..., 'sdilej')` |
+| FastShare | `fastshare.cz` | `api/api_kodi.php?process=search` | hledání bez účtu, přehrávání někdy s účtem | **podporováno** – `searchFastshare` |
 
 Přepínač zdrojů je v adminu (Zdroje) a v API (`source` parametr, `only=...` pro `all`);
 appka nevolá žádný z těch webů přímo z Azure, všechny jdou přes PHP proxy (česká IP).
@@ -60,6 +59,6 @@ whitelist a nový zdroj se musí přidat vědomě.
 
 - Nokturno (Kodi/HA přehrávač, katalog zdrojů): https://github.com/nokturno-app/plugin.video.nokturno
 - HellSpy veřejné rozhraní: https://api.hellspy.to/gw/search?query=matrix
-- FastShare / Sdilej API pro Kodi: https://fastshare.cz/api/api_kodi.php, https://sdilej.cz/api/api_kodi.php
+- FastShare API pro Kodi: https://fastshare.cz/api/api_kodi.php
 - Přehraj.to scraper jako inspirace: https://github.com/thetedotgg/prehrajto-scraper
 - Co všechno se z výzkumu integrovalo: [EXPANSION.md](EXPANSION.md)
